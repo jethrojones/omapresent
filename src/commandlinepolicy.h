@@ -16,4 +16,6 @@ enum class StartupSource {
 StartupSource chooseStartupSource(LaunchMode mode, bool hasExplicitFile,
                                   bool recoveryModified);
 
+bool explicitFileOpenFailed(StartupSource source, bool openSucceeded);
+
 } // namespace CommandLinePolicy

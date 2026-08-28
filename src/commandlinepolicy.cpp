@@ -13,4 +13,9 @@ StartupSource chooseStartupSource(LaunchMode mode, bool hasExplicitFile,
                             : StartupSource::ExistingDocument;
 }
 
+bool explicitFileOpenFailed(StartupSource source, bool openSucceeded)
+{
+    return source == StartupSource::ExplicitFile && !openSucceeded;
+}
+
 } // namespace CommandLinePolicy

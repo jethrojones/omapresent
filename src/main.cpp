@@ -103,13 +103,11 @@ int main(int argc, char *argv[]) {
     if (CommandLinePolicy::chooseStartupSource(
             launchMode, !command.file.isEmpty(), backend.modified())
         == CommandLinePolicy::StartupSource::ExplicitFile) {
-        if (command.command == Backend::CommandLine::Present) {
-            if (!backend.openCommandFile(command.file)) {
-                QTextStream(stderr) << backend.status() << '\n';
-                return 1;
-            }
-        } else {
-            backend.openCommandFile(command.file);
+        const bool opened = backend.openCommandFile(command.file);
+        if (CommandLinePolicy::explicitFileOpenFailed(
+                CommandLinePolicy::StartupSource::ExplicitFile, opened)) {
+            QTextStream(stderr) << backend.status() << '\n';
+            return 1;
         }
     }
     backend.completeFirstRun();

@@ -27,6 +27,16 @@ private slots:
                      CommandLinePolicy::LaunchMode::Edit, false, true),
                  CommandLinePolicy::StartupSource::RecoveredDocument);
     }
+
+    void explicitFileOpenResultControlsFailure()
+    {
+        QCOMPARE(CommandLinePolicy::explicitFileOpenFailed(
+                     CommandLinePolicy::StartupSource::ExplicitFile, true), false);
+        QCOMPARE(CommandLinePolicy::explicitFileOpenFailed(
+                     CommandLinePolicy::StartupSource::ExplicitFile, false), true);
+        QCOMPARE(CommandLinePolicy::explicitFileOpenFailed(
+                     CommandLinePolicy::StartupSource::RecoveredDocument, false), false);
+    }
 };
 
 OMAPRESENT_TEST_SUITE(CommandLineRecoveryTest)
