@@ -33,11 +33,14 @@ private slots:
         QCOMPARE(settings.boolValue(QStringLiteral("presentation.do_not_disturb")), true);
         QCOMPARE(settings.stringValue(QStringLiteral("presentation.default_aspect")), QStringLiteral("16:9"));
         QCOMPARE(settings.boolValue(QStringLiteral("presentation.single_monitor_notes")), false);
-        QCOMPARE(settings.boolValue(QStringLiteral("presentation.auto_prefetch_video")), true);
+        // Off by default: saving a deck must not reach the network on its own.
+        QCOMPARE(settings.boolValue(QStringLiteral("presentation.auto_prefetch_video")), false);
 
         // Export defaults
         QCOMPARE(settings.stringValue(QStringLiteral("export.pdf_aspect")), QStringLiteral("16:9"));
-        QCOMPARE(settings.boolValue(QStringLiteral("export.pdf_paginated")), true);
+        // export.pdf_paginated is gone: spec §8 makes pagination the only legal
+        // behaviour, so the key could never have had a second value.
+        QVERIFY(!settings.value(QStringLiteral("export.pdf_paginated")).isValid());
 
         // Unknown key returns invalid QVariant
         QVERIFY(!settings.value(QStringLiteral("editor.unknown_key")).isValid());
@@ -73,7 +76,6 @@ private slots:
         QCOMPARE(settings.boolValue(QStringLiteral("editor.auto_break_triple_return")), true);
         QCOMPARE(settings.boolValue(QStringLiteral("presentation.inhibit_idle")), true);
         QCOMPARE(settings.stringValue(QStringLiteral("presentation.default_aspect")), QStringLiteral("16:9"));
-        QCOMPARE(settings.boolValue(QStringLiteral("export.pdf_paginated")), true);
 
         // Check resolved object structure
         const QJsonObject res = settings.resolved();

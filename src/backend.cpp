@@ -161,6 +161,9 @@ Backend::Backend(QObject *parent) : QObject(parent) {
         watchOmarchyTheme();
     });
 
+    // Everything above is connected, so settings.toml can now take effect.
+    applySettings();
+
     m_deckTimer.setSingleShot(true);
     m_deckTimer.setInterval(deckRebuildDelayMs);
     connect(&m_deckTimer, &QTimer::timeout, this, &Backend::rebuildDeck);
@@ -194,6 +197,45 @@ Backend::Backend(QObject *parent) : QObject(parent) {
     connect(&m_publisher, &Publisher::failed, this, [this](const QString &message) {
         setStatus(QStringLiteral("Could not publish: %1").arg(message));
     });
+    // settings.toml is read once here and re-read whenever it changes, so a
+    // preference edited by hand or by an agent takes effect without a restart.
+    connect(&m_settings, &Settings::settingsChanged, this, &Backend::applySettings);
+
+    connect(&m_media, &VideoCache::prefetchProgress, this, [this](int done, int total) {
+        setStatus(QStringLiteral("Preparing media for offline… %1/%2").arg(done).arg(total));
+        emit offlinePrefetchProgress(done, total);
+    });
+    connect(&m_media, &VideoCache::prefetchFinished, this, [this](const QStringList &failed) {
+        m_offlinePrefetchRunning = false;
+        emit offlinePrefetchChanged();
+        setStatus(failed.isEmpty()
+                      ? QStringLiteral("This deck is ready to present offline")
+                      : QStringLiteral("%1 of the deck's videos could not be cached")
+                            .arg(failed.size()));
+        emit offlinePrefetchFinished(failed);
+    });
+
+    connect(&m_publisher, &Publisher::signInCodeSent, this, [this]() {
+        setStatus(QStringLiteral("Check your email for the sign-in code"));
+        emit publishSignInCodeSent();
+    });
+    connect(&m_publisher, &Publisher::signedIn, this, [this]() {
+        setStatus(QStringLiteral("Signed in"));
+        emit publishSignedIn();
+    });
+    connect(&m_publisher, &Publisher::versionsReceived, this,
+            [this](const QString &slug, const QJsonArray &versions) {
+                emit publishVersions(slug, versions.toVariantList());
+            });
+    connect(&m_publisher, &Publisher::reverted, this,
+            [this](const QString &liveUrl, const QString &, const QString &) {
+                setStatus(QStringLiteral("Reverted to the earlier version at %1").arg(liveUrl));
+            });
+    connect(&m_publisher, &Publisher::claimAvailable, this,
+            [this](const QString &claimUrl, const QString &claimToken) {
+                emit publishClaimAvailable(claimUrl, claimToken);
+            });
+
     connect(&m_pdfExport, &PdfExport::finished, this,
             [this](bool ok, const QString &path, const QString &message) {
                 setStatus(ok ? QStringLiteral("Exported %1").arg(QFileInfo(path).fileName())
@@ -232,23 +274,56 @@ QString Backend::fileName() const {
 }
 
 void Backend::setDarkMode(bool darkMode) {
-    if (m_darkMode == darkMode)
+    // What the desktop portal says. editor.dark_mode may overrule it.
+    m_systemDarkMode = darkMode;
+
+    const QString preference = m_settings.stringValue(QStringLiteral("editor.dark_mode"));
+    const bool effective = preference == QStringLiteral("dark") ? true
+                         : preference == QStringLiteral("light") ? false
+                         : darkMode;
+    if (m_darkMode == effective)
         return;
 
-    m_darkMode = darkMode;
+    m_darkMode = effective;
     loadOmarchyTheme();
     emit darkModeChanged();
 }
 
 void Backend::setTextScale(qreal textScale) {
-    if (qFuzzyCompare(m_textScale, textScale))
+    // What the desktop asks for; editor.text_scale multiplies it, so a deck
+    // author can run larger than the rest of the desktop without changing it.
+    m_desktopTextScale = textScale;
+
+    const double factor = m_settings.numberValue(QStringLiteral("editor.text_scale"));
+    const qreal effective = textScale * (factor > 0 ? factor : 1.0);
+    if (qFuzzyCompare(m_textScale, effective))
         return;
 
-    m_textScale = textScale;
+    m_textScale = effective;
     // The renderer sizes itself from the deck's textScale, so it needs the new
     // one to reflow without a restart (spec §10).
     scheduleDeckRebuild();
     emit textScaleChanged();
+}
+
+// Re-applies every setting that has a live consumer. Called at startup and
+// whenever settings.toml changes underneath us.
+void Backend::applySettings() {
+    setDarkMode(m_systemDarkMode);
+    setTextScale(m_desktopTextScale);
+    applyFrontmatter();
+    scheduleDeckRebuild();
+    emit settingsChanged();
+}
+
+bool Backend::tripleReturnBreaksSlide() const {
+    return m_settings.boolValue(QStringLiteral("editor.auto_break_triple_return"));
+}
+
+QString Backend::deckTitle() const {
+    const QString title =
+        m_deck.frontmatter().value(QStringLiteral("title")).toString().trimmed();
+    return title.isEmpty() ? fileName() : title;
 }
 
 void Backend::attachDocument(QObject *textDocument) {
@@ -531,6 +606,14 @@ void Backend::openExternalUrl(const QUrl &url) {
 }
 
 QVariantMap Backend::windowGeometry() const {
+    // editor.remember_geometry off means every window opens at the default
+    // size, which is what someone screen-sharing a fresh window wants.
+    if (!m_settings.boolValue(QStringLiteral("editor.remember_geometry"))) {
+        return {{QStringLiteral("x"), -1}, {QStringLiteral("y"), -1},
+                {QStringLiteral("width"), 1280}, {QStringLiteral("height"), 820},
+                {QStringLiteral("maximized"), false}};
+    }
+
     QSettings settings;
     return {{QStringLiteral("x"), settings.value(QStringLiteral("window/x"), -1)},
             {QStringLiteral("y"), settings.value(QStringLiteral("window/y"), -1)},
@@ -540,6 +623,9 @@ QVariantMap Backend::windowGeometry() const {
 }
 
 void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maximized) {
+    if (!m_settings.boolValue(QStringLiteral("editor.remember_geometry")))
+        return;
+
     QSettings settings;
     if (!maximized) {
         settings.setValue(QStringLiteral("window/x"), x);
@@ -644,6 +730,11 @@ void Backend::saveTo(const QUrl &url) {
     setStatus(QStringLiteral("Saved %1").arg(fileName()));
     clearRecovery();
     emit saveSucceeded();
+
+    // Spec §4.8 allows caching embeds on save, but a save is not consent to
+    // reach the network, so it happens only when this setting says so.
+    if (m_settings.boolValue(QStringLiteral("presentation.auto_prefetch_video")))
+        prepareForOffline();
 
     if (shouldClose)
         emit closeAfterSave();
@@ -948,6 +1039,8 @@ void Backend::rebuildDeck() {
     }
     emit previewUpdate(script);
     m_presentation.setDeck(document);
+    // The window is named after the deck, and the deck was just reparsed.
+    emit deckTitleChanged();
 }
 
 void Backend::applyFrontmatter() {
@@ -958,8 +1051,11 @@ void Backend::applyFrontmatter() {
         m_assets.setRoot(root);
 
     // Guarded because setOverrideTheme() reloads, which comes back round as
-    // themeChanged() and another rebuild.
-    const QString theme = frontmatter.value(QStringLiteral("theme")).toString();
+    // themeChanged() and another rebuild. The deck wins; editor.theme is the
+    // standing preference for decks that do not name one.
+    QString theme = frontmatter.value(QStringLiteral("theme")).toString();
+    if (theme.isEmpty())
+        theme = m_settings.stringValue(QStringLiteral("editor.theme"));
     if (theme != m_theme.overrideTheme())
         m_theme.setOverrideTheme(theme);
 }
@@ -979,7 +1075,26 @@ QJsonObject Backend::deckDocument(const QString &mode) const {
     for (const QString &url : std::as_const(urls))
         media.insert(url, m_media.describe(url));
 
-    return RenderHost::composeDeck(mode, m_deck.toJson(),
+    // The deck always wins. editor.font and presentation.default_aspect only
+    // fill in what the frontmatter left unsaid (spec §4.4), and PDF export has
+    // a canvas preference of its own.
+    QJsonObject deck = m_deck.toJson();
+    QJsonObject frontmatter = deck.value(QStringLiteral("frontmatter")).toObject();
+    if (frontmatter.value(QStringLiteral("font")).toString().isEmpty()) {
+        const QString font = m_settings.stringValue(QStringLiteral("editor.font"));
+        if (!font.isEmpty())
+            frontmatter.insert(QStringLiteral("font"), font);
+    }
+    if (frontmatter.value(QStringLiteral("aspect")).toString().isEmpty()) {
+        frontmatter.insert(QStringLiteral("aspect"),
+                           mode == QStringLiteral("pdf")
+                               ? m_settings.stringValue(QStringLiteral("export.pdf_aspect"))
+                               : m_settings.stringValue(
+                                     QStringLiteral("presentation.default_aspect")));
+    }
+    deck.insert(QStringLiteral("frontmatter"), frontmatter);
+
+    return RenderHost::composeDeck(mode, deck,
                                    m_assets.resolveAll(references), media,
                                    m_theme.palette(), m_theme.backgroundImagePath(),
                                    m_textScale);
@@ -1087,6 +1202,12 @@ void Backend::presentFromCaret(int cursorPosition) {
 void Backend::startPresentation(int slideIndex) {
     m_presentation.setDeck(deckDocument(QStringLiteral("present")));
     m_presentation.start(slideIndex);
+
+    // On one display the notes live in an overlay (spec §5.1); this setting is
+    // for the presenter who always wants it up rather than pressing N.
+    if (m_settings.boolValue(QStringLiteral("presentation.single_monitor_notes"))
+            && m_presentation.singleOutput() && !m_presentation.notesOverlay())
+        m_presentation.toggleNotesOverlay();
 }
 
 void Backend::exportPdfDialog() {
@@ -1378,6 +1499,10 @@ QString Backend::sessionStatePath() {
     return stateHome + QStringLiteral("/omapresent/sessions.json");
 }
 
+QString Backend::sessionKey() const {
+    return QFileInfo(m_fileUrl.toLocalFile()).absoluteFilePath();
+}
+
 void Backend::restoreSessionPosition() {
     m_slideIndex = 0;
     m_scrollFraction = 0.0;
@@ -1391,7 +1516,7 @@ void Backend::restoreSessionPosition() {
 
     const QJsonObject entry = QJsonDocument::fromJson(file.readAll())
                                   .object()
-                                  .value(m_fileUrl.toLocalFile())
+                                  .value(sessionKey())
                                   .toObject();
     m_slideIndex = entry.value(QStringLiteral("slide")).toInt();
     m_scrollFraction = entry.value(QStringLiteral("scroll")).toDouble();
@@ -1411,7 +1536,7 @@ void Backend::writeSessionPosition() {
         sessions = QJsonDocument::fromJson(existing.readAll()).object();
     existing.close();
 
-    sessions.insert(m_fileUrl.toLocalFile(),
+    sessions.insert(sessionKey(),
                     QJsonObject{{QStringLiteral("slide"), m_slideIndex},
                                 {QStringLiteral("scroll"), m_scrollFraction},
                                 {QStringLiteral("seenAt"),
@@ -1437,4 +1562,185 @@ void Backend::writeSessionPosition() {
         return;
     file.write(QJsonDocument(sessions).toJson(QJsonDocument::Compact));
     file.commit();
+}
+
+QStringList Backend::offlineMediaUrls() const {
+    QStringList urls;
+    const QVector<Slide> slides = m_deck.slides();
+    for (const Slide &slide : slides)
+        urls += VideoCache::extractUrls(slide.markdown);
+    urls.removeDuplicates();
+    return urls;
+}
+
+void Backend::prepareForOffline() {
+    if (m_offlinePrefetchRunning)
+        return;
+
+    if (m_deckTimer.isActive())
+        rebuildDeck();
+
+    const QStringList urls = offlineMediaUrls();
+    if (urls.isEmpty()) {
+        setStatus(QStringLiteral("Nothing to fetch — this deck has no web media"));
+        emit offlinePrefetchFinished({});
+        return;
+    }
+
+    // The one place in the app that reaches the network for media, and only
+    // because the user pressed something (spec §4.8).
+    m_offlinePrefetchRunning = true;
+    emit offlinePrefetchChanged();
+    setStatus(QStringLiteral("Preparing %1 %2 for offline…")
+                  .arg(urls.size())
+                  .arg(urls.size() == 1 ? QStringLiteral("video") : QStringLiteral("videos")));
+    m_media.prefetch(urls);
+}
+
+QString Backend::welcomeDeckPath() {
+    // Installed by the package; the repo copy is what a development build has.
+    const QStringList candidates{
+        installedWelcomeDeck,
+        QCoreApplication::applicationDirPath() + QStringLiteral("/../welcome/welcome.md")};
+    for (const QString &candidate : candidates) {
+        if (QFileInfo::exists(candidate))
+            return QFileInfo(candidate).absoluteFilePath();
+    }
+    return {};
+}
+
+bool Backend::openWelcomeDeck() {
+    const QString path = welcomeDeckPath();
+    if (path.isEmpty()) {
+        setStatus(QStringLiteral("The welcome deck is not installed."));
+        return false;
+    }
+
+    open(QUrl::fromLocalFile(path));
+    return true;
+}
+
+QString Backend::editWelcomeCopy() {
+    const QString source = welcomeDeckPath();
+    if (source.isEmpty()) {
+        setStatus(QStringLiteral("The welcome deck is not installed."));
+        return {};
+    }
+
+    // Spec §7: the bundled deck is read-only, so "Edit a copy" drops one in the
+    // home directory. Never overwrite a copy the user has already worked on.
+    QString target = QDir::home().filePath(QStringLiteral("omapresent-welcome.md"));
+    for (int attempt = 2; QFileInfo::exists(target) && attempt < 100; ++attempt) {
+        target = QDir::home().filePath(
+            QStringLiteral("omapresent-welcome-%1.md").arg(attempt));
+    }
+
+    if (!QFile::copy(source, target)) {
+        setStatus(QStringLiteral("Could not write %1.").arg(QFileInfo(target).fileName()));
+        return {};
+    }
+    // QFile::copy keeps the source's permissions, and the installed deck is
+    // read-only. The copy is the user's to edit.
+    QFile::setPermissions(target, QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                      | QFileDevice::ReadGroup | QFileDevice::ReadOther);
+
+    open(QUrl::fromLocalFile(target));
+    return target;
+}
+
+QString Backend::providerForDeck(const QString &provider) const {
+    if (!provider.isEmpty())
+        return provider;
+
+    const QVariantMap publish =
+        m_deck.frontmatter().value(QStringLiteral("publish")).toMap();
+    return publish.value(QStringLiteral("provider")).toString();
+}
+
+QVariantMap Backend::publishProviders() const {
+    return m_publisher.providers().toVariantMap();
+}
+
+QString Backend::publishProvider() const {
+    const QString chosen = providerForDeck(QString());
+    return chosen.isEmpty() ? m_publisher.defaultProvider() : chosen;
+}
+
+bool Backend::setPublishProvider(const QString &provider) {
+    // publish.toml's `default` is the app-wide choice; a deck overrides it with
+    // its own publish.provider key, which is the deck author's business.
+    const bool written = m_publisher.setProviderKey(QString(), QStringLiteral("default"),
+                                                    provider);
+    if (written)
+        setStatus(QStringLiteral("Publishing to %1").arg(provider));
+    else
+        setStatus(QStringLiteral("Could not write publish.toml."));
+    return written;
+}
+
+QString Backend::publishAccess() const {
+    const QVariantMap publish =
+        m_deck.frontmatter().value(QStringLiteral("publish")).toMap();
+    const QString access = publish.value(QStringLiteral("access")).toString();
+    if (!access.isEmpty())
+        return access;
+
+    const QJsonObject provider =
+        m_publisher.providers().value(publishProvider()).toObject();
+    const QString configured = provider.value(QStringLiteral("access")).toString();
+    return configured.isEmpty() ? QStringLiteral("link") : configured;
+}
+
+bool Backend::setPublishAccess(const QString &access) {
+    return m_publisher.setProviderKey(publishProvider(), QStringLiteral("access"), access);
+}
+
+QString Backend::publishDomain() const {
+    return m_publisher.providers()
+        .value(publishProvider())
+        .toObject()
+        .value(QStringLiteral("domain"))
+        .toString();
+}
+
+bool Backend::setPublishDomain(const QString &domain) {
+    return m_publisher.setProviderKey(publishProvider(), QStringLiteral("domain"), domain);
+}
+
+bool Backend::setPublishPassword(const QString &password) {
+    return m_publisher.setProviderKey(publishProvider(), QStringLiteral("password"), password);
+}
+
+void Backend::signInToProvider(const QString &email) {
+    setStatus(QStringLiteral("Sending a sign-in code to %1…").arg(email));
+    m_publisher.requestSignInCode(email);
+}
+
+void Backend::confirmSignInCode(const QString &email, const QString &code) {
+    m_publisher.verifySignInCode(email, code);
+}
+
+bool Backend::republishDeck(const QString &provider) {
+    if (m_deckTimer.isActive())
+        rebuildDeck();
+
+    const QString bundle = buildWebBundle();
+    if (bundle.isEmpty())
+        return false;
+
+    setStatus(QStringLiteral("Republishing %1…").arg(deckSlug()));
+    m_publisher.republish(bundle, deckSlug(), providerForDeck(provider), publishAccess());
+    return true;
+}
+
+void Backend::requestPublishedVersions(const QString &provider) {
+    m_publisher.requestVersions(deckSlug(), providerForDeck(provider));
+}
+
+void Backend::revertPublished(const QString &versionId, const QString &provider) {
+    if (versionId.isEmpty())
+        return;
+
+    setStatus(QStringLiteral("Reverting %1…").arg(deckSlug()));
+    m_publisher.revert(deckSlug(), versionId, providerForDeck(provider));
 }

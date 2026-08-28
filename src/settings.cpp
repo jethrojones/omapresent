@@ -122,11 +122,18 @@ QJsonObject Settings::defaults() {
             {QStringLiteral("do_not_disturb"), true},
             {QStringLiteral("default_aspect"), QStringLiteral("16:9")},
             {QStringLiteral("single_monitor_notes"), false},
-            {QStringLiteral("auto_prefetch_video"), true}
+            // Off by default: a save must not reach the network without being
+            // asked. Spec §4.8 still allows it, and turning this on restores
+            // the fetch-on-save behaviour; "Prepare for offline" is the
+            // explicit route either way.
+            {QStringLiteral("auto_prefetch_video"), false}
         }},
+        // `export.pdf_paginated` used to live here. Spec §8 says a slide taller
+        // than a page paginates and is never scaled, so the only other setting
+        // this key could have had is one the spec forbids. A preference with no
+        // legal second value is not a preference.
         {QStringLiteral("export"), QJsonObject{
-            {QStringLiteral("pdf_aspect"), QStringLiteral("16:9")},
-            {QStringLiteral("pdf_paginated"), true}
+            {QStringLiteral("pdf_aspect"), QStringLiteral("16:9")}
         }}
     };
 }

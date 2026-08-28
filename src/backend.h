@@ -19,6 +19,7 @@
 #include "presentation.h"
 #include "publisher.h"
 #include "renderhost.h"
+#include "settings.h"
 #include "videocache.h"
 #include "webbundle.h"
 
@@ -51,6 +52,15 @@ class Backend : public QObject {
     Q_PROPERTY(Publisher *publisher READ publisher CONSTANT)
     Q_PROPERTY(Presentation *presentation READ presentation CONSTANT)
     Q_PROPERTY(RenderHost *renderHost READ renderHost CONSTANT)
+    Q_PROPERTY(Settings *settings READ settings CONSTANT)
+    // The deck's own name (frontmatter `title:`), falling back to the file
+    // name. What the window is called (spec §4.4).
+    Q_PROPERTY(QString deckTitle READ deckTitle NOTIFY deckTitleChanged)
+    // Spec §4.10, switched off by editor.auto_break_triple_return.
+    Q_PROPERTY(bool tripleReturnBreaksSlide READ tripleReturnBreaksSlide
+                   NOTIFY settingsChanged)
+    Q_PROPERTY(bool offlinePrefetchRunning READ offlinePrefetchRunning
+                   NOTIFY offlinePrefetchChanged)
 
 public:
     // One invocation of the `omapresent` command (spec §11).
@@ -95,6 +105,11 @@ public:
     Publisher *publisher() { return &m_publisher; }
     Presentation *presentation() { return &m_presentation; }
     RenderHost *renderHost() { return &m_renderHost; }
+    Settings *settings() { return &m_settings; }
+
+    QString deckTitle() const;
+    bool tripleReturnBreaksSlide() const;
+    bool offlinePrefetchRunning() const { return m_offlinePrefetchRunning; }
 
     static int countWords(const QString &text);
     static QString normalizedLinkUrl(const QString &clipboardText);
@@ -178,6 +193,42 @@ public:
     // is coming.
     Q_INVOKABLE bool publishDeck(const QString &provider = QString());
 
+    // --- Spec §4.8: offline media -----------------------------------------
+    // The bare URLs this deck would need before it can present with no network.
+    Q_INVOKABLE QStringList offlineMediaUrls() const;
+    // The user asked for it, explicitly. This is the only place in the app that
+    // starts a media fetch; opening and saving never do unless the deck's owner
+    // turned presentation.auto_prefetch_video on.
+    Q_INVOKABLE void prepareForOffline();
+
+    // --- Spec §7: the welcome deck ----------------------------------------
+    // Help -> How Omapresent works. Opens the read-only bundled deck.
+    Q_INVOKABLE bool openWelcomeDeck();
+    // "Edit a copy": drops the welcome deck in the home directory under a name
+    // that is not already taken, opens it, and returns its path.
+    Q_INVOKABLE QString editWelcomeCopy();
+    // Where the bundled deck lives, empty when the package is not installed.
+    static QString welcomeDeckPath();
+
+    // --- Spec §9: publish preferences and controls -------------------------
+    // { name -> { type, ...keys } } straight from publish.toml, for the picker.
+    Q_INVOKABLE QVariantMap publishProviders() const;
+    Q_INVOKABLE QString publishProvider() const;
+    Q_INVOKABLE bool setPublishProvider(const QString &provider);
+    Q_INVOKABLE QString publishAccess() const;
+    Q_INVOKABLE bool setPublishAccess(const QString &access);
+    Q_INVOKABLE QString publishDomain() const;
+    Q_INVOKABLE bool setPublishDomain(const QString &domain);
+    Q_INVOKABLE bool setPublishPassword(const QString &password);
+    Q_INVOKABLE QString publishSlug() const { return deckSlug(); }
+    Q_INVOKABLE void signInToProvider(const QString &email);
+    Q_INVOKABLE void confirmSignInCode(const QString &email, const QString &code);
+    // Stages a new version of a deck that already has a slug (spec §9).
+    Q_INVOKABLE bool republishDeck(const QString &provider = QString());
+    Q_INVOKABLE void requestPublishedVersions(const QString &provider = QString());
+    Q_INVOKABLE void revertPublished(const QString &versionId,
+                                     const QString &provider = QString());
+
 signals:
     void fileUrlChanged();
     void modifiedChanged();
@@ -196,6 +247,17 @@ signals:
     void previewUpdate(const QString &script);
     void pdfDialogRequested(const QUrl &suggestedUrl);
     void commandFinished(int exitCode);
+    void deckTitleChanged();
+    void settingsChanged();
+    void offlinePrefetchChanged();
+    // Spec §4.8: what "Prepare for offline" is doing, and how it ended.
+    void offlinePrefetchProgress(int done, int total);
+    void offlinePrefetchFinished(const QStringList &failed);
+    // Spec §9, for the publish preferences surface.
+    void publishSignInCodeSent();
+    void publishSignedIn();
+    void publishVersions(const QString &slug, const QVariantList &versions);
+    void publishClaimAvailable(const QString &claimUrl, const QString &claimToken);
 
 protected:
     // Window creation is a side effect. Keep it behind this seam so the
@@ -231,10 +293,16 @@ private:
     QJsonObject deckDocument(const QString &mode) const;
     static QString previewGotoScript(int slideIndex);
     QString deckSlug() const;
+    void applySettings();
+    QString providerForDeck(const QString &provider) const;
     QString buildWebBundle();
     void restoreSessionPosition();
     void writeSessionPosition();
     static QString sessionStatePath();
+    // The absolute path of the open deck. `omapresent notes/talk.md` and
+    // `omapresent ~/notes/talk.md` are the same deck and must remember the
+    // same position.
+    QString sessionKey() const;
 
     QUrl m_fileUrl;
     bool m_modified = false;
@@ -268,8 +336,14 @@ private:
     WebBundle m_webBundle;
     Presentation m_presentation;
     RenderHost m_renderHost;
+    Settings m_settings;
     PdfExport m_pdfExport;
     bool m_webEngineReady = false;
+    bool m_offlinePrefetchRunning = false;
+    // The scale the desktop asked for, before editor.text_scale multiplies it.
+    qreal m_desktopTextScale = 1.0;
+    // What the system portal reports, before editor.dark_mode overrides it.
+    bool m_systemDarkMode = true;
     QTimer m_deckTimer;
     QTimer m_sessionTimer;
     // Where the open deck was left, and where it should reopen (spec §10).
