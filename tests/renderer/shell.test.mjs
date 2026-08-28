@@ -38,6 +38,15 @@ test("deck CSS has no literal color values", async () => {
     assert.equal(/:\s*(?:black|white|red|blue|green|yellow|orange|magenta|cyan|brown)\b/i.test(css), false);
 });
 
+test("read mode has an article layout branch", async () => {
+    const css = await source("deck.css");
+    assert.match(css, /html\[data-op-view="read"\] #deck\.op-all-slides \{[\s\S]*?max-width: 38rem;[\s\S]*?line-height: 1\.65;/);
+    assert.match(css, /html\[data-op-view="read"\] #deck\.op-all-slides > \.op-slide \{[\s\S]*?min-height: 0;[\s\S]*?overflow: visible;/);
+    assert.match(css, /html\[data-op-view="read"\] #deck h1,[\s\S]*?font-size: 2\.75rem;[\s\S]*?text-align: left;/);
+    assert.match(css, /html\[data-op-view="read"\] #deck \.op-notes\.is-flow-note \{[\s\S]*?display: block;[\s\S]*?background: transparent;/);
+    assert.doesNotMatch(css, /html\[data-op-view="read"\] (?:h[1-6]|p|ul|ol|table|blockquote)\b/);
+});
+
 test("print mode lets long slides paginate without clipping", async () => {
     const css = await source("deck.css");
     const js = await source("render.js");

@@ -150,4 +150,17 @@ globalThis.addEventListener("load", () => setTimeout(() => {
         document.body.dataset.cachedSource = cached?.getAttribute("src") ?? "";
         document.body.dataset.cachedPreload = cached?.preload ?? "";
     }
+    if (fixtureParams.get("metrics") === "read") {
+        const heading = document.querySelector(".op-slide h1");
+        const slide = document.querySelector(".op-slide");
+        const note = document.querySelector(".op-notes.is-flow-note");
+        document.body.dataset.readHeadingSize = getComputedStyle(heading).fontSize;
+        document.body.dataset.readHeadingAlign = getComputedStyle(heading).textAlign;
+        document.body.dataset.readSlideMinHeight = getComputedStyle(slide).minHeight;
+        document.body.dataset.readStackDisplay = getComputedStyle(document.querySelector(".op-stack")).display;
+        document.body.dataset.readNoteDisplay = getComputedStyle(note).display;
+        document.body.dataset.readNoteText = note?.textContent.trim() ?? "";
+        document.body.dataset.readMeasure = String(document.querySelector("#deck").getBoundingClientRect().width);
+        document.body.dataset.readScrollY = String(globalThis.scrollY);
+    }
 }, 0));

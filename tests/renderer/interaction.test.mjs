@@ -71,3 +71,17 @@ test("remote video sources do not enter the DOM until play", {
     assert.equal(attribute(html, "data-cached-source"), "file:///tmp/cached-test.mp4");
     assert.equal(attribute(html, "data-cached-preload"), "metadata");
 });
+
+test("read view uses article type and flows speaker notes into the body", {
+    skip: !(await hasChromium()),
+}, async () => {
+    const html = await fixtureDom("?view=read&metrics=read");
+    assert.equal(attribute(html, "data-read-heading-size"), "44px");
+    assert.equal(attribute(html, "data-read-heading-align"), "left");
+    assert.equal(attribute(html, "data-read-slide-min-height"), "0px");
+    assert.equal(attribute(html, "data-read-stack-display"), "block");
+    assert.equal(attribute(html, "data-read-note-display"), "block");
+    assert.equal(attribute(html, "data-read-note-text"), "This paragraph is a speaker note.");
+    assert.ok(Number(attribute(html, "data-read-measure")) <= 608);
+    assert.equal(attribute(html, "data-read-scroll-y"), "0");
+});
