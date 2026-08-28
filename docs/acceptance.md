@@ -151,3 +151,23 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   at different depths, a case-mismatched name, spaces in paths, and a broken
   symlink. Follow-up review confirmed the walk moved to a `QThreadPool` worker
   and the watcher now caps directories and checks `addPaths()` for failures.
+- **2026-08-27 — theme.** Ran `parseColorsToml` over **all 29 themes installed
+  on this machine**, both `colors.toml` shapes, asserting the full canonical key
+  set, `#rrggbb` for every colour, `mode` ∈ {dark,light} and 16 ANSI entries.
+  All 29 clean. `contrastRatio` exact (black/white 21.0, self 1.0). Found one
+  real bug: `ensureContrast("#767676","#808080")` returned `#ffffff` at ratio
+  3.95, below the floor, because the direction is chosen from relative
+  luminance — and against a mid-grey background, darkening reaches 5.32 while
+  lightening tops out at 3.95. Reported as `tasks/review/theme-1.md`.
+- **2026-08-27 — publisher.** Verified `patchToml` against a config with
+  comments, blank lines and two provider tables: patching an existing key, a
+  top-level key, adding a key to an existing table, and adding a whole new
+  table all worked, and in every case the comments, the sibling keys and the
+  unrelated `command` provider's line came back byte-identical. `slugify`
+  correct on unicode, punctuation runs, whitespace, empty input, and idempotent.
+- **2026-08-27 — media.** `hostFor` correct on 26 real URL shapes across all
+  eight hosts plus direct and local files, including the negatives that matter:
+  `notyoutube.example.com` and `example.com/youtube/article` are not videos,
+  and neither is an unrecognised host (spec §4.8 has no yt-dlp fallback).
+  `isBareUrlLine` and `extractUrls` correctly ignore a URL inside prose and one
+  inside a code fence.
