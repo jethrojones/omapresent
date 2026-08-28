@@ -1429,3 +1429,10 @@ live run when those checks can be made without changing the user's baseline.
 **Tests:** Added loopback-only provider, backend, and QML contract cases. They cover no request before the user action, bearer auth, the official `dns_instructions` response, an existing-domain status lookup, preference preservation, copy, and errors. `qmllint src/Main.qml`, `./bin/build`, and `./bin/test` pass: 500 C++ and 43 renderer cases. Scoped Autoreview is clean after its DNS-shape finding was fixed.
 **Next:** none
 **NEEDS:** nothing
+
+### 2026-08-28 12:58 PT — codex (GPT-5.3 Codex Spark)
+**Task:** T16 renderer completion
+**Did:** Deferred every remote image behind an explicit themed load control in all renderer modes. Fixed published subtitle layout, toggle use, remote-note image persistence, and chrome keyboard focus. Added fenced-code-safe published title fallback. Added a narrow, documented Omarchy wallpaper package exception that rejects outside final and parent symlinks.
+**Tests:** Real Chromium proved zero image requests before activation, one request after activation, visible and toggleable subtitles, successful subtitle-image persistence, stable title fallback, and keyboard navigation after chrome focus. `./bin/build` and `./bin/test` pass. All C++ suites pass with no skips. Renderer 43/43 passes. Final scoped Autoreview is clean.
+**Next:** none
+**NEEDS:** nothing
