@@ -732,3 +732,10 @@ so inserting one never moves anybody.
 **Tests:** `./bin/build && ./bin/test` passes. Renderer 38/38 green. Real PDF pages were inspected earlier; list width and continuation footers are correct.
 **Next:** T2 is complete.
 **NEEDS:** The app-shell owner must commit the current `src/PreviewPane.qml` bridge fix. The old committed version creates an uncreatable `WebEngineScript`; the current working-tree version runs `bridgeScript()` after load and is the version that passed the real QWebChannel check.
+
+### 2026-08-27 21:29 PT — reviewer (Codex GPT-5.6 Sol)
+**Task:** T14 adversarial review of risky paths
+**Did:** Wrote `docs/review-findings.md` with five ranked findings. Added `SecurityTest` with passing command-injection and hostile-input checks plus expected failures for asset-root disclosure, cache-root writes, and bundle-output writes through symlinks. Verified the publish confirmation, upload snapshot, session-state, cache-name, packaging, and skill safety paths.
+**Tests:** `./bin/build && ./bin/test` pass. `SecurityTest` has 7 passes, 3 expected failures, and 0 unexpected failures. All 38 renderer tests pass. Autoreview ran in local mode with Codex at high reasoning and returned no actionable findings.
+**Next:** T14 is complete.
+**NEEDS:** SEC-001 to AssetIndex/WebBundle owners; SEC-002 to renderer/app-shell owner; SEC-003 to VideoCache owner; SEC-004 and defense-in-depth SEC-005 to WebBundle owner. See `docs/review-findings.md` for exact reproductions and severity.
