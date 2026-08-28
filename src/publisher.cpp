@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMimeDatabase>
@@ -453,6 +454,28 @@ QString providerValue(const QJsonObject &provider, const QString &key,
     return value;
 }
 
+QUrl hereApiBase(const QJsonObject &provider) {
+    const QString configured = provider.value(QStringLiteral("api_base")).toString();
+    if (configured.isEmpty())
+        return QUrl(QStringLiteral("https://here.now"));
+
+    const QUrl url(configured);
+    const QHostAddress address(url.host());
+    const bool loopback = url.host().compare(
+                              QStringLiteral("localhost"), Qt::CaseInsensitive) == 0
+        || address.isLoopback();
+    if (url.scheme() != QStringLiteral("http") || !loopback
+        || url.host().isEmpty() || !url.userInfo().isEmpty()) {
+        return {};
+    }
+    return url;
+}
+
+bool validHereApiBase(const QJsonObject &provider) {
+    return provider.value(QStringLiteral("api_base")).toString().isEmpty()
+        || hereApiBase(provider).isValid();
+}
+
 void appendBounded(QByteArray *buffer, const QByteArray &chunk,
                    qsizetype limit = 64 * 1024) {
     buffer->append(chunk);
@@ -613,7 +636,7 @@ QNetworkReply *Publisher::Private::hereRequest(const QByteArray &method,
                                                 const QJsonObject &provider,
                                                 const QJsonObject &body,
                                                 bool sendBody) {
-    QNetworkRequest request(QUrl(QStringLiteral("https://here.now") + path));
+    QNetworkRequest request(hereApiBase(provider).resolved(QUrl(path)));
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QStringLiteral("Omapresent/1.0"));
     const QString apiKey = provider.value(QStringLiteral("api_key")).toString();
@@ -1381,6 +1404,11 @@ void Publisher::publish(const QString &bundleDir, const QString &slug,
         return;
     }
     if (type == QStringLiteral("herenow")) {
+        if (!validHereApiBase(provider)) {
+            emit failed(QStringLiteral(
+                "The here.now api_base override must be an HTTP loopback URL."));
+            return;
+        }
         const QString apiKey = provider.value(QStringLiteral("api_key")).toString();
         if ((access == QStringLiteral("password")
              || access == QStringLiteral("restricted"))
@@ -1488,6 +1516,11 @@ void Publisher::republish(const QString &bundleDir, const QString &slug,
                         .arg(selected));
         return;
     }
+    if (!validHereApiBase(provider)) {
+        emit failed(QStringLiteral(
+            "The here.now api_base override must be an HTTP loopback URL."));
+        return;
+    }
     const QString safeSlug = slugify(slug);
     QString siteSlug = provider.value(QStringLiteral("sites")).toObject()
                            .value(safeSlug).toString();
@@ -1568,6 +1601,11 @@ void Publisher::requestVersions(const QString &slug,
             "Version history needs a signed-in here.now provider."));
         return;
     }
+    if (!validHereApiBase(provider)) {
+        emit failed(QStringLiteral(
+            "The here.now api_base override must be an HTTP loopback URL."));
+        return;
+    }
     if (!d->begin())
         return;
     const QString requestedSlug = slugify(slug);
@@ -1611,6 +1649,11 @@ void Publisher::revert(const QString &slug, const QString &versionId,
     if (type != QStringLiteral("herenow")
         || provider.value(QStringLiteral("api_key")).toString().isEmpty()) {
         emit failed(QStringLiteral("Revert needs a signed-in here.now provider."));
+        return;
+    }
+    if (!validHereApiBase(provider)) {
+        emit failed(QStringLiteral(
+            "The here.now api_base override must be an HTTP loopback URL."));
         return;
     }
     if (versionId.trimmed().isEmpty()) {
