@@ -353,3 +353,10 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   Self-containment survived: 32 files, zero `file:///`, `qrc:` or home paths.
   Two agents negotiated the CSS ownership boundary themselves (renderer inside
   `#deck`, webbundle outside it) and it held.
+- **SEC-006 verified fixed.** The CLI no longer uploads an empty deck when the
+  file fails to load. All three paths exit 1 with a message naming the file and
+  the reason — "it is a directory", "Permission denied", "No such file" — and
+  never reach the publish path. And the confirmation itself is right: a valid
+  deck prompts `Publish "how-omapresent-works" to an external host? [y/N]`,
+  declining prints "Nothing was uploaded." and exits 1. That is §11's safety
+  line working as written.
