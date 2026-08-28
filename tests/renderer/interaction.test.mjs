@@ -51,6 +51,27 @@ test("fragments reveal in DOM order and report every state through the host call
     assert.equal(attribute(html, "data-host-last-fragment"), "0");
 });
 
+test("recall overlays preserve all fragments and restore moved underlying state after host goto", {
+    skip: !(await hasChromium()),
+}, async () => {
+    const html = await fixtureDom("?metrics=recall");
+    assert.equal(attribute(html, "data-recall-overlay-visible"), "true");
+    assert.equal(attribute(html, "data-recall-overlay-fragments-revealed"), "true");
+    assert.equal(attribute(html, "data-recall-overlay-fragment-count"), "4");
+    assert.equal(attribute(html, "data-recall-after-update-overlay-visible"), "true");
+    assert.equal(attribute(html, "data-recall-after-update-overlay-fragments-revealed"), "true");
+    assert.equal(attribute(html, "data-recall-after-update-overlay-fragment-count"), "4");
+    assert.equal(attribute(html, "data-recall-before-slide"), "0");
+    assert.equal(attribute(html, "data-recall-after-goto-slide"), "1");
+    assert.equal(attribute(html, "data-recall-after-slide"), "1");
+    assert.equal(attribute(html, "data-recall-before-fragment"), attribute(html, "data-recall-after-fragment"));
+    assert.equal(attribute(html, "data-recall-after-goto-slide"), attribute(html, "data-recall-after-slide"));
+    assert.equal(attribute(html, "data-recall-after-goto-fragment"), "2");
+    assert.equal(attribute(html, "data-recall-before-scroll-top"), attribute(html, "data-recall-after-scroll-top"));
+    assert.equal(attribute(html, "data-recall-after-scroll-top"), attribute(html, "data-recall-after-goto-scroll-top"));
+    assert.ok(Number(attribute(html, "data-recall-after-state-count")) >= 4);
+});
+
 test("remote video sources do not enter the DOM until play", {
     skip: !(await hasChromium()),
 }, async () => {

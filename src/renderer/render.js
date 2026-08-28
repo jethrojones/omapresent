@@ -22,6 +22,7 @@ let roleWasAssigned = false;
 let activeMediaIndex = -1;
 let renderGeneration = 0;
 let renderToken = 0;
+let recallSnapshot = null;
 
 const fallbackPalette = {
     background: "#1d2021", foreground: "#ebdbb2", accent: "#d79921",
@@ -135,6 +136,28 @@ function recallSlides() {
             result.set(key, slide);
     }
     return result;
+}
+
+function captureCurrentRevealState() {
+    const scroller = currentScroller();
+    return {
+        slide: currentSlide,
+        fragment,
+        scrollTop: scroller?.scrollTop ?? 0,
+    };
+}
+
+function restoreRevealState(snapshot) {
+    if (!snapshot)
+        return;
+    currentSlide = Math.max(0, Math.min(slides.length - 1, snapshot.slide));
+    fragment = Math.max(0, Math.min(parseSlide(slides[currentSlide]?.markdown ?? "").fragmentCount, snapshot.fragment));
+    const scroller = currentScroller();
+    if (scroller) {
+        scroller.scrollTop = snapshot.scrollTop;
+        scrollPositions.set(currentSlide, snapshot.scrollTop);
+    }
+    updateFragments();
 }
 
 function missingTag(reference) {
@@ -587,7 +610,11 @@ function renderOverlays() {
         if (recalled) {
             const overlay = document.createElement("div");
             overlay.className = "op-recall-overlay";
-            overlay.append(slideElement(recalled, currentSlide, { showNotes: role === "presenter", showAllFragments: true }).section);
+            const section = slideElement(recalled, currentSlide, { showNotes: role === "presenter", showAllFragments: true }).section;
+            section.querySelectorAll(".op-fragment").forEach(item => {
+                item.dataset.revealed = "true";
+            });
+            overlay.append(section);
             document.body.append(overlay);
             root.classList.add("has-recall");
         }
@@ -667,6 +694,24 @@ function gotoSlide(index, resetFragments) {
         return;
     saveScroll();
     currentSlide = Math.max(0, Math.min(slides.length - 1, Math.trunc(Number(index) || 0)));
+    if (recall) {
+        if (recallSnapshot) {
+            recallSnapshot.slide = currentSlide;
+            const fragmentCount = parseSlide(slides[currentSlide]?.markdown ?? "").fragmentCount;
+            fragment = Math.max(0, Math.min(fragmentCount, recallSnapshot.fragment));
+            const rebasedScrollTop = recallSnapshot.scrollTop;
+            scrollPositions.set(currentSlide, rebasedScrollTop);
+            renderCurrent();
+            const scroller = currentScroller();
+            if (scroller)
+                scroller.scrollTop = rebasedScrollTop;
+            recallSnapshot.scrollTop = rebasedScrollTop;
+        } else {
+            recallSnapshot = captureCurrentRevealState();
+        }
+        emitState();
+        return;
+    }
     if (resetFragments)
         fragment = 0;
     activeMediaIndex = -1;
@@ -678,7 +723,14 @@ function replaceDeck(nextDeck) {
     saveScroll();
     const oldSlide = currentSlide;
     const oldFragment = fragment;
+    const activeRecall = recall;
     deck = nextDeck && typeof nextDeck === "object" ? nextDeck : { mode: "preview", slides: [] };
+    if (activeRecall && !recallSlides().has(activeRecall)) {
+        recall = "";
+        recallSnapshot = null;
+    }
+    if (!recall)
+        recallSnapshot = null;
     if (!roleWasAssigned) {
         role = deck.mode === "pdf" ? "export" : deck.mode === "web" ? "web" : deck.mode === "present" ? "audience" : "editor";
     }
@@ -747,13 +799,23 @@ const api = {
         const candidate = String(key ?? "").trim().toLowerCase();
         if (!recallSlides().has(candidate))
             return;
+        if (!recall)
+            recallSnapshot = captureCurrentRevealState();
         recall = candidate;
         renderOverlays();
         emitState();
     },
     hideRecall() {
+        const snapshot = recallSnapshot;
+        if (!recall) {
+            recallSnapshot = null;
+            emitState();
+            return;
+        }
         recall = "";
         renderOverlays();
+        restoreRevealState(snapshot);
+        recallSnapshot = null;
         emitState();
     },
     setBlank(mode) {

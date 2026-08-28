@@ -76,6 +76,24 @@ if (fixtureParams.get("metrics") === "remote-media" || fixtureParams.get("deck")
         },
     };
 }
+if (fixtureParams.get("metrics") === "recall") {
+    const baseBullets = Array.from({ length: 48 }, (_, index) => `- Base point ${index + 1}`).join("\n");
+    const recallDeck = [
+        {
+            index: 0,
+            markdown: `## Scroll and fragments\n\n${baseBullets}`,
+            recallKey: "",
+            skip: false,
+        },
+        {
+            index: 1,
+            markdown: "## Recall appendix\n\n- Headline\n- Proof\n  - Nested proof\n- Close",
+            recallKey: "q",
+            skip: false,
+        },
+    ];
+    globalThis.omapresentFixture.slides = recallDeck;
+}
 if (fixtureParams.get("metrics") === "interaction") {
     globalThis.omapresentHost = {
         state(payload) {
@@ -116,6 +134,62 @@ globalThis.addEventListener("load", () => setTimeout(() => {
         document.body.dataset.hostStateCount = String(fixtureHostPayloads.length);
         document.body.dataset.hostLastSlide = String(lastState.slideIndex);
         document.body.dataset.hostLastFragment = String(lastState.fragment);
+    }
+    if (fixtureParams.get("metrics") === "recall") {
+        const recallStates = [];
+        const deckAfterUpdate = JSON.parse(JSON.stringify(globalThis.omapresentFixture));
+        deckAfterUpdate.slides.unshift({
+            index: 0,
+            markdown: "## Inserted before the hidden slide",
+            recallKey: "",
+            skip: false,
+        });
+        for (let i = 0; i < deckAfterUpdate.slides.length; i += 1)
+            deckAfterUpdate.slides[i].index = i;
+        globalThis.omapresent.onState = state => recallStates.push(state);
+        globalThis.omapresent.goto(0);
+        globalThis.omapresent.next();
+        globalThis.omapresent.next();
+        setTimeout(() => {
+            const scroller = document.querySelector(".op-scroll");
+            if (scroller)
+                scroller.scrollTop = 180;
+            const beforeState = recallStates.at(-1) ?? {};
+            const beforeScrollTop = scroller?.scrollTop ?? 0;
+            const beforeScrollFraction = String(beforeState.scrollFraction ?? "0");
+            document.body.dataset.recallBeforeFragment = String(beforeState.fragment ?? 0);
+            document.body.dataset.recallBeforeSlide = String(beforeState.slideIndex ?? 0);
+            document.body.dataset.recallBeforeScrollTop = String(beforeScrollTop);
+            document.body.dataset.recallBeforeScrollFraction = beforeScrollFraction;
+
+            globalThis.omapresent.showRecall("q");
+            const overlayFragments = [...document.querySelectorAll(".op-recall-overlay .op-fragment")];
+            document.body.dataset.recallOverlayVisible = String(Boolean(overlayFragments.length));
+            document.body.dataset.recallOverlayFragmentsRevealed = String(overlayFragments.every(item => item.dataset.revealed === "true"));
+            document.body.dataset.recallOverlayFragmentCount = String(overlayFragments.length);
+
+            globalThis.omapresent.update(deckAfterUpdate);
+            const overlayAfterUpdateFragments = [...document.querySelectorAll(".op-recall-overlay .op-fragment")];
+            document.body.dataset.recallAfterUpdateOverlayVisible = String(Boolean(overlayAfterUpdateFragments.length));
+            document.body.dataset.recallAfterUpdateOverlayFragmentsRevealed = String(overlayAfterUpdateFragments.every(item => item.dataset.revealed === "true"));
+            document.body.dataset.recallAfterUpdateOverlayFragmentCount = String(overlayAfterUpdateFragments.length);
+
+            globalThis.omapresent.goto(1);
+            requestAnimationFrame(() => {
+                const afterGotoState = recallStates.at(-1) ?? {};
+                document.body.dataset.recallAfterGotoSlide = String(afterGotoState.slideIndex ?? 0);
+                document.body.dataset.recallAfterGotoFragment = String(afterGotoState.fragment ?? 0);
+                document.body.dataset.recallAfterGotoScrollTop = String(document.querySelector(".op-scroll")?.scrollTop ?? 0);
+
+                globalThis.omapresent.hideRecall();
+                const afterState = recallStates.at(-1) ?? {};
+                const afterScroller = document.querySelector(".op-scroll");
+                document.body.dataset.recallAfterFragment = String(afterState.fragment ?? 0);
+                document.body.dataset.recallAfterSlide = String(afterState.slideIndex ?? 0);
+                document.body.dataset.recallAfterScrollTop = String(afterScroller?.scrollTop ?? 0);
+                document.body.dataset.recallAfterStateCount = String(recallStates.length);
+            });
+        }, 0);
     }
     if (fixtureParams.get("metrics") === "remote-media") {
         const remoteStates = [];
