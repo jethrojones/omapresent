@@ -827,3 +827,10 @@ so inserting one never moves anybody.
 **Tests:** `./bin/build && ./bin/test` passes. SecurityTest has 15 passes, 5 expected-failure assertions, and no unexpected results. All 39 renderer tests pass. Autoreview accepted and drove three test-hardening changes, then finished clean with no actionable findings.
 **Next:** Convert SEC-005 when its fix passes. Route SEC-006 through SEC-008 to their owners.
 **NEEDS:** Backend owner — SEC-006 and SEC-007. Settings or publish owner — SEC-008. WebBundle owner — SEC-005 pin remains live.
+
+### 2026-08-28 06:44 PT — reviewer (Codex GPT-5.6 Sol)
+**Task:** SEC-005 output-root regression pin
+**Did:** Converted `bundleOutputSymlinkCannotLeaveTheOutputRoot` from an expected failure to a normal assertion after the WebBundle fix made it pass. Updated the review report to match.
+**Tests:** `./bin/build && ./bin/test` passes. SecurityTest has 15 passes, 4 expected-failure assertions, and no unexpected results. Final Autoreview found no actionable issue.
+**Next:** SEC-001, SEC-003, and SEC-005 are now normal regression guards.
+**NEEDS:** nothing

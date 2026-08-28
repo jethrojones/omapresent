@@ -86,7 +86,7 @@ The issue is in `src/webbundle.cpp` in `ensureDirectory()` and `writeFile()`.
 
 The current GUI and CLI publish path uses a new `QTemporaryDir`, so an attacker cannot normally pre-place this symlink there. This is a defense-in-depth defect in the public build API. It becomes more serious if a future export path builds into a user-selected existing directory.
 
-`SecurityTest::bundleOutputSymlinkCannotLeaveTheOutputRoot` pins this as an expected failure.
+`SecurityTest::bundleOutputSymlinkCannotLeaveTheOutputRoot` now guards the fixed behavior with a normal assertion.
 
 ## Second-pass findings — 2026-08-28
 

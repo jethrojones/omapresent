@@ -288,7 +288,6 @@ private slots:
         bundle.build(output);
 
         const bool escaped = readBytes(sentinel) != QByteArrayLiteral("KEEP-ME");
-        QEXPECT_FAIL("", "SEC-005: WebBundle follows a pre-existing directory symlink below its output root.", Continue);
         QVERIFY2(!escaped, "The bundle build overwrote a file outside its output root.");
     }
 
