@@ -33,3 +33,36 @@ function replaceRange(editor, rangeStart, rangeEnd, replacement,
 
     return insertedText;
 }
+
+// Spec §4.10: pressing Return a third consecutive time at the end of the
+// document turns the blank lines it made into a slide break. Returns the edit
+// to apply — {start, end, insert} — or null when this is an ordinary Return.
+//
+// It reads the text rather than counting keystrokes, so it behaves the same
+// however the blank lines got there, and it deliberately does nothing when:
+//   - there is anything but whitespace after the caret (mid-document Returns),
+//   - nothing has been written yet (a leading `---` would be frontmatter),
+//   - the last thing written was itself a separator.
+function slideBreakForReturn(text, cursorPosition) {
+    if (cursorPosition < 0 || cursorPosition > text.length)
+        return null;
+    if (text.slice(cursorPosition).trim() !== "")
+        return null;
+
+    var before = text.slice(0, cursorPosition);
+    var contentEnd = before.length;
+    while (contentEnd > 0 && /\s/.test(before.charAt(contentEnd - 1)))
+        contentEnd--;
+    if (contentEnd === 0)
+        return null;
+
+    // Two blank lines behind the caret means three newlines behind it.
+    if (before.slice(contentEnd).split("\n").length - 1 < 3)
+        return null;
+
+    var lastLineStart = before.lastIndexOf("\n", contentEnd - 1) + 1;
+    if (before.slice(lastLineStart, contentEnd).trim() === "---")
+        return null;
+
+    return { start: contentEnd, end: text.length, insert: "\n\n---\n\n" };
+}

@@ -22,6 +22,8 @@ SOURCES += \
     ../src/omarchytheme.cpp \
     ../src/videocache.cpp \
     ../src/publisher.cpp \
+    ../src/presentation.cpp \
+    ../src/renderhost.cpp \
     ../src/settings.cpp \
     ../src/webbundle.cpp \
     ../src/markdownhighlighter.cpp
@@ -34,6 +36,8 @@ HEADERS += \
     ../src/omarchytheme.h \
     ../src/videocache.h \
     ../src/publisher.h \
+    ../src/presentation.h \
+    ../src/renderhost.h \
     ../src/settings.h \
     ../src/webbundle.h \
     ../src/markdownhighlighter.h

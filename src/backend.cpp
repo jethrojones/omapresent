@@ -3,6 +3,7 @@
 #include <QClipboard>
 #include <QColor>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -16,6 +17,7 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLockFile>
@@ -30,11 +32,35 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <limits>
+#include <utility>
 
 #include "markdownhighlighter.h"
 
 constexpr qreal typoraLineHeightPercent = 140;
 const QString lastSaveDirectorySetting = QStringLiteral("file/lastSaveDirectory");
+const QString welcomeShownSetting = QStringLiteral("firstRun/welcomeShown");
+const QString installedSkillPath = QStringLiteral("/usr/share/omapresent/skill");
+const QString installedWelcomeDeck = QStringLiteral("/usr/share/omapresent/welcome.md");
+
+// A keystroke must not reparse a 200-slide deck, so edits collect for a beat
+// before the preview and any running presentation are handed a new document.
+constexpr int deckRebuildDelayMs = 150;
+// The renderer reports every scroll; the session file is only interesting once
+// the reader has settled somewhere.
+constexpr int sessionWriteDelayMs = 2000;
+constexpr int maxRememberedDecks = 200;
+
+// Spec §9 asks the user before an upload; a pipe that cannot answer is a no.
+static bool confirmPublishOnStdin(const QString &slug) {
+    QTextStream out(stdout);
+    out << QStringLiteral("Publish \"%1\" to an external host? [y/N] ").arg(slug);
+    out.flush();
+
+    QTextStream in(stdin);
+    const QString answer = in.readLine().trimmed().toLower();
+    return answer == QStringLiteral("y") || answer == QStringLiteral("yes");
+}
 
 QString Backend::normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
@@ -127,9 +153,58 @@ Backend::Backend(QObject *parent) : QObject(parent) {
         loadOmarchyTheme();
         watchOmarchyTheme();
     });
+
+    m_deckTimer.setSingleShot(true);
+    m_deckTimer.setInterval(deckRebuildDelayMs);
+    connect(&m_deckTimer, &QTimer::timeout, this, &Backend::rebuildDeck);
+
+    m_sessionTimer.setSingleShot(true);
+    m_sessionTimer.setInterval(sessionWriteDelayMs);
+    connect(&m_sessionTimer, &QTimer::timeout, this, &Backend::writeSessionPosition);
+
+    // How C++ learns where the reader is: the renderer reports it through the
+    // `omapresentHost` channel object (docs/renderer-contract.md §2).
+    connect(&m_renderHost, &RenderHost::stateChanged, this, [this]() {
+        m_slideIndex = m_renderHost.slideIndex();
+        m_scrollFraction = m_renderHost.scrollFraction();
+        m_hasRendererState = true;
+        m_sessionTimer.start();
+    });
+
+    // A theme change repaints every open surface. It goes out through the same
+    // update() path as an edit, which is what keeps slide and scroll position.
+    connect(&m_theme, &OmarchyTheme::themeChanged, this, [this]() {
+        loadOmarchyTheme();
+        rebuildDeck();
+    });
+    connect(&m_assets, &AssetIndex::indexChanged, this, &Backend::scheduleDeckRebuild);
+    connect(&m_media, &VideoCache::cacheChanged, this, &Backend::scheduleDeckRebuild);
+
+    connect(&m_publisher, &Publisher::published, this,
+            [this](const QString &liveUrl, const QString &) {
+                setStatus(QStringLiteral("Published to %1").arg(liveUrl));
+            });
+    connect(&m_publisher, &Publisher::failed, this, [this](const QString &message) {
+        setStatus(QStringLiteral("Could not publish: %1").arg(message));
+    });
+    connect(&m_pdfExport, &PdfExport::finished, this,
+            [this](bool ok, const QString &path, const QString &message) {
+                setStatus(ok ? QStringLiteral("Exported %1").arg(QFileInfo(path).fileName())
+                             : message);
+            });
 }
 
-Backend::~Backend() = default;
+Backend::~Backend() {
+    writeSessionPosition();
+}
+
+void Backend::setWebEngineReady(bool ready) {
+    if (m_webEngineReady == ready)
+        return;
+
+    m_webEngineReady = ready;
+    emit webEngineReadyChanged();
+}
 
 void Backend::setParentWindow(QWindow *window) {
     m_parentWindow = window;
@@ -177,6 +252,7 @@ void Backend::attachDocument(QObject *textDocument) {
         delete m_highlighter.data();
 
     m_document = quickDocument->textDocument();
+    m_ownDocument.reset();
     m_lastDocumentText = m_document->toPlainText();
     m_highlighter = new MarkdownHighlighter(m_document);
     m_highlighter->setDarkMode(m_darkMode);
@@ -211,6 +287,9 @@ void Backend::open(const QUrl &url) {
         return;
     }
 
+    writeSessionPosition();
+    ensureDocument();
+
     const QByteArray contents = file.readAll();
     loadDocumentText(QString::fromUtf8(contents));
     clearRecovery();
@@ -220,6 +299,14 @@ void Backend::open(const QUrl &url) {
     watchCurrentFile();
     setModified(false);
     setStatus(QStringLiteral("Opened %1").arg(fileName()));
+
+    // Image references and the video cache resolve against the deck's own
+    // folder until `root:` says otherwise (spec §4.5).
+    const QString deckDir = QFileInfo(url.toLocalFile()).absolutePath();
+    m_assets.setDeckDir(deckDir);
+    m_media.setDeckDir(deckDir);
+    restoreSessionPosition();
+    rebuildDeck();
 }
 
 void Backend::save() {
@@ -355,6 +442,7 @@ bool Backend::editorTextChanged() {
     }
 
     scheduleWordCount();
+    scheduleDeckRebuild();
     setModified(true);
     setStatus(QStringLiteral("Unsaved"));
     scheduleRecovery();
@@ -423,6 +511,7 @@ void Backend::saveWindowGeometry(int x, int y, int width, int height, bool maxim
 }
 
 void Backend::loadDocumentText(const QString &text) {
+    ensureDocument();
     if (!m_document) {
         setStatus(QStringLiteral("Could not attach the Markdown renderer."));
         return;
@@ -579,11 +668,24 @@ void Backend::loadOmarchyTheme() {
     m_themeAccent = m_darkMode ? QStringLiteral("#5584aa") : QStringLiteral("#2077b2");
     m_themeSelection = m_darkMode ? QStringLiteral("#186a9a") : QStringLiteral("#2077b2");
 
+    QString themeMode;
+    const QJsonObject palette = m_theme.palette();
+    if (!palette.isEmpty()) {
+        // Spec §6: OmarchyTheme resolves the one palette every surface wears,
+        // including the `theme:` override a deck can ask for.
+        themeMode = palette.value(QStringLiteral("mode")).toString();
+        m_themeBackground = palette.value(QStringLiteral("background")).toString(m_themeBackground);
+        m_themeForeground = palette.value(QStringLiteral("foreground")).toString(m_themeForeground);
+        m_themeAccent = palette.value(QStringLiteral("accent")).toString(m_themeAccent);
+        m_themeSelection = palette.value(QStringLiteral("selection")).toString(m_themeSelection);
+    }
+
     const QString colorsPath = QDir::homePath()
         + QStringLiteral("/.local/state/omarchy/current/theme/colors.toml");
-    QString themeMode;
     QFile file(colorsPath);
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    // Only when OmarchyTheme has nothing: on a machine with no Omarchy theme
+    // installed the editor still wants the four colours it draws itself with.
+    if (palette.isEmpty() && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&file);
         while (!in.atEnd()) {
             const QString line = in.readLine().trimmed();
@@ -763,4 +865,449 @@ void Backend::reapplyTypographyToChange() {
     cursor.mergeBlockFormat(blockFormat);
     cursor.endEditBlock();
     m_formattingTypography = false;
+}
+
+void Backend::ensureDocument() {
+    if (m_document)
+        return;
+
+    // `omapresent export --pdf` and `omapresent publish` run with no window and
+    // therefore no QML text document; give the file somewhere to live.
+    m_ownDocument = std::make_unique<QTextDocument>();
+    m_document = m_ownDocument.get();
+}
+
+void Backend::scheduleDeckRebuild() {
+    m_deckTimer.start();
+}
+
+void Backend::rebuildDeck() {
+    m_deckTimer.stop();
+    m_deck.setSource(currentDocumentText());
+    applyFrontmatter();
+
+    const QJsonObject document = deckDocument(QStringLiteral("preview"));
+    // update(), never render(): the contract says update() is the one that
+    // keeps the slide and scroll position across an edit.
+    emit previewUpdate(RenderHost::callScript(QStringLiteral("update"), document));
+    m_presentation.setDeck(document);
+}
+
+void Backend::applyFrontmatter() {
+    const QVariantMap frontmatter = m_deck.frontmatter();
+
+    const QString root = frontmatter.value(QStringLiteral("root")).toString();
+    if (root != m_assets.root())
+        m_assets.setRoot(root);
+
+    // Guarded because setOverrideTheme() reloads, which comes back round as
+    // themeChanged() and another rebuild.
+    const QString theme = frontmatter.value(QStringLiteral("theme")).toString();
+    if (theme != m_theme.overrideTheme())
+        m_theme.setOverrideTheme(theme);
+}
+
+QJsonObject Backend::deckDocument(const QString &mode) const {
+    QStringList references;
+    QStringList urls;
+    const QVector<Slide> slides = m_deck.slides();
+    for (const Slide &slide : slides) {
+        references += AssetIndex::extractReferences(slide.markdown);
+        urls += VideoCache::extractUrls(slide.markdown);
+    }
+    references.removeDuplicates();
+    urls.removeDuplicates();
+
+    QJsonObject media;
+    for (const QString &url : std::as_const(urls))
+        media.insert(url, m_media.describe(url));
+
+    return RenderHost::composeDeck(mode, m_deck.toJson(),
+                                   m_assets.resolveAll(references), media,
+                                   m_theme.palette(), m_theme.backgroundImagePath(),
+                                   m_textScale);
+}
+
+QString Backend::previewRenderScript() {
+    if (m_deckTimer.isActive())
+        rebuildDeck();
+
+    QString script = RenderHost::callScript(QStringLiteral("render"),
+                                            deckDocument(QStringLiteral("preview")));
+    // Spec §10: a deck reopens where it was left.
+    if (m_slideIndex > 0) {
+        script += QStringLiteral("window.omapresent && window.omapresent.goto(%1);")
+                      .arg(m_slideIndex);
+    }
+    if (m_scrollFraction > 0.0) {
+        script += QStringLiteral("window.omapresent && window.omapresent.setScroll(%1);")
+                      .arg(m_scrollFraction, 0, 'f', 4);
+    }
+    return script;
+}
+
+int Backend::slideIndexForCursor(int cursorPosition) const {
+    const QString text = currentDocumentText();
+    const int position = qBound(0, cursorPosition, int(text.size()));
+    const int line = text.left(position).count(QLatin1Char('\n'));
+    return qMax(0, m_deck.slideIndexForLine(line));
+}
+
+QStringList Backend::pathsFromUriList(const QString &uriListText) {
+    QStringList paths;
+    // RFC 2483: CRLF separated, `#` comment lines allowed.
+    static const QRegularExpression lineBreakRe(QStringLiteral("[\r\n]+"));
+    const QStringList lines = uriListText.split(lineBreakRe, Qt::SkipEmptyParts);
+    for (const QString &line : lines) {
+        const QString candidate = line.trimmed();
+        if (candidate.isEmpty() || candidate.startsWith(QLatin1Char('#')))
+            continue;
+
+        // toLocalFile() is what undoes the percent-encoding Wayland arrives
+        // with, so a path with spaces in it lands intact.
+        const QUrl url(candidate);
+        if (url.isLocalFile())
+            paths.append(url.toLocalFile());
+    }
+    return paths;
+}
+
+QString Backend::imageEmbedsForDrop(const QString &uriListText) const {
+    QStringList embeds;
+    const QStringList paths = pathsFromUriList(uriListText);
+    for (const QString &path : paths)
+        embeds.append(QStringLiteral("![[%1]]").arg(m_assets.shortestUniqueReference(path)));
+    return embeds.join(QLatin1Char('\n'));
+}
+
+void Backend::presentFrom(int slideIndex) {
+    if (m_deckTimer.isActive())
+        rebuildDeck();
+
+    m_presentation.setDeck(deckDocument(QStringLiteral("present")));
+    m_presentation.start(qMax(0, slideIndex));
+}
+
+void Backend::exportPdfDialog() {
+    const QFileInfo deckFile(m_fileUrl.toLocalFile());
+    const QDir directory = m_fileUrl.isLocalFile() ? deckFile.absoluteDir() : QDir::home();
+    const QString base = m_fileUrl.isLocalFile() ? deckFile.completeBaseName()
+                                                 : QStringLiteral("Untitled");
+    emit pdfDialogRequested(
+        QUrl::fromLocalFile(directory.filePath(base + QStringLiteral(".pdf"))));
+}
+
+void Backend::exportPdf(const QUrl &url) {
+    if (!url.isLocalFile()) {
+        setStatus(QStringLiteral("Only local files can be exported."));
+        return;
+    }
+
+    if (m_deckTimer.isActive())
+        rebuildDeck();
+
+    setStatus(QStringLiteral("Exporting %1…")
+                  .arg(QFileInfo(url.toLocalFile()).fileName()));
+    m_pdfExport.run(deckDocument(QStringLiteral("pdf")), url.toLocalFile());
+}
+
+QString Backend::deckSlug() const {
+    const QVariantMap frontmatter = m_deck.frontmatter();
+    const QVariantMap publish = frontmatter.value(QStringLiteral("publish")).toMap();
+
+    QString source = publish.value(QStringLiteral("slug")).toString();
+    if (source.isEmpty())
+        source = frontmatter.value(QStringLiteral("title")).toString();
+    if (source.isEmpty())
+        source = QFileInfo(m_fileUrl.toLocalFile()).completeBaseName();
+    return Publisher::slugify(source);
+}
+
+QString Backend::buildWebBundle() {
+    m_bundle = std::make_unique<QTemporaryDir>();
+    if (!m_bundle->isValid()) {
+        setStatus(QStringLiteral("Could not make a place to build the bundle."));
+        return {};
+    }
+
+    m_webBundle.setDeck(deckDocument(QStringLiteral("web")));
+    m_webBundle.setDeckDir(QFileInfo(m_fileUrl.toLocalFile()).absolutePath());
+    if (!m_webBundle.build(m_bundle->path())) {
+        setStatus(QStringLiteral("Could not build the web bundle: %1")
+                      .arg(m_webBundle.lastError()));
+        return {};
+    }
+    return m_bundle->path();
+}
+
+bool Backend::publishDeck(const QString &provider) {
+    if (m_deckTimer.isActive())
+        rebuildDeck();
+
+    const QString bundle = buildWebBundle();
+    if (bundle.isEmpty())
+        return false;
+
+    const QVariantMap publish = m_deck.frontmatter().value(QStringLiteral("publish")).toMap();
+    const QString chosen = provider.isEmpty()
+        ? publish.value(QStringLiteral("provider")).toString()
+        : provider;
+
+    setStatus(QStringLiteral("Publishing %1…").arg(deckSlug()));
+    m_publisher.publish(bundle, deckSlug(), chosen,
+                        publish.value(QStringLiteral("access")).toString());
+    return true;
+}
+
+Backend::CommandLine Backend::parseCommandLine(const QStringList &arguments) {
+    CommandLine parsed;
+    QStringList rest = arguments;
+
+    if (!rest.isEmpty()) {
+        const QString first = rest.constFirst();
+        if (first == QStringLiteral("present"))
+            parsed.command = CommandLine::Present;
+        else if (first == QStringLiteral("export"))
+            parsed.command = CommandLine::ExportPdf;
+        else if (first == QStringLiteral("publish"))
+            parsed.command = CommandLine::Publish;
+
+        if (parsed.command != CommandLine::Edit)
+            rest.removeFirst();
+    }
+
+    bool sawPdfFlag = false;
+    for (int i = 0; i < rest.size(); ++i) {
+        const QString argument = rest.at(i);
+        if (argument == QStringLiteral("--pdf")) {
+            sawPdfFlag = true;
+        } else if (argument == QStringLiteral("--yes") || argument == QStringLiteral("-y")) {
+            parsed.assumeYes = true;
+        } else if (argument == QStringLiteral("--provider")) {
+            if (i + 1 >= rest.size()) {
+                parsed.error = QStringLiteral("--provider needs a provider name.");
+                return parsed;
+            }
+            parsed.provider = rest.at(++i);
+        } else if (argument.startsWith(QStringLiteral("--provider="))) {
+            parsed.provider = argument.section(QLatin1Char('='), 1);
+        } else if (argument.startsWith(QLatin1Char('-')) && argument.size() > 1) {
+            parsed.error = QStringLiteral("Unknown option %1.").arg(argument);
+            return parsed;
+        } else if (parsed.file.isEmpty()) {
+            parsed.file = argument;
+        } else {
+            parsed.error = QStringLiteral("One deck at a time, please.");
+            return parsed;
+        }
+    }
+
+    if (sawPdfFlag && parsed.command != CommandLine::ExportPdf)
+        parsed.error = QStringLiteral("--pdf belongs to `omapresent export`.");
+    else if (!parsed.provider.isEmpty() && parsed.command != CommandLine::Publish)
+        parsed.error = QStringLiteral("--provider belongs to `omapresent publish`.");
+    else if (parsed.command == CommandLine::ExportPdf && !sawPdfFlag)
+        parsed.error = QStringLiteral("`omapresent export` needs --pdf.");
+    else if (parsed.command != CommandLine::Edit && parsed.file.isEmpty())
+        parsed.error = QStringLiteral("That command needs a file.");
+
+    return parsed;
+}
+
+QString Backend::usage() {
+    return QStringLiteral(
+        "Usage:\n"
+        "  omapresent [<file>]                       edit a deck\n"
+        "  omapresent present <file>                 present it\n"
+        "  omapresent export --pdf <file>            write <file>.pdf\n"
+        "  omapresent publish <file> [--provider <name>] [--yes]\n"
+        "                                            upload it (asks first)\n");
+}
+
+void Backend::runCommand(const CommandLine &command) {
+    const QFileInfo deckFile(command.file);
+    if (!deckFile.exists()) {
+        QTextStream(stderr) << QStringLiteral("No such file: %1\n").arg(command.file);
+        emit commandFinished(1);
+        return;
+    }
+
+    open(QUrl::fromLocalFile(deckFile.absoluteFilePath()));
+
+    if (command.command == CommandLine::ExportPdf) {
+        connect(&m_pdfExport, &PdfExport::finished, this,
+                [this](bool ok, const QString &path, const QString &message) {
+                    if (ok)
+                        QTextStream(stdout) << path << '\n';
+                    else
+                        QTextStream(stderr) << message << '\n';
+                    emit commandFinished(ok ? 0 : 1);
+                });
+        exportPdf(QUrl::fromLocalFile(
+            deckFile.absoluteDir().filePath(deckFile.completeBaseName()
+                                            + QStringLiteral(".pdf"))));
+        return;
+    }
+
+    // Publishing hands the deck to someone else's server, so it is never done
+    // on the strength of the command line alone (spec §9, §11).
+    if (!command.assumeYes && !confirmPublishOnStdin(deckSlug())) {
+        QTextStream(stderr) << "Nothing was uploaded.\n";
+        emit commandFinished(1);
+        return;
+    }
+
+    connect(&m_publisher, &Publisher::published, this,
+            [this](const QString &liveUrl, const QString &) {
+                QTextStream(stdout) << liveUrl << '\n';
+                emit commandFinished(0);
+            });
+    connect(&m_publisher, &Publisher::failed, this, [this](const QString &message) {
+        QTextStream(stderr) << message << '\n';
+        emit commandFinished(1);
+    });
+    if (!publishDeck(command.provider)) {
+        QTextStream(stderr) << status() << '\n';
+        emit commandFinished(1);
+    }
+}
+
+QStringList Backend::agentSkillDirectories(const QString &homeDirectory) {
+    // The four Omarchy links its own system skills into, in its order.
+    static const QStringList relativePaths{
+        QStringLiteral(".claude/skills"), QStringLiteral(".agents/skills"),
+        QStringLiteral(".codex/skills"), QStringLiteral(".pi/agent/skills")};
+
+    QStringList directories;
+    const QDir home(homeDirectory);
+    for (const QString &relative : relativePaths) {
+        const QString path = home.filePath(relative);
+        if (QFileInfo(path).isDir()) {
+            directories.append(path);
+            continue;
+        }
+        // The agent is installed but keeps no skills yet. Making its skills
+        // directory is fair; making a home for an agent that is not here is not.
+        if (QFileInfo(QFileInfo(path).path()).isDir() && QDir().mkpath(path))
+            directories.append(path);
+    }
+    return directories;
+}
+
+QStringList Backend::installAgentSkill(const QString &skillSource, const QString &name,
+                                       const QStringList &skillDirectories) {
+    QStringList links;
+    const QString canonicalSource = QFileInfo(skillSource).canonicalFilePath();
+    if (canonicalSource.isEmpty() || !QFileInfo(skillSource).isDir())
+        return links;
+
+    for (const QString &directory : skillDirectories) {
+        const QString link = QDir(directory).filePath(name);
+        const QFileInfo existing(link);
+
+        if (existing.isSymLink()) {
+            if (QFileInfo(existing.symLinkTarget()).canonicalFilePath() == canonicalSource)
+                links.append(link);
+            else
+                qWarning() << "Leaving" << link << "alone: it points at"
+                           << existing.symLinkTarget();
+            continue;
+        }
+        if (existing.exists()) {
+            qWarning() << "Leaving" << link << "alone: it is not a symlink.";
+            continue;
+        }
+        if (QFile::link(skillSource, link))
+            links.append(link);
+        else
+            qWarning() << "Could not link the Omapresent skill into" << directory;
+    }
+    return links;
+}
+
+void Backend::completeFirstRun() {
+    // Idempotent, so it runs every launch rather than only the first: a skills
+    // directory that appears later still gets its link, and one that is already
+    // there costs four stats. Nothing here may stop the app from starting.
+    installAgentSkill(installedSkillPath, QStringLiteral("omapresent"),
+                      agentSkillDirectories(QDir::homePath()));
+
+    QSettings settings;
+    if (settings.value(welcomeShownSetting, false).toBool())
+        return;
+    // A first launch that was handed a deck of its own is not the moment.
+    if (m_fileUrl.isLocalFile())
+        return;
+
+    settings.setValue(welcomeShownSetting, true);
+    if (QFileInfo::exists(installedWelcomeDeck))
+        open(QUrl::fromLocalFile(installedWelcomeDeck));
+}
+
+QString Backend::sessionStatePath() {
+    // Spec §10 names this path; XDG_STATE_HOME moves it, as it should.
+    const QString stateHome = qEnvironmentVariable(
+        "XDG_STATE_HOME", QDir::homePath() + QStringLiteral("/.local/state"));
+    return stateHome + QStringLiteral("/omapresent/sessions.json");
+}
+
+void Backend::restoreSessionPosition() {
+    m_slideIndex = 0;
+    m_scrollFraction = 0.0;
+    m_hasRendererState = false;
+    if (!m_fileUrl.isLocalFile())
+        return;
+
+    QFile file(sessionStatePath());
+    if (!file.open(QIODevice::ReadOnly))
+        return;
+
+    const QJsonObject entry = QJsonDocument::fromJson(file.readAll())
+                                  .object()
+                                  .value(m_fileUrl.toLocalFile())
+                                  .toObject();
+    m_slideIndex = entry.value(QStringLiteral("slide")).toInt();
+    m_scrollFraction = entry.value(QStringLiteral("scroll")).toDouble();
+}
+
+void Backend::writeSessionPosition() {
+    // Nothing to remember until a renderer has told us where the reader is.
+    if (!m_hasRendererState || !m_fileUrl.isLocalFile())
+        return;
+
+    const QString path = sessionStatePath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+
+    QJsonObject sessions;
+    QFile existing(path);
+    if (existing.open(QIODevice::ReadOnly))
+        sessions = QJsonDocument::fromJson(existing.readAll()).object();
+    existing.close();
+
+    sessions.insert(m_fileUrl.toLocalFile(),
+                    QJsonObject{{QStringLiteral("slide"), m_slideIndex},
+                                {QStringLiteral("scroll"), m_scrollFraction},
+                                {QStringLiteral("seenAt"),
+                                 QDateTime::currentSecsSinceEpoch()}});
+
+    // Decks come and go; the file should not grow forever.
+    while (sessions.size() > maxRememberedDecks) {
+        QString oldestDeck;
+        qint64 oldestSeenAt = std::numeric_limits<qint64>::max();
+        for (auto it = sessions.constBegin(); it != sessions.constEnd(); ++it) {
+            const qint64 seenAt = qint64(it.value().toObject()
+                                             .value(QStringLiteral("seenAt")).toDouble());
+            if (seenAt <= oldestSeenAt) {
+                oldestSeenAt = seenAt;
+                oldestDeck = it.key();
+            }
+        }
+        sessions.remove(oldestDeck);
+    }
+
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return;
+    file.write(QJsonDocument(sessions).toJson(QJsonDocument::Compact));
+    file.commit();
 }

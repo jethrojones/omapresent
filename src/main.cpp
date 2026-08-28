@@ -6,14 +6,21 @@
 #include <QQmlContext>
 #include <QQmlError>
 #include <QQuickStyle>
+#include <QTextStream>
+#include <QTimer>
 #include <QUrl>
 #include <QWindow>
 #include <QFile>
+#include <QtWebEngineQuick>
 
 #include "backend.h"
 #include "systemtheme.h"
 
 int main(int argc, char *argv[]) {
+    // The renderer is a web page, and Chromium has to be told before the
+    // application object exists.
+    QtWebEngineQuick::initialize();
+
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("omapresent"));
     app.setDesktopFileName(QStringLiteral("omapresent"));
@@ -24,7 +31,29 @@ int main(int argc, char *argv[]) {
 
     QQuickStyle::setStyle(QStringLiteral("Material"));
 
+    const Backend::CommandLine command = Backend::parseCommandLine(app.arguments().mid(1));
+    if (!command.error.isEmpty()) {
+        QTextStream(stderr) << command.error << '\n' << Backend::usage();
+        return 2;
+    }
+
     Backend backend(&app);
+    backend.setWebEngineReady(true);
+
+    // `export` and `publish` never open a window: they render, write and exit.
+    if (!command.needsWindow()) {
+        int exitCode = 1;
+        QObject::connect(&backend, &Backend::commandFinished, &app, [&](int code) {
+            exitCode = code;
+            app.quit();
+        });
+        QTimer::singleShot(0, &backend, [&backend, command]() {
+            backend.runCommand(command);
+        });
+        app.exec();
+        return exitCode;
+    }
+
     SystemTheme systemTheme(&app);
     backend.setDarkMode(systemTheme.darkMode());
     QObject::connect(&systemTheme, &SystemTheme::darkModeChanged, &backend,
@@ -67,9 +96,12 @@ int main(int argc, char *argv[]) {
 
     backend.setParentWindow(qobject_cast<QWindow *>(engine.rootObjects().constFirst()));
 
-    const QStringList args = app.arguments();
-    if (args.size() > 1 && !backend.modified())
-        backend.open(QUrl::fromLocalFile(args.at(1)));
+    if (!command.file.isEmpty() && !backend.modified())
+        backend.open(QUrl::fromLocalFile(command.file));
+    backend.completeFirstRun();
+
+    if (command.command == Backend::CommandLine::Present)
+        backend.presentFrom(0);
 
     return app.exec();
 }
