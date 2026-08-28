@@ -647,7 +647,13 @@ void OmarchyTheme::reload()
             name = QStringLiteral("unknown");
     }
 
-    const QJsonObject palette = parseColorsToml(readUtf8File(colorsPath));
+    const QString colorsText = readUtf8File(colorsPath);
+    // A vanished theme dir or a truncated colors.toml mid-switch must not
+    // wipe a loaded palette to the dark default (or worse, black-on-black).
+    if (d->loaded && !m_palette.isEmpty() && colorsText.trimmed().isEmpty())
+        return;
+
+    const QJsonObject palette = parseColorsToml(colorsText);
 
     QString bgPath = current + QStringLiteral("/background");
     if (!QFileInfo::exists(bgPath))
@@ -671,6 +677,8 @@ void OmarchyTheme::watchThemeLink()
 
     const QString current = currentStateDir();
     const QString themeDir = current + QStringLiteral("/theme");
+    // current/ is the important one: replacing the theme symlink does not
+    // notify a watcher that followed the old target.
     const QStringList paths = {
         current,
         themeDir,

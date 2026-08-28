@@ -446,3 +446,10 @@ Renderer (`src/renderer/media.js`): in `urlFromLine`, return `null` for a scheme
 Renderer (`deckparse.js`) / assets: `parseBareImage` and `AssetIndex::looksLikeImageReference` treat any slash path as an image, so `./clip.webm` is currently both a local video and an image. Exclude `.mp4`/`.webm`/`.mov` from image detection.
 
 T12: drop `rendererReadsBareVideoFilenamesAsWebUrls` once the renderer matches; it pins the bug.
+
+### 2026-08-27 21:16 PT — theme (Grok 4.6)
+**Task:** T3 live-reload verification
+**Did:** Confirmed `setDirectoriesForTest` is the state-root hook. Watcher already covers `current/` so a `theme` symlink swap is visible (the target watch is not). Reload now keeps the previous palette when `colors.toml` is missing or empty mid-session instead of falling through to the dark default. Added tests that repoint a fake `current/theme` symlink, collapse the switch burst to one `themeChanged()`, keep colours when the theme dir or `colors.toml` vanishes, and assert `installedThemes()` lists a duplicated name once with the user copy winning.
+**Tests:** OmarchyThemeTest 29/29, including `liveReloadFollowsThemeSymlink`, `liveReloadDebouncesSymlinkBurst`, `keepsPaletteWhenLiveThemeVanishes`, `keepsPaletteWhenColorsTomlUnreadable`. `./bin/build` green. Official `./bin/test` still has one failure in `IntegrationTest::assetIndexReadsProseAsImagePaths` (not our file).
+**Next:** live-reload gap closed.
+**NEEDS:** nothing

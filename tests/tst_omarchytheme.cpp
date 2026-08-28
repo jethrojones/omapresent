@@ -173,15 +173,16 @@ struct TestDirs {
     QString system;
     QString current;
 
-    bool init()
+    bool init(bool createThemeDir = true)
     {
         if (!tmp.isValid())
             return false;
         user = tmp.path() + QStringLiteral("/user");
         system = tmp.path() + QStringLiteral("/system");
         current = tmp.path() + QStringLiteral("/current");
-        if (!QDir().mkpath(user) || !QDir().mkpath(system)
-                || !QDir().mkpath(current + QStringLiteral("/theme")))
+        if (!QDir().mkpath(user) || !QDir().mkpath(system) || !QDir().mkpath(current))
+            return false;
+        if (createThemeDir && !QDir().mkpath(current + QStringLiteral("/theme")))
             return false;
         OmarchyTheme::setDirectoriesForTest(user, system, current);
         return true;
@@ -216,6 +217,10 @@ private slots:
     void overrideResolutionOrder();
     void overrideUnknownFallsBackToLive();
     void liveReloadDebouncesAndEmitsOnce();
+    void liveReloadFollowsThemeSymlink();
+    void liveReloadDebouncesSymlinkBurst();
+    void keepsPaletteWhenLiveThemeVanishes();
+    void keepsPaletteWhenColorsTomlUnreadable();
     void backgroundImagePathFromCurrent();
 
 private:
@@ -536,6 +541,7 @@ void OmarchyThemeTest::installedThemesUserWinsSorted()
     QVERIFY(QDir().mkpath(dirs.system + QStringLiteral("/gamma")));
 
     const QStringList names = OmarchyTheme::installedThemes();
+    QCOMPARE(names.count(QStringLiteral("alpha")), 1);
     QCOMPARE(names, (QStringList{QStringLiteral("alpha"), QStringLiteral("beta"),
                                  QStringLiteral("gamma"), QStringLiteral("zeta")}));
 }
@@ -621,6 +627,142 @@ void OmarchyThemeTest::liveReloadDebouncesAndEmitsOnce()
     QCOMPARE(spy.count(), 1);
     QCOMPARE(theme.palette().value(QStringLiteral("accent")).toString(), QStringLiteral("#00ff00"));
     QCOMPARE(theme.name(), QStringLiteral("two"));
+}
+
+void OmarchyThemeTest::liveReloadFollowsThemeSymlink()
+{
+    TestDirs dirs;
+    QVERIFY(dirs.init(false));
+
+    const QString themeA = dirs.tmp.path() + QStringLiteral("/themes/alpha");
+    const QString themeB = dirs.tmp.path() + QStringLiteral("/themes/beta");
+    QVERIFY(QDir().mkpath(themeA));
+    QVERIFY(QDir().mkpath(themeB));
+    QVERIFY(writeText(themeA + QStringLiteral("/colors.toml"),
+                      "background = \"#111111\"\nforeground = \"#eeeeee\"\naccent = \"#aa0000\"\n"));
+    QVERIFY(writeText(themeB + QStringLiteral("/colors.toml"),
+                      "background = \"#abcdef\"\nforeground = \"#010101\"\naccent = \"#00aa00\"\n"));
+
+    const QString themeLink = dirs.current + QStringLiteral("/theme");
+    QVERIFY(QFile::link(themeA, themeLink));
+    QVERIFY(writeText(dirs.current + QStringLiteral("/theme.name"), "alpha\n"));
+
+    OmarchyTheme theme;
+    QCOMPARE(theme.name(), QStringLiteral("alpha"));
+    QCOMPARE(theme.palette().value(QStringLiteral("background")).toString(),
+             QStringLiteral("#111111"));
+    QCOMPARE(theme.palette().value(QStringLiteral("accent")).toString(),
+             QStringLiteral("#aa0000"));
+
+    QSignalSpy spy(&theme, &OmarchyTheme::themeChanged);
+    QVERIFY(QFile::remove(themeLink));
+    QVERIFY(QFile::link(themeB, themeLink));
+    QVERIFY(writeText(dirs.current + QStringLiteral("/theme.name"), "beta\n"));
+
+    QTRY_VERIFY(spy.count() >= 1);
+    QTest::qWait(300);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(theme.name(), QStringLiteral("beta"));
+    QCOMPARE(theme.palette().value(QStringLiteral("background")).toString(),
+             QStringLiteral("#abcdef"));
+    QCOMPARE(theme.palette().value(QStringLiteral("accent")).toString(),
+             QStringLiteral("#00aa00"));
+}
+
+void OmarchyThemeTest::liveReloadDebouncesSymlinkBurst()
+{
+    TestDirs dirs;
+    QVERIFY(dirs.init(false));
+
+    const QString themeA = dirs.tmp.path() + QStringLiteral("/themes/alpha");
+    const QString themeB = dirs.tmp.path() + QStringLiteral("/themes/beta");
+    QVERIFY(QDir().mkpath(themeA));
+    QVERIFY(QDir().mkpath(themeB));
+    QVERIFY(writeText(themeA + QStringLiteral("/colors.toml"),
+                      "background = \"#111111\"\nforeground = \"#eeeeee\"\n"));
+    QVERIFY(writeText(themeB + QStringLiteral("/colors.toml"),
+                      "background = \"#222222\"\nforeground = \"#dddddd\"\n"));
+    QVERIFY(writeText(themeA + QStringLiteral("/wall.png"), "a"));
+    QVERIFY(writeText(themeB + QStringLiteral("/wall.png"), "b"));
+
+    const QString themeLink = dirs.current + QStringLiteral("/theme");
+    const QString bgLink = dirs.current + QStringLiteral("/background");
+    QVERIFY(QFile::link(themeA, themeLink));
+    QVERIFY(QFile::link(themeA + QStringLiteral("/wall.png"), bgLink));
+    QVERIFY(writeText(dirs.current + QStringLiteral("/theme.name"), "alpha\n"));
+
+    OmarchyTheme theme;
+    QCOMPARE(theme.palette().value(QStringLiteral("background")).toString(),
+             QStringLiteral("#111111"));
+
+    QSignalSpy spy(&theme, &OmarchyTheme::themeChanged);
+    QVERIFY(QFile::remove(themeLink));
+    QVERIFY(QFile::link(themeB, themeLink));
+    QVERIFY(writeText(dirs.current + QStringLiteral("/theme.name"), "beta\n"));
+    QVERIFY(QFile::remove(bgLink));
+    QVERIFY(QFile::link(themeB + QStringLiteral("/wall.png"), bgLink));
+    QVERIFY(writeText(dirs.current + QStringLiteral("/theme.name"), "beta\n"));
+
+    QTRY_VERIFY(spy.count() >= 1);
+    QTest::qWait(400);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(theme.name(), QStringLiteral("beta"));
+    QCOMPARE(theme.palette().value(QStringLiteral("background")).toString(),
+             QStringLiteral("#222222"));
+    QCOMPARE(theme.backgroundImagePath(), bgLink);
+}
+
+void OmarchyThemeTest::keepsPaletteWhenLiveThemeVanishes()
+{
+    TestDirs dirs;
+    QVERIFY(dirs.init(false));
+
+    const QString themeA = dirs.tmp.path() + QStringLiteral("/themes/alpha");
+    QVERIFY(QDir().mkpath(themeA));
+    QVERIFY(writeText(themeA + QStringLiteral("/colors.toml"),
+                      "background = \"#abcdef\"\nforeground = \"#123456\"\naccent = \"#aa5500\"\n"));
+    const QString themeLink = dirs.current + QStringLiteral("/theme");
+    QVERIFY(QFile::link(themeA, themeLink));
+    QVERIFY(writeText(dirs.current + QStringLiteral("/theme.name"), "alpha\n"));
+
+    OmarchyTheme theme;
+    const QJsonObject before = theme.palette();
+    QCOMPARE(before.value(QStringLiteral("background")).toString(), QStringLiteral("#abcdef"));
+
+    QSignalSpy spy(&theme, &OmarchyTheme::themeChanged);
+    QVERIFY(QFile::remove(themeLink));
+    QVERIFY(QDir(themeA).removeRecursively());
+
+    QTest::qWait(400);
+    QCOMPARE(spy.count(), 0);
+    QCOMPARE(theme.palette().value(QStringLiteral("background")).toString(),
+             QStringLiteral("#abcdef"));
+    QCOMPARE(theme.palette().value(QStringLiteral("foreground")).toString(),
+             QStringLiteral("#123456"));
+    QCOMPARE(theme.name(), QStringLiteral("alpha"));
+}
+
+void OmarchyThemeTest::keepsPaletteWhenColorsTomlUnreadable()
+{
+    TestDirs dirs;
+    QVERIFY(dirs.init());
+    const QString colors = dirs.current + QStringLiteral("/theme/colors.toml");
+    QVERIFY(writeText(colors,
+                      "background = \"#fedcba\"\nforeground = \"#010203\"\n"));
+    QVERIFY(writeText(dirs.current + QStringLiteral("/theme.name"), "live\n"));
+
+    OmarchyTheme theme;
+    QCOMPARE(theme.palette().value(QStringLiteral("background")).toString(),
+             QStringLiteral("#fedcba"));
+
+    QSignalSpy spy(&theme, &OmarchyTheme::themeChanged);
+    QVERIFY(writeText(colors, ""));
+    QTest::qWait(400);
+    QCOMPARE(spy.count(), 0);
+    QCOMPARE(theme.palette().value(QStringLiteral("background")).toString(),
+             QStringLiteral("#fedcba"));
+    QCOMPARE(theme.palette().value(QStringLiteral("foreground")).toString(),
+             QStringLiteral("#010203"));
 }
 
 void OmarchyThemeTest::backgroundImagePathFromCurrent()
