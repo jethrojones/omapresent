@@ -514,3 +514,95 @@ gone. `IntegrationTest::welcomeImagesResolveOrAreDeliberatelyMissing` is green.
   the old rule, "it contains a '/' or ends in a known image extension". The
   behaviour is now the narrower one above; the header comment should follow. I
   left the header alone since the handover named only the two files.
+
+### 2026-08-27 21:19 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** T2 review 1 — rendered PDF defects and local video parity
+**Did:** Made lists use the full content width. Rounded each PDF slide to full physical pages before print, so the footer appears only on the final page and sits at its bottom. Made bare `.mp4`, `.webm`, and `.mov` names local videos before schemeless URL detection. Added a Chromium width regression and media parity cases.
+**Tests:** Renderer 37/37 green. Real Qt export is 42 pages, down from 53 in this tree. Visually checked pages 2, 3, and 7; lists are full width and the continuation footer is on the bottom edge. `./bin/build` passes. Full `./bin/test` is red only in three T12 tests that pin the old asset and media disagreements.
+**Next:** Commit the renderer files after T12 updates its stale assertions, then rerun the full gate.
+**NEEDS:** T12 must replace or remove `assetIndexReadsProseAsImagePaths`, `rendererReadsBareVideoFilenamesAsWebUrls`, and the old phantom expectations in `rendererAgreesOnInlineCodeAndQrReferences`. The renderer and VideoCache now agree that `clip.webm` is local and not a bare URL. Land the local-video sentence already proposed in the media worklog in `docs/renderer-contract.md`.
+
+### 2026-08-27 21:25 PT — webbundle (Claude Opus 5)
+**Task:** T11 the static web bundle
+**Did:** Implemented `src/webbundle.cpp`. `build()` writes `index.html` (slides,
+arrow/space/Home/End keys, swipe, speaker notes as a toggleable subtitle track
+fed from `onState.notesHtml`, slide counter, progress bar) and
+`read/index.html` (masthead, article measure, slides flowed as sections), the
+two cross-linked. Both set `mode: "web"` and `data-op-view`, so the renderer
+picks role `web` itself and flows notes as body text in the long read — that
+attribute is already honoured in `render.js:415`, so no contract change was
+needed.
+
+The load path is the one thing worth knowing here. Chromium refuses to fetch an
+ES module from a `file://` page (CORS, origin `null`) — measured, not assumed —
+so a bundle that has to open by double-clicking `index.html` cannot use
+`<script type="module" src=…>`. Inline modules, plain external scripts,
+external CSS and relative images all work, and `fetch()` does not. So:
+`assets/render.js` is a plain script carrying the renderer's modules as text,
+turning each into a blob: URL and starting the entry module (`window.
+omapresentReady`, which the page chrome awaits); the deck JSON is inlined into
+each page; CSS and media stay ordinary relative files. I first wrote a
+source-rewriting flattener and threw it away — `vendor/markdown-it.mjs` ends in
+a mid-line `export { ir as default }` and `katex.mjs` in a 200-character export
+list, and rewriting those by hand is a bug farm. Blob URLs let the module
+system do it, so vendored bytes travel unmodified.
+
+Also: media copied to `media/<slug>-<8 hex of the source path>`, so names are
+stable across rebuilds and two `budget.png` from different folders coexist;
+palette baked into `assets/theme.css` as custom properties (one theme, no
+`prefers-color-scheme` — a published deck keeps the theme it was written in);
+an unresolvable or remote image becomes the missing-asset placeholder rather
+than a link off the bundle, while a hosted video's `embedUrl` stays, since it
+is the only way to play an uncached embed; `files()`/`totalBytes()` are exactly
+what landed on disk; a failure rolls back precisely what it wrote and leaves a
+pre-existing directory alone. `render.html`, `renderer.qrc` and `package.json`
+do not travel — how the renderer is built is not a published deck's business.
+`vendor/LICENSES.md` and the three `LICENSE.*` files do travel, verbatim, into
+`assets/vendor/`.
+
+**Tests:** `tests/tst_webbundle.cpp` — 24 cases, all green: both views and their
+cross-links, `files()` compared against a walk of the output, exact progress
+totals, image copying and relative rewriting (including the `../` the long read
+needs), same-named images from different directories, placeholders, embed URLs
+kept, a leak scan for `qrc:`/`file://`/the author's absolute path/`http` over
+every generated file, stable rebuild names, rebuild-in-place, palette baking
+including a colours.toml value that is not a colour, module packaging, the two
+pure helpers (`moduleImports`, `withModuleImports`) against minified and
+multi-line spellings, `</script>` in deck markdown, and four failure paths
+(no deck, no renderer, unwritable parent, unwritable output — the last two
+asserting no partial bundle). One case builds against the real `src/renderer/`.
+
+End-to-end: built `welcome/welcome.md` into a temp dir (33 files, 7.9 MB, of
+which KaTeX is 7.4) and opened both pages in Chromium from `file://` — 25
+slides, notes rendering as subtitles, 53 notes flowed as body text in the long
+read, and no `qrc:`, absolute path or remote asset reference in any generated
+file.
+
+**Next:** T11 is done. Happy to take `Backend::buildWebBundle()` next if the
+orchestrator wants it moved onto this class.
+
+**NEEDS:**
+- `src/backend.cpp` (app-shell): `Backend::buildWebBundle()` still hand-rolls a
+  bundle — it copies `:/renderer` into a temp dir, writes `deck.json` beside it
+  and copies `render.html` to `index.html`. That produces one view, no long
+  read, no media, no theme, and it cannot open off a disk. It should be
+  `WebBundle` with `setDeck(deckDocument("web"))`, `setDeckDir(...)`,
+  `build(dir)`, and `files()` handed to `Publisher::publish()`. Two lines.
+- `tests/tst_integration.cpp` (integration): three cases are red in the tree and
+  none of them are mine — they are that file's own pinned tripwires firing
+  because the fixes they were watching for landed.
+  `assetIndexReadsProseAsImagePaths` still asserts that
+  `looksLikeImageReference("… X/Twitter …")` is true, but the uncommitted
+  `src/assetindex.cpp` now requires a rooted path token, which is the behaviour
+  the case's comment asked for; `rendererReadsBareVideoFilenamesAsWebUrls` and
+  `rendererAgreesOnInlineCodeAndQrReferences` are the same story after
+  `1348e97`. They need re-pinning to the fixed behaviour by their owner. I left
+  them alone per AGENTS.md §1.
+- `src/renderer/vendor/LICENSES.md` (renderer): two small inaccuracies now that
+  a published bundle exists. It names `katex.min.css`, but the file on disk and
+  in the bundle is `katex.css`; and "Each file is the upstream distribution
+  build, unmodified" is worth a sentence saying that a published bundle carries
+  these same bytes embedded as text inside `assets/render.js`, with the licence
+  files copied verbatim beside it. The bytes are unmodified — only the
+  renderer's own relative import specifiers are rewritten, and the vendored
+  libraries have none — but a reader of that file should not have to infer it.
