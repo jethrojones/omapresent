@@ -4,6 +4,16 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="$ROOT/build"
 
+# Several agents build this tree at once and they all share build/. Two makes in
+# one directory produce half-written object files and failures that belong to
+# nobody, so builds take turns. Waiting for the lock is normal; it is not a hang.
+if command -v flock >/dev/null 2>&1 && [ "${OMAPRESENT_BUILD_LOCKED:-}" != 1 ]; then
+  mkdir -p "$ROOT/build"
+  OMAPRESENT_BUILD_LOCKED=1
+  export OMAPRESENT_BUILD_LOCKED
+  exec flock "$ROOT/build/.lock" "$0" "$@"
+fi
+
 if command -v qmake6 >/dev/null 2>&1; then
   QMAKE=qmake6
 elif command -v qmake >/dev/null 2>&1; then

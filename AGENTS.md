@@ -90,3 +90,16 @@ with its licence recorded in `src/renderer/vendor/LICENSES.md`.
 Append your final worklog entry, make sure `./bin/build && ./bin/test` pass,
 commit, and say so plainly. Then stop and wait — the orchestrator will send you
 the next task in the same pane.
+
+## 10. Two things that will bite you in a shared tree
+
+**Builds take turns.** `bin/build` and `bin/test` take an exclusive `flock`
+before running, because eight agents sharing one `build/` directory would
+otherwise produce half-written object files and failures that belong to nobody.
+If a build seems to pause before it starts, it is waiting for the lock, not
+hanging. Let it wait.
+
+**Git's index is not shared.** If a commit fails with
+`Unable to create '.git/index.lock'`, another agent is committing at that exact
+moment. Wait a few seconds and run the same command again — it will work. Never
+delete `index.lock` to get past it; you would corrupt someone else's commit.

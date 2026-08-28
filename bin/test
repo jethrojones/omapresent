@@ -4,6 +4,14 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="$ROOT/build-tests"
 
+# See bin/build: parallel agents share this tree, so test builds take turns too.
+if command -v flock >/dev/null 2>&1 && [ "${OMAPRESENT_TEST_LOCKED:-}" != 1 ]; then
+  mkdir -p "$BUILD_DIR"
+  OMAPRESENT_TEST_LOCKED=1
+  export OMAPRESENT_TEST_LOCKED
+  exec flock "$BUILD_DIR/.lock" "$0" "$@"
+fi
+
 if command -v qmake6 >/dev/null 2>&1; then
   QMAKE=qmake6
 else
