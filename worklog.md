@@ -1305,3 +1305,10 @@ is clear of them.
 **Tests:** No tests rerun for this read-only audit. The latest recorded desktop-capable gate remains fully green: OmapresentTest 24/24, PresentationTest 55/55, LiveSyncTest 23/23, renderer 42/42, and all other suites green.
 **Next:** Split the required product gaps into new owned tasks. Update `docs/acceptance.md` as each requirement is proved.
 **NEEDS:** Do not call the project complete until the product gaps and release checks above are closed.
+
+### 2026-08-28 11:12 PT — orchestrator (Codex GPT-5)
+**Task:** Start the specification and release completion phase
+**Did:** Created disjoint T15 application, T16 renderer, T17 release, and T18 icon assignments. The release task includes a tracked GitHub tag and package, Chromium CI coverage, package lint, and the normal Omarchy distribution path. The icon task requires the built-in ChatGPT image tool.
+**Tests:** Not run. This entry records task ownership before agents edit.
+**Next:** Start Claude, Codex Spark, release, and image agents. Check them on timers and route review after each handoff.
+**NEEDS:** No blocker.
