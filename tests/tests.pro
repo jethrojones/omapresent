@@ -15,6 +15,7 @@ SOURCES += \
     tst_videocache.cpp \
     tst_publisher.cpp \
     tst_settings.cpp \
+    tst_webbundle.cpp \
     ../src/backend.cpp \
     ../src/deckmodel.cpp \
     ../src/assetindex.cpp \
@@ -22,6 +23,7 @@ SOURCES += \
     ../src/videocache.cpp \
     ../src/publisher.cpp \
     ../src/settings.cpp \
+    ../src/webbundle.cpp \
     ../src/markdownhighlighter.cpp
 
 HEADERS += \
@@ -33,4 +35,5 @@ HEADERS += \
     ../src/videocache.h \
     ../src/publisher.h \
     ../src/settings.h \
+    ../src/webbundle.h \
     ../src/markdownhighlighter.h
