@@ -53,6 +53,12 @@ public:
     // The host's embed URL for a watch/share URL, e.g. a YouTube watch link to
     // its /embed/<id> form. Empty when the host is not recognised.
     static QString embedUrlFor(const QString &url);
+    // The host's oEmbed endpoint for `url`. Empty when there is none (direct
+    // files, local files, unrecognised hosts). Does not hit the network.
+    static QString oEmbedUrlFor(const QString &url);
+    // SHA-256 hex of the trimmed URL; cache files are named from this so a
+    // re-prefetch of the same URL is a no-op.
+    static QString cacheKey(const QString &url);
 
 signals:
     void prefetchProgress(int done, int total);
@@ -60,6 +66,11 @@ signals:
     void cacheChanged();
 
 private:
+    void prefetchNext();
+    void onReplyFinished();
+    QJsonObject readIndex() const;
+    bool writeIndex(const QJsonObject &index) const;
+
     QString m_deckDir;
     struct Private;
     Private *d = nullptr;
