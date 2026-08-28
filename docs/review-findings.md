@@ -1,14 +1,18 @@
 # Adversarial review findings
 
-Review date: 2026-08-27.
+Review dates: 2026-08-27 to 2026-08-28.
 
 Scope: publish, file-copy, cache, state, network, packaging, and hostile-input paths from spec sections 4.5, 4.8, 9, 11, and 12.
 
-## SEC-001 — High — An asset symlink can disclose a file outside the asset root
+Outcome: All eight findings are fixed. All expected-failure pins are now normal regression assertions. The owner suites cover the fixes that did not fit the C++ security suite.
 
-`AssetIndex` indexes a readable symlink as a normal file. It returns the symlink path for a matching reference. `WebBundle` then opens that path and copies the target bytes into `media/`.
+## SEC-001 — High — Asset symlink disclosure outside the asset root
 
-Concrete reproduction:
+**Status: Fixed in `7336d1d`.**
+
+At review time, `AssetIndex` indexed a readable symlink as a normal file. It returned the symlink path for a matching reference. `WebBundle` then opened that path and copied the target bytes into `media/`.
+
+Original reproduction:
 
 1. Make an asset root with `cover.png` as a symlink to a readable file outside that root. The test uses an `id_rsa` fixture.
 2. Put `![[cover.png]]` in the deck.
@@ -17,15 +21,17 @@ Concrete reproduction:
 
 The path starts in `src/assetindex.cpp` in the recursive scan and `resolve()`. The copy occurs in `src/webbundle.cpp` in `collectMedia()` and `copyFile()`.
 
-This can disclose a private key or another readable file when a user publishes an untrusted deck tree. The user must still confirm publish. The confirmation says that embedded files will upload. The problem is that the visible asset name can hide a different target.
+This could disclose a private key or another readable file when a user published an untrusted deck tree. The user still had to confirm publish. The confirmation said that embedded files would upload. The problem was that the visible asset name could hide a different target.
 
 `SecurityTest::indexedAssetSymlinkCannotLeaveTheAssetRoot` now guards the fixed behavior with a normal assertion.
 
-## SEC-002 — Medium — Opening a deck can make an unapproved network request
+## SEC-002 — Medium — Unapproved network request on deck open
 
-The C++ network paths are explicit. The renderer is not. It creates an eager remote `<iframe>` for a hosted video. It also creates a `<video preload="metadata">` element for a direct video URL.
+**Status: Fixed in `aa4331a`.**
 
-Concrete reproduction:
+The C++ network paths were explicit. The renderer was not. It created an eager remote `<iframe>` for a hosted video. It also created a `<video preload="metadata">` element for a direct video URL.
+
+Original reproduction:
 
 1. Start an HTTP server that logs requests on `127.0.0.1:8123`.
 2. Make the first slide contain only `http://127.0.0.1:8123/clip.mp4`.
@@ -34,15 +40,17 @@ Concrete reproduction:
 
 `src/renderer/render.js` assigns the remote URL to `video.src` and sets `preload` to `metadata`. The same file assigns hosted embed URLs to eager iframes. `src/PreviewPane.qml` runs the preview render as soon as the local renderer page loads.
 
-This breaks the frozen no-network contract in `docs/renderer-contract.md`. A deck author can cause a request to a chosen host when the deck opens. This leaks normal request metadata. A loopback URL can also probe a local HTTP service. This does not upload the deck contents.
+This broke the frozen no-network contract in `docs/renderer-contract.md`. A deck author could cause a request to a chosen host when the deck opened. This leaked normal request metadata. A loopback URL could also probe a local HTTP service. This did not upload the deck contents.
 
-I did not add a C++ expected-failure test. The reproduction needs a live Qt WebEngine request observer. T14 owns only the C++ security suite.
+The renderer now waits for a play action before it assigns a remote video or iframe source. A renderer regression test guards both forms. A real Qt open-deck check made zero HTTP requests before play.
 
-## SEC-003 — Medium — A cache-directory symlink redirects writes outside the deck
+## SEC-003 — Medium — Cache-directory symlink redirected writes outside the deck
 
-`VideoCache::cacheDir()` joins the deck directory with `.omapresent-cache`. Its writers do not reject a symlink at that path.
+**Status: Fixed in `83ba985`.**
 
-Concrete reproduction:
+At review time, `VideoCache::cacheDir()` joined the deck directory with `.omapresent-cache`. Its writers did not reject a symlink at that path.
+
+Original reproduction:
 
 1. Make `deck/.omapresent-cache` a symlink to another writable directory.
 2. Put `clip.mp4` in the deck directory.
@@ -51,15 +59,17 @@ Concrete reproduction:
 
 The path handling is in `src/videocache.cpp` in `cacheDir()`, `writeIndex()`, and the local-file branch of `prefetchNext()`.
 
-This needs an explicit offline-prepare action. It can overwrite an existing `index.json` in the symlink target. Other output names are SHA-256 cache names. The impact is limited but real.
+This needed an explicit offline-prepare action. It could overwrite an existing `index.json` in the symlink target. Other output names were SHA-256 cache names. The impact was limited but real.
 
-Fixed in commit `83ba985`. `SecurityTest::videoCacheSymlinkCannotLeaveTheDeckDirectory` now guards the fixed behavior with a normal assertion.
+`SecurityTest::videoCacheSymlinkCannotLeaveTheDeckDirectory` now guards the fixed behavior with a normal assertion.
 
-## SEC-004 — Medium — Bundle media copies use memory equal to the whole file
+## SEC-004 — Medium — Whole-file bundle copies could exhaust memory
 
-`WebBundle::copyFile()` calls `source.readAll()` and passes the full byte array to `writeFile()`. A large local video or image therefore needs memory for the full source and output buffers during publish.
+**Status: Fixed in `83eafde`.**
 
-Concrete reproduction:
+At review time, `WebBundle::copyFile()` called `source.readAll()` and passed the full byte array to `writeFile()`. A large local video or image therefore needed memory for the full source and output buffers during publish.
+
+Original reproduction:
 
 1. Create a large local video fixture: `truncate -s 2G clip.mp4`.
 2. Put `clip.mp4` alone on a slide.
@@ -68,13 +78,17 @@ Concrete reproduction:
 
 The issue is in `src/webbundle.cpp` in `copyFile()`. The later publisher snapshot and hash path streams from `QFile`; the early bundle copy does not.
 
-This is an availability issue. A normal large video can trigger it. An untrusted deck can also hide a large local target behind an asset reference. I did not run the 2 GiB reproduction because it is intentionally resource-exhausting.
+This was an availability issue. A normal large video could trigger it. An untrusted deck could also hide a large local target behind an asset reference. I did not run the 2 GiB reproduction because it is intentionally resource-exhausting.
 
-## SEC-005 — Low — A pre-existing output symlink can redirect bundle writes
+`WebBundle` now copies through a fixed 1 MiB buffer. `WebBundleTest::streamsLargeMediaWithoutChangingBytes` guards the streaming path with a sparse multi-chunk fixture.
 
-`WebBundle::ensureDirectory()` accepts an existing path when `QFileInfo(path).isDir()` is true. That test follows symlinks. `writeFile()` then opens the joined path without a canonical-root check.
+## SEC-005 — Low — Output symlink redirected bundle writes
 
-Concrete reproduction:
+**Status: Fixed in `83eafde`.**
+
+At review time, `WebBundle::ensureDirectory()` accepted an existing path when `QFileInfo(path).isDir()` was true. That test followed symlinks. `writeFile()` then opened the joined path without a canonical-root check.
+
+Original reproduction:
 
 1. Make an output directory.
 2. Make `output/assets` a symlink to another directory.
@@ -84,17 +98,19 @@ Concrete reproduction:
 
 The issue is in `src/webbundle.cpp` in `ensureDirectory()` and `writeFile()`.
 
-The current GUI and CLI publish path uses a new `QTemporaryDir`, so an attacker cannot normally pre-place this symlink there. This is a defense-in-depth defect in the public build API. It becomes more serious if a future export path builds into a user-selected existing directory.
+The GUI and CLI publish path used a new `QTemporaryDir`, so an attacker could not normally pre-place this symlink there. This was a defense-in-depth defect in the public build API. It would have become more serious if a future export path built into a user-selected existing directory.
 
 `SecurityTest::bundleOutputSymlinkCannotLeaveTheOutputRoot` now guards the fixed behavior with a normal assertion.
 
 ## Second-pass findings — 2026-08-28
 
-### SEC-006 — Medium — The CLI can publish an empty deck after its input fails to open
+### SEC-006 — Medium — Failed CLI input could publish an empty deck
 
-`Backend::runCommand()` checks only whether the input path exists. It calls `open()`, but it does not check whether `open()` loaded the file. A directory or an unreadable file therefore reaches `publishDeck()` with the new backend's empty document.
+**Status: Fixed in `3e54048`.**
 
-Concrete reproduction:
+At review time, `Backend::runCommand()` checked only whether the input path existed. It called `open()`, but it did not check whether `open()` loaded the file. A directory or an unreadable file therefore reached `publishDeck()` with the new backend's empty document.
+
+Original reproduction:
 
 1. Configure a command provider that prints a valid URL.
 2. Run `omapresent publish <directory> --provider test --yes`.
@@ -103,17 +119,19 @@ Concrete reproduction:
 
 The path is in `src/backend.cpp` in `open()` and `runCommand()`. The failed `open()` sets a status message and returns. `runCommand()` ignores that result and continues.
 
-The user must still confirm or pass `--yes`. The command can publish an empty deck instead of the named file and report success. It does not disclose the unreadable file because that file was never read.
+The user still had to confirm or pass `--yes`. The command could publish an empty deck instead of the named file and report success. It did not disclose the unreadable file because that file was never read.
 
 `Backend::openCommandFile()` now reports whether the complete file read succeeded. Export, present, and publish stop with a nonzero exit before they use a failed load. The error names the requested path and says whether it is missing, a directory, not a regular file, unreadable, or failed during the read.
 
 `SecurityTest::cliRejectsADirectoryBeforePublishing` and `SecurityTest::cliRejectsAnUnreadableFileBeforePublishing` now guard both fixed paths with normal assertions.
 
-### SEC-007 — Low — First run follows a symlinked agent skills directory
+### SEC-007 — Low — First run followed a symlinked agent skills directory
 
-`Backend::agentSkillDirectories()` accepts a path when `QFileInfo(path).isDir()` is true. That check follows a directory symlink. `installAgentSkill()` then creates the `omapresent` link through that path.
+**Status: Fixed in `3e54048`.**
 
-Concrete reproduction:
+At review time, `Backend::agentSkillDirectories()` accepted a path when `QFileInfo(path).isDir()` was true. That check followed a directory symlink. `installAgentSkill()` then created the `omapresent` link through that path.
+
+Original reproduction:
 
 1. Make `~/.claude/skills` a symlink to another writable directory.
 2. Start Omapresent.
@@ -121,24 +139,26 @@ Concrete reproduction:
 
 The issue is in `src/backend.cpp` in `agentSkillDirectories()` and `installAgentSkill()`.
 
-This creates one known symlink in a directory that the user can already write. It does not replace an existing file, directory, or different symlink. The main risk is a surprising write outside the expected agent tree.
+This created one known symlink in a directory that the user could already write. It did not replace an existing file, directory, or different symlink. The main risk was a surprising write outside the expected agent tree.
 
 First-run discovery now rejects a symlinked skills directory. It also checks that the canonical skills directory or its creation parent stays inside the canonical home directory. The installer checks the directory again before it creates the link.
 
 `SecurityTest::firstRunRefusesASymlinkedSkillDirectory` now guards the fixed behavior with a normal assertion.
 
-### SEC-008 — Low — A duplicate settings key can make a patch report success without applying
+### SEC-008 — Low — A duplicate settings key made a patch report false success
 
-`Publisher::patchToml()` replaces the first matching key in the first matching table. `Publisher::parseToml()` keeps the later value when a malformed file repeats the same table and key. `Settings::setValue()` can therefore return true, but a reload still reads the old later value.
+**Status: Fixed in `3e54048`.**
 
-Concrete reproduction:
+At review time, `Publisher::patchToml()` replaced the first matching key in the first matching table. `Publisher::parseToml()` kept the later value when a malformed file repeated the same table and key. `Settings::setValue()` could therefore return true, but a reload still read the old later value.
+
+Original reproduction:
 
 1. Put `theme = "first"` in one `[editor]` table.
 2. Repeat `[editor]` and put `theme = "second"` in it.
 3. Call `Settings::setValue("editor.theme", "patched")`.
 4. The call returns true, but `Settings::stringValue("editor.theme")` is still `second`.
 
-The patch preserves both unknown keys in the test. It does not make the malformed file less readable. The failure is that the requested change does not take effect even though the API reports success.
+The patch preserved both unknown keys in the test. It did not make the malformed file less readable. The failure was that the requested change did not take effect even though the API reported success.
 
 `Publisher::patchToml()` now scans all matching assignments and changes the last one. This matches the value that `parseToml()` uses. It still leaves unknown keys and the shadowed earlier assignment unchanged.
 
