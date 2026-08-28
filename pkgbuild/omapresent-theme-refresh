@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Omarchy theme-set.d hooks receive the selected theme slug in $1. Omapresent
+# does not need the slug. It reloads the current theme path after the switch.
+theme_name=${1-}
+: "$theme_name"
+
+# Signal only an app that is already running. No match is normal and must not
+# make Omarchy's theme change fail.
+if command -v pkill >/dev/null 2>&1; then
+  pkill -USR1 -x omapresent >/dev/null 2>&1 || true
+fi
+
+exit 0

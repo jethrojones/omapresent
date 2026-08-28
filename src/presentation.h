@@ -19,6 +19,8 @@
 #include <QVariantMap>
 #include <QVector>
 
+#include <functional>
+
 #include "renderhost.h"
 
 class QQmlEngine;
@@ -51,6 +53,39 @@ struct MonitorAssignment {
 // assigned. When no output claims to be primary the first one is treated as it,
 // which is the same answer Qt gives on a single-seat machine.
 MonitorAssignment assignOutputs(const QVector<PresentationOutput> &outputs);
+
+// Pure ownership policy for the two desktop holds used during a talk. The
+// injected actions keep settings tests away from DBus and desktop commands.
+// A repeated start or stop is a no-op. Stop releases DND before idle, which
+// matches the real presentation teardown path.
+class PresentationEnvironmentControl {
+public:
+    using Action = std::function<void(bool)>;
+
+    explicit PresentationEnvironmentControl(Action idleAction = {},
+                                            Action doNotDisturbAction = {});
+    ~PresentationEnvironmentControl();
+
+    void setPreferences(bool inhibitIdle, bool doNotDisturb);
+    void start();
+    void stop();
+
+    bool active() const { return m_active; }
+    bool inhibitIdleEnabled() const { return m_inhibitIdleEnabled; }
+    bool doNotDisturbEnabled() const { return m_doNotDisturbEnabled; }
+
+private:
+    void setIdleHeld(bool held);
+    void setDoNotDisturbHeld(bool held);
+
+    Action m_idleAction;
+    Action m_doNotDisturbAction;
+    bool m_inhibitIdleEnabled = true;
+    bool m_doNotDisturbEnabled = true;
+    bool m_idleHeld = false;
+    bool m_doNotDisturbHeld = false;
+    bool m_active = false;
+};
 
 // Where the talk is: which slide, how many of its fragments are revealed, and
 // how far down it we have scrolled (spec §4.7).
@@ -208,6 +243,12 @@ public:
     // Present mode creates its own windows, so it needs an engine to create
     // them with. Optional: without one it builds a private engine on first use.
     void setQmlEngine(QQmlEngine *engine);
+
+    // Settings §11 controls whether present mode takes each desktop hold.
+    // Changing a preference during a talk applies it at once.
+    void setEnvironmentPreferences(bool inhibitIdle, bool doNotDisturb);
+    bool inhibitIdleEnabled() const;
+    bool doNotDisturbEnabled() const;
 
     // Every key from both windows arrives here (spec §5.2), so the two behave
     // identically and the dispatch is testable without a window. Returns true

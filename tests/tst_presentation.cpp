@@ -54,6 +54,80 @@ private:
     }
 
 private slots:
+    // --- Desktop holds (spec §5.3 and §11) --------------------------------
+
+    void environmentSettings_data() {
+        QTest::addColumn<bool>("inhibitIdle");
+        QTest::addColumn<bool>("doNotDisturb");
+        QTest::addColumn<QStringList>("started");
+        QTest::addColumn<QStringList>("stopped");
+
+        QTest::newRow("neither") << false << false << QStringList{} << QStringList{};
+        QTest::newRow("idle-only")
+            << true << false
+            << QStringList{QStringLiteral("idle:on")}
+            << QStringList{QStringLiteral("idle:on"), QStringLiteral("idle:off")};
+        QTest::newRow("dnd-only")
+            << false << true
+            << QStringList{QStringLiteral("dnd:on")}
+            << QStringList{QStringLiteral("dnd:on"), QStringLiteral("dnd:off")};
+        QTest::newRow("both")
+            << true << true
+            << QStringList{QStringLiteral("idle:on"), QStringLiteral("dnd:on")}
+            << QStringList{QStringLiteral("idle:on"), QStringLiteral("dnd:on"),
+                           QStringLiteral("dnd:off"), QStringLiteral("idle:off")};
+    }
+
+    void environmentSettings() {
+        QFETCH(bool, inhibitIdle);
+        QFETCH(bool, doNotDisturb);
+        QFETCH(QStringList, started);
+        QFETCH(QStringList, stopped);
+
+        QStringList actions;
+        PresentationEnvironmentControl control(
+            [&actions](bool on) {
+                actions.append(QStringLiteral("idle:%1").arg(on ? QStringLiteral("on")
+                                                               : QStringLiteral("off")));
+            },
+            [&actions](bool on) {
+                actions.append(QStringLiteral("dnd:%1").arg(on ? QStringLiteral("on")
+                                                              : QStringLiteral("off")));
+            });
+        control.setPreferences(inhibitIdle, doNotDisturb);
+        QCOMPARE(control.inhibitIdleEnabled(), inhibitIdle);
+        QCOMPARE(control.doNotDisturbEnabled(), doNotDisturb);
+
+        control.start();
+        control.start();
+        QVERIFY(control.active());
+        QCOMPARE(actions, started);
+
+        control.stop();
+        control.stop();
+        QVERIFY(!control.active());
+        QCOMPARE(actions, stopped);
+    }
+
+    void environmentHoldsCleanUpOnDestruction() {
+        QStringList actions;
+        {
+            PresentationEnvironmentControl control(
+                [&actions](bool on) {
+                    actions.append(on ? QStringLiteral("idle:on")
+                                      : QStringLiteral("idle:off"));
+                },
+                [&actions](bool on) {
+                    actions.append(on ? QStringLiteral("dnd:on")
+                                      : QStringLiteral("dnd:off"));
+                });
+            control.start();
+        }
+        QCOMPARE(actions,
+                 QStringList({QStringLiteral("idle:on"), QStringLiteral("dnd:on"),
+                              QStringLiteral("dnd:off"), QStringLiteral("idle:off")}));
+    }
+
     // --- Monitors (spec §5.1) ---------------------------------------------
 
     void noOutputsAssignsNothing() {

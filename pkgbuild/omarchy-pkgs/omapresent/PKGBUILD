@@ -118,6 +118,11 @@ package() {
   install -m644 -t "$pkgdir/usr/share/$pkgname/skill/reference" \
     skill/reference/*.md
 
+  # Backend installs this through `omarchy hook install theme-set`, which puts
+  # the user copy in ~/.config/omarchy/hooks/theme-set.d/ with mode 755.
+  install -Dm755 pkgbuild/omapresent-theme-refresh \
+    "$pkgdir/usr/share/$pkgname/hooks/omapresent-theme-refresh"
+
   install -Dm644 welcome/welcome.md "$pkgdir/usr/share/$pkgname/welcome.md"
 
   # The icon master is a single 1024x1024 PNG. hicolor's index.theme lists no

@@ -11,12 +11,16 @@
 #include <QJsonObject>
 #include <QMap>
 #include <QPageLayout>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QTcpServer>
 #include <QTcpSocket>
+
+#include <csignal>
 
 #include "backend.h"
 #include "markdownhighlighter.h"
@@ -257,6 +261,55 @@ private slots:
         QCOMPARE(backend.themeAccent(), QStringLiteral("#112233"));
         QCOMPARE(backend.themeSelection(), QStringLiteral("#445566"));
         QVERIFY(!backend.darkMode());
+    }
+
+    void themeSignalReloadsCurrentPalette() {
+        QTemporaryDir homeDirectory;
+        QVERIFY(homeDirectory.isValid());
+
+        const bool homeWasSet = qEnvironmentVariableIsSet("HOME");
+        const QByteArray originalHome = qgetenv("HOME");
+        struct HomeRestorer {
+            bool wasSet;
+            QByteArray value;
+            ~HomeRestorer() {
+                if (wasSet)
+                    qputenv("HOME", value);
+                else
+                    qunsetenv("HOME");
+            }
+        } restoreHome{homeWasSet, originalHome};
+        QVERIFY(qputenv("HOME", homeDirectory.path().toUtf8()));
+
+        const QString themeDirectory = homeDirectory.path()
+            + QStringLiteral("/.local/state/omarchy/current/theme");
+        QVERIFY(QDir().mkpath(themeDirectory));
+        const QString colorsPath = themeDirectory + QStringLiteral("/colors.toml");
+        QFile colors(colorsPath);
+        QVERIFY(colors.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(colors.write("mode = \"dark\"\naccent = \"#112233\"\n") > 0);
+        colors.close();
+
+        Backend backend;
+        QCOMPARE(backend.themeAccent(), QStringLiteral("#112233"));
+        QSignalSpy colorsSpy(&backend, &Backend::themeColorsChanged);
+
+        const QString backgroundPath = homeDirectory.path()
+            + QStringLiteral("/.local/state/omarchy/current/background");
+        QFile background(backgroundPath);
+        QVERIFY(background.open(QIODevice::WriteOnly));
+        QVERIFY(background.write("local background fixture") > 0);
+        background.close();
+
+        QVERIFY(colors.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text));
+        QVERIFY(colors.write("mode = \"dark\"\naccent = \"#a1b2c3\"\n") > 0);
+        colors.close();
+        QCOMPARE(::raise(SIGUSR1), 0);
+
+        QTRY_COMPARE(backend.themeAccent(), QStringLiteral("#a1b2c3"));
+        QVERIFY(!colorsSpy.isEmpty());
+        QVERIFY(backend.previewRenderScript().contains(
+            QUrl::fromLocalFile(backgroundPath).toString()));
     }
 
     void ignoresFileWatcherEventsForSavedContents() {
@@ -859,6 +912,132 @@ private slots:
         const QVariantMap geometry = backend.windowGeometry();
         QCOMPARE(geometry.value(QStringLiteral("width")).toInt(), 1280);
         QCOMPARE(geometry.value(QStringLiteral("x")).toInt(), -1);
+    }
+
+    void presentationEnvironmentSettings_data() {
+        QTest::addColumn<bool>("inhibitIdle");
+        QTest::addColumn<bool>("doNotDisturb");
+        QTest::newRow("neither") << false << false;
+        QTest::newRow("idle-only") << true << false;
+        QTest::newRow("dnd-only") << false << true;
+        QTest::newRow("both") << true << true;
+    }
+
+    void presentationEnvironmentSettings() {
+        QFETCH(bool, inhibitIdle);
+        QFETCH(bool, doNotDisturb);
+
+        QTemporaryDir configDirectory;
+        QVERIFY(configDirectory.isValid());
+        const QString settingsPath = configDirectory.filePath(QStringLiteral("settings.toml"));
+        QFile settings(settingsPath);
+        QVERIFY(settings.open(QIODevice::WriteOnly | QIODevice::Text));
+        const QByteArray contents = QByteArray("[presentation]\n")
+            + "inhibit_idle = " + (inhibitIdle ? QByteArray("true") : QByteArray("false"))
+            + "\ndo_not_disturb = "
+            + (doNotDisturb ? QByteArray("true") : QByteArray("false")) + "\n";
+        QCOMPARE(settings.write(contents), qint64(contents.size()));
+        settings.close();
+
+        Backend backend;
+        backend.settings()->setPath(settingsPath);
+        QCOMPARE(backend.presentation()->inhibitIdleEnabled(), inhibitIdle);
+        QCOMPARE(backend.presentation()->doNotDisturbEnabled(), doNotDisturb);
+        QVERIFY(!backend.presentation()->active());
+    }
+
+    void packagedThemeHookUsesOmarchyConvention() {
+        const QString source = QFINDTESTDATA("../pkgbuild/omapresent-theme-refresh");
+        QVERIFY2(!source.isEmpty(), "Could not find the packaged theme hook source.");
+
+        QFile sourceFile(source);
+        QVERIFY(sourceFile.open(QIODevice::ReadOnly));
+        const QByteArray sourceText = sourceFile.readAll();
+        QVERIFY(sourceText.contains("theme_name=${1-}"));
+        QVERIFY(sourceText.contains("pkill -USR1 -x omapresent"));
+        QVERIFY(!sourceText.contains("curl"));
+        QVERIFY(!sourceText.contains("wget"));
+        QVERIFY(!sourceText.contains("exec omapresent"));
+
+        QFile sourcePkgbuild(QFINDTESTDATA("../pkgbuild/PKGBUILD"));
+        QFile stagedPkgbuild(
+            QFINDTESTDATA("../pkgbuild/omarchy-pkgs/omapresent/PKGBUILD"));
+        QVERIFY(sourcePkgbuild.open(QIODevice::ReadOnly));
+        QVERIFY(stagedPkgbuild.open(QIODevice::ReadOnly));
+        const QByteArray pkgbuild = sourcePkgbuild.readAll();
+        QCOMPARE(stagedPkgbuild.readAll(), pkgbuild);
+        QVERIFY(pkgbuild.contains("install -Dm755 pkgbuild/omapresent-theme-refresh"));
+
+        QTemporaryDir packageRoot;
+        QTemporaryDir homeDirectory;
+        QTemporaryDir fakeBin;
+        QVERIFY(packageRoot.isValid() && homeDirectory.isValid() && fakeBin.isValid());
+        const QString packaged = packageRoot.filePath(
+            QStringLiteral("usr/share/omapresent/hooks/omapresent-theme-refresh"));
+
+        QProcess packageInstall;
+        packageInstall.start(QStringLiteral("/usr/bin/install"),
+                             {QStringLiteral("-Dm755"), source, packaged});
+        QVERIFY2(packageInstall.waitForFinished(),
+                 qPrintable(packageInstall.errorString()));
+        QCOMPARE(packageInstall.exitCode(), 0);
+        const QFileInfo packagedInfo(packaged);
+        QVERIFY(packagedInfo.isFile());
+        QVERIFY(packagedInfo.permission(QFileDevice::ExeOwner));
+        QVERIFY(packagedInfo.permission(QFileDevice::ExeGroup));
+        QVERIFY(packagedInfo.permission(QFileDevice::ExeOther));
+
+        const QString omarchy = QStandardPaths::findExecutable(QStringLiteral("omarchy"));
+        QVERIFY2(!omarchy.isEmpty(), "The verified Omarchy hook installer is missing.");
+        QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+        environment.insert(QStringLiteral("HOME"), homeDirectory.path());
+        QProcess hookInstall;
+        hookInstall.setProcessEnvironment(environment);
+        hookInstall.start(omarchy,
+                          {QStringLiteral("hook"), QStringLiteral("install"),
+                           QStringLiteral("theme-set"), packaged});
+        QVERIFY2(hookInstall.waitForFinished(), qPrintable(hookInstall.errorString()));
+        QVERIFY2(hookInstall.exitCode() == 0,
+                 qPrintable(QString::fromUtf8(hookInstall.readAllStandardError())));
+
+        const QString installed = homeDirectory.filePath(
+            QStringLiteral(".config/omarchy/hooks/theme-set.d/omapresent-theme-refresh"));
+        const QFileInfo installedInfo(installed);
+        QVERIFY(installedInfo.isFile());
+        QVERIFY(installedInfo.permission(QFileDevice::ExeOwner));
+        QVERIFY(installedInfo.permission(QFileDevice::ExeGroup));
+        QVERIFY(installedInfo.permission(QFileDevice::ExeOther));
+
+        const QString capture = fakeBin.filePath(QStringLiteral("pkill.args"));
+        const QString marker = fakeBin.filePath(QStringLiteral("must-not-exist"));
+        QFile fakePkill(fakeBin.filePath(QStringLiteral("pkill")));
+        QVERIFY(fakePkill.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(fakePkill.write(
+            "#!/bin/bash\n"
+            "printf '%s\\n' \"$@\" > \"$OMAPRESENT_TEST_CAPTURE\"\n"
+            "exit \"${OMAPRESENT_TEST_PKILL_EXIT:-0}\"\n") > 0);
+        fakePkill.close();
+        QVERIFY(fakePkill.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                         | QFileDevice::ExeOwner));
+
+        environment.insert(QStringLiteral("PATH"),
+                           fakeBin.path() + QStringLiteral(":/usr/bin"));
+        environment.insert(QStringLiteral("OMAPRESENT_TEST_CAPTURE"), capture);
+        // Exit 1 is pkill's normal no-match result. The hook must still pass.
+        environment.insert(QStringLiteral("OMAPRESENT_TEST_PKILL_EXIT"),
+                           QStringLiteral("1"));
+        QProcess hook;
+        hook.setProcessEnvironment(environment);
+        hook.start(installed,
+                   {QStringLiteral("Gold Rush; touch ") + marker});
+        QVERIFY2(hook.waitForFinished(), qPrintable(hook.errorString()));
+        QCOMPARE(hook.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(hook.exitCode(), 0);
+        QVERIFY(!QFileInfo::exists(marker));
+
+        QFile captured(capture);
+        QVERIFY(captured.open(QIODevice::ReadOnly | QIODevice::Text));
+        QCOMPARE(captured.readAll(), QByteArray("-USR1\n-x\nomapresent\n"));
     }
 
     void settingsFillInWhatTheDeckLeavesUnsaid() {

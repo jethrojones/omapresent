@@ -1436,3 +1436,17 @@ live run when those checks can be made without changing the user's baseline.
 **Tests:** Real Chromium proved zero image requests before activation, one request after activation, visible and toggleable subtitles, successful subtitle-image persistence, stable title fallback, and keyboard navigation after chrome focus. `./bin/build` and `./bin/test` pass. All C++ suites pass with no skips. Renderer 43/43 passes. Final scoped Autoreview is clean.
 **Next:** none
 **NEEDS:** nothing
+
+### 2026-08-28 13:02 PT — publish (Codex GPT-5.6 Sol)
+**Task:** T21 presentation environment controls and Omarchy theme changes
+**Did:** Read the working agreement, T21 brief, relevant spec text, current worklog, and the installed Omarchy `theme-set.d` hook convention.
+**Tests:** Not run yet.
+**Next:** Add the side-effect-free settings seam, package the theme hook, and test all settings and hook cases.
+**NEEDS:** nothing
+
+### 2026-08-28 13:17 PT — publish (Codex GPT-5.6 Sol)
+**Task:** T21 presentation environment controls and Omarchy theme changes
+**Did:** Wired both presentation settings to their desktop holds through a pure idempotent control seam. Added a packaged `theme-set.d` hook that signals only a running Omapresent process. The signal reloads the live palette and background without moving presentation state. Both PKGBUILDs install the same executable hook source.
+**Tests:** All four settings pairs, repeated starts, stop and destructor cleanup, live theme signal reload, temporary-HOME hook install, mode, theme argument, and no-process behavior pass. `./bin/build && ./bin/test` passes: 500 C++ and 43 renderer tests. Final scoped Autoreview is clean after its background-path finding was fixed.
+**Next:** none
+**NEEDS:** nothing

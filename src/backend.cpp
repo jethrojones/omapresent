@@ -22,6 +22,7 @@
 #include <QJsonObject>
 #include <QLockFile>
 #include <QSaveFile>
+#include <QSocketNotifier>
 #include <QTextBlock>
 #include <QTextBlockFormat>
 #include <QTextCursor>
@@ -32,8 +33,14 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <cerrno>
+#include <csignal>
+#include <functional>
 #include <limits>
 #include <utility>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "markdownhighlighter.h"
 
@@ -42,6 +49,8 @@ const QString lastSaveDirectorySetting = QStringLiteral("file/lastSaveDirectory"
 const QString welcomeShownSetting = QStringLiteral("firstRun/welcomeShown");
 const QString installedSkillPath = QStringLiteral("/usr/share/omapresent/skill");
 const QString installedWelcomeDeck = QStringLiteral("/usr/share/omapresent/welcome.md");
+const QString installedThemeHook =
+    QStringLiteral("/usr/share/omapresent/hooks/omapresent-theme-refresh");
 
 // A keystroke must not reparse a 200-slide deck, so edits collect for a beat
 // before the preview and any running presentation are handed a new document.
@@ -94,6 +103,124 @@ static bool pathIsInside(const QString &path, const QString &root) {
         && !relative.startsWith(QStringLiteral("../"))
         && !QDir::isAbsolutePath(relative);
 }
+
+namespace {
+
+int themeSignalWriteFd = -1;
+
+void handleThemeReloadSignal(int) {
+    const int savedErrno = errno;
+    if (themeSignalWriteFd >= 0) {
+        const char byte = 1;
+        (void)::write(themeSignalWriteFd, &byte, sizeof(byte));
+    }
+    errno = savedErrno;
+}
+
+// SIGUSR1 cannot call Qt. A non-blocking pipe moves the request into the event
+// loop, where every Backend can repaint without losing its current position.
+class ThemeReloadSignalBridge final : public QObject {
+public:
+    ThemeReloadSignalBridge() {
+        int descriptors[2];
+        if (::pipe(descriptors) != 0)
+            return;
+        m_readFd = descriptors[0];
+        m_writeFd = descriptors[1];
+        for (const int descriptor : descriptors) {
+            ::fcntl(descriptor, F_SETFL, ::fcntl(descriptor, F_GETFL) | O_NONBLOCK);
+            ::fcntl(descriptor, F_SETFD, ::fcntl(descriptor, F_GETFD) | FD_CLOEXEC);
+        }
+
+        themeSignalWriteFd = m_writeFd;
+        struct sigaction action {};
+        action.sa_handler = handleThemeReloadSignal;
+        ::sigemptyset(&action.sa_mask);
+        action.sa_flags = SA_RESTART;
+        if (::sigaction(SIGUSR1, &action, nullptr) != 0) {
+            themeSignalWriteFd = -1;
+            ::close(m_readFd);
+            ::close(m_writeFd);
+            m_readFd = -1;
+            m_writeFd = -1;
+            return;
+        }
+
+        m_notifier = new QSocketNotifier(m_readFd, QSocketNotifier::Read, this);
+        connect(m_notifier, &QSocketNotifier::activated, this, [this](auto, auto) {
+            char buffer[64];
+            while (::read(m_readFd, buffer, sizeof(buffer)) > 0) {}
+            const auto callbacks = m_callbacks.values();
+            for (const auto &callback : callbacks)
+                callback();
+        });
+    }
+
+    void add(QObject *owner, std::function<void()> callback) {
+        if (!m_notifier)
+            return;
+        m_callbacks.insert(owner, std::move(callback));
+        connect(owner, &QObject::destroyed, this,
+                [this, owner] { m_callbacks.remove(owner); });
+    }
+
+private:
+    int m_readFd = -1;
+    int m_writeFd = -1;
+    QSocketNotifier *m_notifier = nullptr;
+    QHash<QObject *, std::function<void()>> m_callbacks;
+};
+
+ThemeReloadSignalBridge *themeReloadSignalBridge() {
+    // The signal handler can run until process exit. Keep its pipe alive for
+    // that full period instead of risking a late write into a reused file fd.
+    static auto *bridge = new ThemeReloadSignalBridge;
+    return bridge;
+}
+
+QJsonObject currentOmarchyPalette(const OmarchyTheme &theme) {
+    if (!theme.overrideTheme().isEmpty())
+        return theme.palette();
+
+    QFile colors(QDir::homePath()
+                 + QStringLiteral("/.local/state/omarchy/current/theme/colors.toml"));
+    if (!colors.open(QIODevice::ReadOnly | QIODevice::Text))
+        return theme.palette();
+    const QString text = QString::fromUtf8(colors.readAll());
+    if (text.trimmed().isEmpty())
+        return theme.palette();
+    return OmarchyTheme::parseColorsToml(text);
+}
+
+QString currentOmarchyBackground() {
+    const QString path = QDir::homePath()
+        + QStringLiteral("/.local/state/omarchy/current/background");
+    return QFileInfo::exists(path) ? path : QString();
+}
+
+void installOmarchyThemeHook() {
+    if (!QFileInfo(installedThemeHook).isFile())
+        return;
+    const QString omarchy = QStandardPaths::findExecutable(QStringLiteral("omarchy"));
+    if (omarchy.isEmpty())
+        return;
+
+    QProcess process;
+    process.start(omarchy,
+                  {QStringLiteral("hook"), QStringLiteral("install"),
+                   QStringLiteral("theme-set"), installedThemeHook});
+    if (!process.waitForFinished(2000)) {
+        process.kill();
+        process.waitForFinished(200);
+        qWarning() << "Could not install the Omapresent theme hook.";
+        return;
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0)
+        qWarning().noquote() << "Could not install the Omapresent theme hook:"
+                             << QString::fromUtf8(process.readAllStandardError()).trimmed();
+}
+
+} // namespace
 
 QString Backend::normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
@@ -185,6 +312,11 @@ Backend::Backend(QObject *parent) : QObject(parent) {
     connect(&m_themeWatcher, &QFileSystemWatcher::directoryChanged, this, [this]() {
         loadOmarchyTheme();
         watchOmarchyTheme();
+    });
+    themeReloadSignalBridge()->add(this, [this] {
+        loadOmarchyTheme();
+        watchOmarchyTheme();
+        rebuildDeck();
     });
 
     // Everything above is connected, so settings.toml can now take effect.
@@ -349,6 +481,9 @@ void Backend::setTextScale(qreal textScale) {
 // Re-applies every setting that has a live consumer. Called at startup and
 // whenever settings.toml changes underneath us.
 void Backend::applySettings() {
+    m_presentation.setEnvironmentPreferences(
+        m_settings.boolValue(QStringLiteral("presentation.inhibit_idle")),
+        m_settings.boolValue(QStringLiteral("presentation.do_not_disturb")));
     setDarkMode(m_systemDarkMode);
     setTextScale(m_desktopTextScale);
     applyFrontmatter();
@@ -847,7 +982,7 @@ void Backend::loadOmarchyTheme() {
     m_themeSelection = m_darkMode ? QStringLiteral("#186a9a") : QStringLiteral("#2077b2");
 
     QString themeMode;
-    const QJsonObject palette = m_theme.palette();
+    const QJsonObject palette = currentOmarchyPalette(m_theme);
     if (!palette.isEmpty()) {
         // Spec §6: OmarchyTheme resolves the one palette every surface wears,
         // including the `theme:` override a deck can ask for.
@@ -1144,8 +1279,8 @@ QJsonObject Backend::deckDocument(const QString &mode) const {
 
     return RenderHost::composeDeck(mode, deck,
                                    m_assets.resolveAll(references), media,
-                                   m_theme.palette(), m_theme.backgroundImagePath(),
-                                   m_textScale);
+                                   currentOmarchyPalette(m_theme),
+                                   currentOmarchyBackground(), m_textScale);
 }
 
 QString Backend::previewRenderScript() {
@@ -1527,6 +1662,9 @@ void Backend::completeFirstRun() {
     // there costs four stats. Nothing here may stop the app from starting.
     installAgentSkill(installedSkillPath, QStringLiteral("omapresent"),
                       agentSkillDirectories(QDir::homePath()));
+    // Omarchy owns the destination and mode. Its normal installer copies this
+    // package file to ~/.config/omarchy/hooks/theme-set.d/ idempotently.
+    installOmarchyThemeHook();
 
     QSettings settings;
     if (settings.value(welcomeShownSetting, false).toBool())

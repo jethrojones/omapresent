@@ -21,6 +21,7 @@
 #include <QUrl>
 
 #include <memory>
+#include <utility>
 
 #include "omarchytheme.h"
 #include "renderhost.h"
@@ -439,6 +440,61 @@ struct ViewState {
 
 }  // namespace
 
+// --- Presentation environment controls ------------------------------------
+
+PresentationEnvironmentControl::PresentationEnvironmentControl(
+    Action idleAction, Action doNotDisturbAction)
+    : m_idleAction(std::move(idleAction))
+    , m_doNotDisturbAction(std::move(doNotDisturbAction)) {}
+
+PresentationEnvironmentControl::~PresentationEnvironmentControl() {
+    stop();
+}
+
+void PresentationEnvironmentControl::setPreferences(bool inhibitIdle,
+                                                     bool doNotDisturb) {
+    m_inhibitIdleEnabled = inhibitIdle;
+    m_doNotDisturbEnabled = doNotDisturb;
+    if (!m_active)
+        return;
+
+    setIdleHeld(m_inhibitIdleEnabled);
+    setDoNotDisturbHeld(m_doNotDisturbEnabled);
+}
+
+void PresentationEnvironmentControl::start() {
+    if (m_active)
+        return;
+    m_active = true;
+    setIdleHeld(m_inhibitIdleEnabled);
+    setDoNotDisturbHeld(m_doNotDisturbEnabled);
+}
+
+void PresentationEnvironmentControl::stop() {
+    if (!m_active)
+        return;
+    // Notifications first. A last-window close can start application teardown.
+    setDoNotDisturbHeld(false);
+    setIdleHeld(false);
+    m_active = false;
+}
+
+void PresentationEnvironmentControl::setIdleHeld(bool held) {
+    if (m_idleHeld == held)
+        return;
+    if (m_idleAction)
+        m_idleAction(held);
+    m_idleHeld = held;
+}
+
+void PresentationEnvironmentControl::setDoNotDisturbHeld(bool held) {
+    if (m_doNotDisturbHeld == held)
+        return;
+    if (m_doNotDisturbAction)
+        m_doNotDisturbAction(held);
+    m_doNotDisturbHeld = held;
+}
+
 // --- Monitors ---------------------------------------------------------------
 
 MonitorAssignment assignOutputs(const QVector<PresentationOutput> &outputs) {
@@ -701,6 +757,7 @@ struct Presentation::Private {
 
     std::unique_ptr<IdleInhibit> idle;
     std::unique_ptr<DoNotDisturbHold> doNotDisturb;
+    std::unique_ptr<PresentationEnvironmentControl> environment;
 
     // The window whose renderer we ask to navigate and scroll, and whose state
     // events we believe. The presenter when there is one, because that is where
@@ -713,6 +770,9 @@ struct Presentation::Private {
 Presentation::Presentation(QObject *parent) : QObject(parent), d(new Private) {
     d->audienceHost = new RenderHost(this);
     d->presenterHost = new RenderHost(this);
+    d->environment = std::make_unique<PresentationEnvironmentControl>(
+        [this](bool on) { inhibitIdle(on); },
+        [this](bool on) { setDoNotDisturb(on); });
 
     d->clock.setInterval(1000);
     connect(&d->clock, &QTimer::timeout, this, [this]() {
@@ -740,6 +800,7 @@ Presentation::Presentation(QObject *parent) : QObject(parent), d(new Private) {
 Presentation::~Presentation() {
     // The holders release here too, so an exception or a crash on the way out
     // still gives the desktop its idle timer and its notifications back.
+    d->environment->stop();
     closeWindows();
     delete d;
 }
@@ -781,19 +842,25 @@ bool Presentation::singleOutput() const { return d->assignment.sharedOutput(); }
 
 void Presentation::setQmlEngine(QQmlEngine *engine) { d->engine = engine; }
 
+void Presentation::setEnvironmentPreferences(bool inhibitIdle, bool doNotDisturb) {
+    d->environment->setPreferences(inhibitIdle, doNotDisturb);
+}
+
+bool Presentation::inhibitIdleEnabled() const {
+    return d->environment->inhibitIdleEnabled();
+}
+
+bool Presentation::doNotDisturbEnabled() const {
+    return d->environment->doNotDisturbEnabled();
+}
+
 void Presentation::start(int fromSlideIndex) {
     if (d->active) {
         gotoSlide(fromSlideIndex);
         return;
     }
 
-    // Idempotent by construction: a second start() finds the holders already
-    // taken and does not stack another inhibit or forget the DND state we read
-    // the first time.
-    if (!d->idle)
-        d->idle.reset(new IdleInhibit);
-    if (!d->doNotDisturb)
-        d->doNotDisturb.reset(new DoNotDisturbHold);
+    d->environment->start();
 
     d->active = true;
     d->blank.clear();
@@ -827,8 +894,7 @@ void Presentation::stop() {
     // teardown, and a half-run stop() that has already closed the windows but
     // not yet released these leaves the user's notifications switched off with
     // nothing left running to switch them back on.
-    d->doNotDisturb.reset();
-    d->idle.reset();
+    d->environment->stop();
 
     closeWindows();
     emit activeChanged();
@@ -1392,8 +1458,6 @@ void Presentation::closeWindows() {
         presenter->deleteLater();
     }
 
-    d->idle.reset();
-    d->doNotDisturb.reset();
 }
 
 void Presentation::inhibitIdle(bool on) {
