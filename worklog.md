@@ -1298,3 +1298,10 @@ is clear of them.
 **Tests:** `./bin/build` passes. Desktop-capable `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: OmapresentTest 24/24, PresentationTest 55/55, LiveSyncTest 23/23, renderer 42/42, and all other suites green. Live Hyprland check reflowed the audience from 1901x2106 to 3816x2106; Q showed the full five-bullet recall slide on the first press; the editor preview and footer Present button were visible.
 **Next:** Commit the four scoped changes and the worklog.
 **NEEDS:** AGY remains quota-blocked. No Grok or Claude work was used for this repair.
+
+### 2026-08-28 11:11 PT — orchestrator (Codex GPT-5)
+**Task:** Full specification completion audit
+**Did:** Coordinated two read-only Herdr audits and checked the release records. The usability repair is complete, the worktree is clean at `a14c7aa`, and all eight security findings are fixed. The full specification is not complete. Required product gaps remain in offline-safe remote images, application settings wiring, offline media preparation, published subtitle layout, publish controls, welcome-deck access, and small title/wallpaper contracts. Release verification also remains open for package lint, CI Chromium coverage, a public release/package, and live multi-monitor hotplug plus idle inhibit.
+**Tests:** No tests rerun for this read-only audit. The latest recorded desktop-capable gate remains fully green: OmapresentTest 24/24, PresentationTest 55/55, LiveSyncTest 23/23, renderer 42/42, and all other suites green.
+**Next:** Split the required product gaps into new owned tasks. Update `docs/acceptance.md` as each requirement is proved.
+**NEEDS:** Do not call the project complete until the product gaps and release checks above are closed.
