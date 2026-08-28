@@ -1603,3 +1603,17 @@ live run when those checks can be made without changing the user's baseline.
 **Live:** `omapresent present welcome/welcome.md` created two native Wayland clients from PID 3011450: editor `0x55cf9aaa3360`, class/initialClass `omapresent`, title `How Omapresent Works - Omapresent`; audience `0x55cf9abad140`, class/initialClass `omapresent`, title `How Omapresent Works — Omapresent`, fullscreen, `xwayland: false`. The separately existing outer compositor was `0x55cf9a388ab0`, PID 1422813, class/initialClass `aquamarine`, title `aquamarine - WAYLAND-1`, also `xwayland: false`. The test process was stopped.
 **Next:** Done.
 **NEEDS:** The portal picker label is outside Omapresent. Omapresent cannot control the outer Aquamarine source. The portal must be used in the physical Hyprland session and the direct Omapresent audience window must be selected.
+
+### 2026-08-28 14:45 PDT — screen-share-docs (Codex GPT-5)
+**Task:** T25 screen-share directions
+**Did:** Read the project rules, spec, current help docs, skill docs, and T24 live evidence. Created `tasks/t25-screen-share-docs.md` with ownership limited to the README, welcome deck, and installed skill.
+**Tests:** Not run yet.
+**Next:** Add concise Omarchy/Hyprland window-selection guidance, verify docs, run the required sync and build/test checks, then make a scoped commit.
+**NEEDS:** Do not stage or commit app-final’s T24 changes.
+
+### 2026-08-28 14:48 PDT — screen-share-docs (Codex GPT-5)
+**Task:** T25 screen-share directions
+**Did:** Added concise screen-share guidance to `README.md`, `welcome/welcome.md`, and `skill/SKILL.md`. The docs identify the separate native editor and audience windows, the footer `Present` start action, the audience title `<deck title> — Omapresent` or `Omapresent`, and `aquamarine - WAYLAND-1` as the outer compositor/output. They state that Omapresent does not control the portal label. No source, tests, package files, or workflows changed.
+**Tests:** Local Markdown links resolve. `git diff --check` passes. `./bin/check-skill-sync` passes. `./bin/build` passes. `./bin/test` exits 1 in the shared headless Chromium environment; the renderer suite reports a generic failure. `namcap` was not run because it is not installed.
+**Next:** Commit the T25 task file and three owned help files.
+**NEEDS:** none

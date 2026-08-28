@@ -20,6 +20,12 @@ Open a deck in Omapresent. Then choose one path:
 - Click `Present` in the footer to start from the current editor slide.
 - From a terminal, run `omapresent present FILE` to start the deck.
 
+## Screen sharing on Omarchy and Hyprland
+
+The editor and audience are separate native windows. In the editor, click the footer `Present` button to start from the current editor slide.
+
+For a call or recording, share the audience window. If presentation is already running, choose the window source titled `<deck title> — Omapresent`, or `Omapresent` when no deck title is set. Do not choose `aquamarine - WAYLAND-1`; that is the outer compositor/output. The share portal may show its own label. Omapresent does not control that label.
+
 ---
 
 ## Highlights

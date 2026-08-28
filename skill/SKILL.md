@@ -27,6 +27,14 @@ Use the editor or the command line:
 
 ---
 
+## Screen sharing on Omarchy and Hyprland
+
+The editor and audience are separate native windows. Click the footer `Present` button in the editor to start from the current editor slide.
+
+If presentation is already running, share the audience window. Choose the window source titled `<deck title> — Omapresent`, or `Omapresent` when no deck title is set. Do not choose `aquamarine - WAYLAND-1`; it is the outer compositor/output. The share portal may show its own label. Omapresent does not control that label.
+
+---
+
 ## Command Line Usage
 
 | Command | Action |

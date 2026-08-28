@@ -260,6 +260,15 @@ Present mode opens two independent top-level windows.
 
 The Presenter window shows the current slide, next slide preview, rendered speaker notes, elapsed timer, wall clock, and recall key badges. The Audience window displays clean, themed presentation content with instant slide cuts.
 
+## Share the audience window
+
+- The editor and audience are separate native windows
+- Click `Present` in the editor footer to start from the current editor slide
+- If presentation is already running, share the audience window titled `<deck title> — Omapresent` or `Omapresent`
+- Do not share `aquamarine - WAYLAND-1`; it is the outer compositor/output
+
+The share portal may show its own label. Omapresent does not control that label. Select the direct Omapresent audience window in the picker.
+
 ---
 
 # Present Mode Keyboard Controls
