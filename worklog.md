@@ -1450,3 +1450,10 @@ live run when those checks can be made without changing the user's baseline.
 **Tests:** All four settings pairs, repeated starts, stop and destructor cleanup, live theme signal reload, temporary-HOME hook install, mode, theme argument, and no-process behavior pass. `./bin/build && ./bin/test` passes: 500 C++ and 43 renderer tests. Final scoped Autoreview is clean after its background-path finding was fixed.
 **Next:** none
 **NEEDS:** nothing
+
+### 2026-08-28 13:32 PDT — acceptance (Codex GPT-5)
+**Task:** T19 final acceptance closeout on `cd3d74e`
+**Did:** Reconciled T16, T21, T22, and T23 evidence. Recorded the T23 explicit editor-file open-failure regression. Kept two-output hotplug and other live or hardware-only checks partial without changing the desktop.
+**Tests:** `qmllint src/Main.qml` passed. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passed: 517 C++ tests and renderer 43/43.
+**Next:** none
+**NEEDS:** Two-output projector hotplug, live idle/DND, renderer scroll observation, broader no-network behavior, first-run mutation, and live end-to-end CLI/deck checks remain partial.

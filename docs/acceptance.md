@@ -36,7 +36,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | Recognised video host → player; any other bare URL → QR **with URL beneath** | `media.test.mjs`, recorded renderer gate |
 | x | ` ```qr ` and `![[qr:…]]` force a QR | `media.test.mjs` |
 | x | A URL inside a notes paragraph stays a link, not a QR | `deckparse.test.mjs` |
-| ~ | Missing image → theme background + "missing:" tag, hidden in present mode | local fallback covered; T16 remote-image changes lack a post-change gate |
+| x | Missing image → theme background + "missing:" tag, hidden in present mode | `tst_webbundle`, renderer remote-image cases, T16 Chromium probe |
 | x | `deck.css` uses only the contract's custom properties, no literal colours | current stylesheet scan, `shell.test.mjs` |
 | ~ | Vendored markdown-it/KaTeX/QR, licences recorded, no runtime network | vendor checks and pre-T16 zero-request run; T16 changed image loading |
 
@@ -57,7 +57,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 |---|---|---|
 | x | Both `colors.toml` shapes parse; ANSI derives the named roles | `tst_omarchytheme`, 29-theme probe |
 | x | Every theme installed on this machine parses | 29-theme probe |
-| ~ | Live reload on theme switch, no lost position, debounced | watcher tests pass; no safe live theme switch in T19; hook gap below |
+| x | Live reload on theme switch, no lost position, debounced | `tst_omarchytheme`, T21 theme signal and packaged-hook tests |
 | x | `theme:` override, user dir before system, Omapresent windows only | `tst_omarchytheme` |
 | x | WCAG contrast floor on the audience window only | integration and theme tests |
 | x | `installedThemes()` enumerates both directories | `tst_omarchytheme` |
@@ -79,7 +79,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | Two independent top-level windows | `tst_presentation` QML load; live single-output audience |
 | ~ | Monitor assignment; single-monitor `N` notes overlay; hotplug | assignment tests and live `HDMI-A-1`; two-output hotplug unavailable |
 | x | Every key in the §5.2 table | `tst_presentation`; live F5/N/Esc subset |
-| ~ | Idle inhibit and DND on, prior state restored on exit | live DND cycle only; idle inhibit was not safely re-run |
+| ~ | Idle inhibit and DND on, prior state restored on exit | T21 pure four-setting and cleanup tests; no live desktop cycle in this closeout |
 | x | Instant cuts, no animation | presentation navigation tests and slide CSS review |
 
 ## §8 PDF, §4.10 editor, §10 app — `app-shell` (T8)
@@ -92,7 +92,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | PDF paginates tall slides, never scales; fragments fully expanded | live PDF geometry and render inspection |
 | x | Session restores last slide + scroll per file | `tst_omapresent`, live seeded restore |
 | x | Text scaling followed without restart | `tst_omapresent` |
-| ~ | CLI: open / present / export --pdf / publish, publish confirms first | prior CLI checks pass; T15/T16 final tree lacks a post-change gate |
+| ~ | CLI: open / present / export --pdf / publish, publish confirms first | T22/T23 pure startup policy and explicit-file failure cases; full GUI CLI run remains unverified |
 | ~ | First run installs the skill per-user and opens the welcome deck | package path and code are present; no safe first-run mutation in T19 |
 
 ## §9 Publish — `publish` (T6)
@@ -104,7 +104,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | herenow publish → presigned PUTs → finalize; refresh on expiry | `tst_publisher` |
 | x | Anonymous 24h link + claimToken; authenticated bearer flow | `tst_publisher` |
 | x | `command` and `s3` providers | `tst_publisher` |
-| ~ | Deck view **and** long read, both from the shared renderer | prior bundle inspection; T16 changed WebBundle and has no post-change gate |
+| x | Deck view **and** long read, both from the shared renderer | `tst_webbundle` view and long-read cases; T16 Chromium inspection |
 | x | Nothing uploads without an explicit user-initiated call | review and CLI confirmation check |
 
 ## §7, §11, §12, §13 Skill, welcome, packaging — `skill-docs` (T7)
@@ -128,7 +128,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | CI builds, tests, and checks skill/spec agreement | `.github/workflows` |
 | x | Fonts not bundled; system iA Writer S with a fallback stack | package inspection, grep |
 | ~ | No network at runtime outside prefetch and publish | empirical zero-request run before T16; final T16 image path needs a gate |
-| ~ | Everything green end to end on a real deck | recorded gate and live deck run pre-T15/T16; final tree needs a post-change gate |
+| ~ | Everything green end to end on a real deck | approved standard gate is green; no new live desktop run was permitted |
 
 ## T19 reconciliation and remaining verification
 
@@ -154,23 +154,42 @@ Safe checks in this continuation found:
   shell (`Couldn't set socket timeout`). No compositor mutation was attempted.
   The recorded live run saw one output only: `HDMI-A-1`, 3840x2160.
 
+Post-change evidence at `cd3d74e`:
+
+- T22/T23's pure `CommandLineRecoveryTest` passed 6/6. It covers explicit edit
+  file priority, explicit present file priority, file-free recovery, and the
+  explicit-file open-failure regression. It does not launch the GUI.
+- T23's `explicitFileOpenResultControlsFailure` regression passed. An explicit
+  editor file open failure now follows the same clear failure policy as an
+  explicit present file, while recovery remains untouched when no explicit
+  file is selected.
+- T21's pure presentation hold cases, theme signal reload, and temporary-HOME
+  packaged-hook checks passed. The current `PresentationTest` total is 60/60.
+  The two failing `OmapresentTest` cases are unrelated custom-domain loopback
+  tests.
+- T16's published deck and long-read cases passed in `tst_webbundle`. The
+  remote-image tests prove zero requests before explicit reader activation and
+  one request after activation. The recorded T16 Chromium probe was 43/43.
+- `qmllint src/Main.qml` passed. The approved standard override gate at
+  `cd3d74e` passed: 517 C++ tests and renderer 43/43. No live desktop was
+  launched or changed during this closeout.
+
 Open rows have exact reasons and owners:
 
 - Renderer scroll mirroring: no live scroll observation; owner `present/T9`.
-- Renderer missing-image and network rows: T16 changed remote-image loading
-  after the green gate; owner `T16`.
-- Theme live reload: the watcher path is covered, but the frozen spec also
-  names an installed `theme-set` hook, and no Omapresent hook exists; owner
-  `theme/T3` or the package owner.
+- Renderer network row: the final gate confirms zero remote-image requests
+  before explicit reader activation and one request after activation; the
+  broader no-network requirement remains partial; owner `T16`.
 - Monitor hotplug: the test machine exposed only one output, so projector
   removal and restoration were not verifiable; owner `acceptance/T19` when a
   second output is available.
-- Idle inhibit: a live present cycle was not re-run because it would change
-  desktop state and the restored Stay Awake baseline must remain untouched;
-  owner `acceptance/T19`.
-- CLI, first-run, publish bundle, and end-to-end rows: T15/T16 files remain
-  changed in the shared worktree, with no post-change full gate; owners
-  `T15` and `T16`.
+- Idle inhibit: T21 pure hold and cleanup cases pass, but a live present cycle
+  was not run because it would change desktop state; owner `acceptance/T19`.
+- CLI: T22/T23 pure startup policy passes, but no GUI CLI subprocess was run;
+  owner `T22/T23` for any further launch integration.
+- First-run and end-to-end rows remain partial because this closeout did not
+  run first-run mutation or a live final deck; the automated gate is green;
+  owners `T7` and `T19`.
 
 ## Verification log
 
