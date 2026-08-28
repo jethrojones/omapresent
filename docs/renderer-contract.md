@@ -106,6 +106,31 @@ video embeds, bare-URL QR codes. Speaker notes: plain paragraph prose. In
 `presenter` and `web` roles notes are rendered as formatted Markdown; in
 `audience`, `pdf` and `export` they are omitted entirely.
 
+## 3a. What a bare line is
+
+A line whose entire content is one reference is classified once, and both sides
+of the app must agree. The order is settled:
+
+1. **Local video** — a relative or absolute path ending in `.mp4`, `.webm` or
+   `.mov` is a local video, `host: "local"`. It is **not** a URL: those suffixes
+   are file extensions, not TLDs, so `clip.webm` is not `https://clip.webm`, and
+   `isBareUrlLine` is false for it. It is **not** an image either — image
+   detection must exclude the video extensions, or `./clip.webm` would be both.
+   `VideoCache::extractUrls` still returns these lines so `describe()` and
+   `prefetch()` see them.
+2. **Bare URL** — a whole line that is a single `http(s)` URL. A recognised
+   video host becomes a player; anything else becomes a QR code with the URL
+   printed beneath it (spec §4.8).
+3. **Image** — a bare path per spec §4.5. A line only counts when it is
+   plausibly one path: prose that merely contains a `/` (`and/or`,
+   `X/Twitter`, a sentence mentioning `~/Documents`) is prose, and prose is a
+   speaker note.
+4. Otherwise it is ordinary Markdown.
+
+`AssetIndex` (C++) and `deckparse.js` / `media.js` (renderer) implement this
+same order. `tests/tst_integration.cpp` asserts they agree; when they disagree,
+that suite is the arbiter and this section is what it is arbitrating against.
+
 ## 4. Layout grammar
 
 Implement spec §4.6 exactly and no more. There are no document-level styling

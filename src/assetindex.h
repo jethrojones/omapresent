@@ -47,8 +47,12 @@ public:
     // the forms of spec §4.5: ![[x]], ![alt](x), and a bare path alone on a
     // line. Size hints are stripped: "photo.png|600" yields "photo.png".
     static QStringList extractReferences(const QString &slideMarkdown);
-    // True when a whole line, on its own, should be read as an image path:
-    // it contains a '/' or ends in a known image extension.
+    // True when a whole line, on its own, should be read as an image path.
+    // The line must be plausibly ONE path — prose that merely contains a '/'
+    // ('and/or', 'X/Twitter', a sentence mentioning ~/Documents) is prose, and
+    // prose is a speaker note. Video extensions are excluded so a bare
+    // './clip.webm' is a local video and not also an image. See
+    // docs/renderer-contract.md §3a, which both this and the renderer follow.
     static bool looksLikeImageReference(const QString &line);
     // Splits "photo.png|600" / "photo.png|main" into the reference and its
     // hint. `maxWidthPx` is 0 when absent; `isMain` marks the bento hero.
