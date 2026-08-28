@@ -760,3 +760,49 @@ so inserting one never moves anybody.
 **Tests:** `VideoCacheTest::prefetchRefusesSymlinkCacheDir` passes. Full VideoCacheTest 114/114. `SecurityTest::videoCacheSymlinkCannotLeaveTheDeckDirectory` is now an **XPASS** (the pin is the only red).
 **Next:** done. Waiting for the next task.
 **NEEDS:** reviewer — please remove the `QEXPECT_FAIL` on `SecurityTest::videoCacheSymlinkCannotLeaveTheDeckDirectory`. SEC-003 is fixed; that expected-failure now fails as an unexpected pass.
+
+### 2026-08-28 06:21 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** SEC-002 deferred remote media, then long-read typography review
+**Did:** Confirmed that `mediaElement()` assigns HTTP sources to direct video and hosted iframe elements while the deck opens. Remote poster URLs can also request data before play. Started a source-based gate that keeps cached and local files eager but defers all HTTP media until the reader acts.
+**Tests:** Not run yet.
+**Next:** Add a browser regression for direct video and hosted iframe sources. Then fix the read-mode type branch from `tasks/review/longread-typography.md`.
+**NEEDS:** Publish owner must keep the generated long-read bundle CSS in sync with the renderer CSS change.
+
+### 2026-08-28 06:28 PT — reviewer (Codex GPT-5.6 Sol)
+**Task:** T14 follow-up review of CLI, first-run skill links, and settings patches
+**Did:** Started the second adversarial pass. Converted the SEC-003 expected failure to a normal regression assertion after the cache-symlink fix landed.
+**Tests:** Not run yet.
+**Next:** Check the CLI failure paths, skill-directory symlinks, hostile settings patches, and the live SEC-001 and SEC-005 fixes.
+**NEEDS:** nothing
+
+### 2026-08-28 06:24 PT — root (Codex GPT-5.6 Sol)
+**Task:** SEC-001 asset-root symlink disclosure checkpoint
+**Did:** AssetIndex now filters and re-checks canonical targets. WebBundle now accepts media only when its canonical target stays in the deck or asset root. Inside-root symlinks remain supported.
+**Tests:** AssetIndexTest 26/26 passes. WebBundleTest has no failures. The SEC-001 security assertion is now an XPASS because its review pin remains.
+**Next:** Run the corrected WebBundle symlink cases, Autoreview, and full verification after the review pin is removed.
+**NEEDS:** reviewer — remove the SEC-001 `QEXPECT_FAIL` in `tests/tst_security.cpp`; the disclosure assertion now passes.
+
+### 2026-08-28 06:26 PT — theme (Grok 4.6)
+**Task:** Live verification of present mode on Wayland (HDMI-A-1, gold-rush)
+**Did:** Ran `./build/omapresent present welcome/welcome.md` on the real Hyprland session. Did not switch the desktop theme. Present mode never appeared.
+
+**What actually happened**
+1. **Two windows?** No. `hyprctl clients` showed one `class=omapresent` window, title `welcome.md - Omapresent`, size 463×519, workspace 8, not fullscreen. That is the editor. No `audienceWindow`, no `Presenter - Omapresent`.
+2. **Single-monitor audience fill + N overlay?** Untestable — present windows never opened. On one output the code would close the presenter and keep audience only (`Presentation::assignMonitors`); we never got that far.
+3. **Presenter chrome** (current slide, next-slide preview, formatted notes, timer, clock, slide x/count, recall keys): not shown. N overlay (notes-only) is the single-screen substitute and also never appeared.
+4. **Arrows / Space fragments / scroll mirror:** keys were sent at the editor (the only omapresent window). Welcome deck did not change on disk. No audience to mirror.
+5. **Recall `Q` (`--- {q}` in welcome.md):** overlay never appeared.
+6. **B / W / O / Esc:** B/W/O had no present-mode effect. Esc did not quit; the process was SIGTERM'd so it would not sit on the desktop.
+7. **§6 contrast floor:** not visible. Code path in `presentation.cpp` does call `paletteForRole` for the audience deck, but no audience window loaded. Live theme is gold-rush `#d9d9d9` on `#121212` (already ~15:1), so even a working audience would likely match the presenter unless a weaker theme is used.
+
+**Cause (stderr):** `omapresent: present mode: qrc:/AudienceWindow.qml: No such file or directory`. `src/AudienceWindow.qml` and `src/PresenterWindow.qml` exist on disk; `src/resources.qrc` does not list them, so `createWindow("qrc:/AudienceWindow.qml")` fails and `start()` leaves only the editor.
+
+**Screenshots** (full 4K shots are the existing tiled desktop; the omapresent window is the editor):
+- `/tmp/omapresent-present-verify/01-window-3-welcome.md_-_Omapresent.png` — editor, "Opened welcome.md", 1999 words
+- `/tmp/omapresent-present-verify/01-launch-full.png` — full HDMI-A-1
+- `/tmp/omapresent-present-verify/run3.stderr` — contains the QML miss (line with `qrc:/AudienceWindow.qml`)
+- `/tmp/omapresent-present-verify/windows-launch.txt` — hyprctl dump
+
+**Tests:** not a unit-test change. Present mode was not exercised beyond the failed window create.
+**Next:** blocked on app-shell packing the two QML files.
+**NEEDS:** app-shell (`src/resources.qrc`): add `AudienceWindow.qml` and `PresenterWindow.qml` so `qrc:/AudienceWindow.qml` and `qrc:/PresenterWindow.qml` resolve. Present already creates them from those URLs (T9 worklog asked for this). Until that lands, `omapresent present` cannot open either present-mode window. Do not need a theme change for a first visual of the contrast floor — gold-rush already clears 4.5; pick a mid-grey theme later if you want a visible delta.
