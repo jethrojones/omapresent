@@ -281,6 +281,39 @@ private slots:
                  QStringLiteral("web"));
     }
 
+    void longReadResetsProjectorTypographyIntoArticleFlow()
+    {
+        WebBundle bundle;
+        configure(&bundle);
+        QVERIFY2(bundle.build(outputDir()), qPrintable(bundle.lastError()));
+
+        const QString css = readText(outputDir() + QStringLiteral("/assets/bundle.css"));
+        QVERIFY(css.contains(QStringLiteral(
+            "[data-op-view=\"read\"] #deck .op-stack {\n"
+            "    display: block;")));
+        QVERIFY(css.contains(QStringLiteral(
+            "[data-op-view=\"read\"] #deck h1 { font-size: 2.75rem; }")));
+        QVERIFY(css.contains(QStringLiteral(
+            "[data-op-view=\"read\"] #deck p,\n"
+            "[data-op-view=\"read\"] #deck li,")));
+        QVERIFY(css.contains(QStringLiteral(
+            "[data-op-view=\"read\"] #deck .op-notes.is-flow-note {")));
+        QVERIFY(css.contains(QStringLiteral("background: transparent;")));
+        QVERIFY(css.contains(QStringLiteral(
+            "[data-op-view=\"read\"] #deck .op-slide-header,")));
+        QVERIFY(css.contains(QStringLiteral(
+            "[data-op-view=\"read\"] #deck .op-media.is-vertical .op-player {")));
+        QVERIFY(css.contains(QStringLiteral("aspect-ratio: 9 / 16;")));
+
+        // The final bundle stylesheet must win over the renderer's projector
+        // rules without changing the deck view.
+        const QString html = readText(outputDir() + QStringLiteral("/read/index.html"));
+        const qsizetype rendererCss = html.indexOf(QStringLiteral("assets/deck.css"));
+        const qsizetype bundleCss = html.indexOf(QStringLiteral("assets/bundle.css"));
+        QVERIFY(rendererCss >= 0);
+        QVERIFY(bundleCss > rendererCss);
+    }
+
     void reportsExactlyWhatItWrote()
     {
         WebBundle bundle;
@@ -708,6 +741,10 @@ private slots:
         QVERIFY(bundle.files().contains(QStringLiteral("assets/deck.css")));
         QVERIFY(readText(outputDir() + QStringLiteral("/index.html"))
                     .contains(QStringLiteral("assets/deck.css")));
+        const QString rendererScript =
+            readText(outputDir() + QStringLiteral("/assets/render.js"));
+        QVERIFY(rendererScript.contains(QStringLiteral("flowAllBlocks")));
+        QVERIFY(rendererScript.contains(QStringLiteral("is-flow-note")));
     }
 
     // --- escaping ---------------------------------------------------------

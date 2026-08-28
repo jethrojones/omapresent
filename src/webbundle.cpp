@@ -397,8 +397,9 @@ a { color: var(--op-accent, #8ab); }
     line-height: 1.65;
 }
 
-/* The renderer sizes a slide to a screen. In the long read a slide is just a
-   section of the article, so it stops being a viewport and starts flowing. */
+/* The renderer sizes a slide to a screen. In the long read each slide is an
+   article section. Reset the whole layout branch instead of trying to shrink
+   viewport type one rule at a time. bundle.css loads after deck.css. */
 [data-op-view="read"] #deck section,
 [data-op-view="read"] #deck .op-slide {
     display: block;
@@ -410,6 +411,32 @@ a { color: var(--op-accent, #8ab); }
     text-align: left;
 }
 
+[data-op-view="read"] #deck .op-scroll {
+    width: auto;
+    min-height: 0;
+    overflow: visible;
+}
+
+[data-op-view="read"] #deck .op-stack {
+    display: block;
+    min-height: 0;
+    padding: 0;
+}
+
+[data-op-view="read"] #deck .op-content {
+    display: block;
+    width: 100%;
+    max-width: none;
+}
+
+[data-op-view="read"] #deck .op-block,
+[data-op-view="read"] #deck .op-images,
+[data-op-view="read"] #deck .op-media,
+[data-op-view="read"] #deck .op-qr,
+[data-op-view="read"] #deck .op-outline {
+    margin: 0 0 1.3rem;
+}
+
 [data-op-view="read"] #deck section + section,
 [data-op-view="read"] #deck .op-slide + .op-slide {
     border-top: 1px solid var(--op-selection, #333);
@@ -419,14 +446,73 @@ a { color: var(--op-accent, #8ab); }
 [data-op-view="read"] #deck h1,
 [data-op-view="read"] #deck h2,
 [data-op-view="read"] #deck h3 {
+    max-width: none;
     line-height: 1.2;
+    letter-spacing: -0.02em;
     margin: 2.4rem 0 1rem;
+    overflow-wrap: anywhere;
+    text-align: left;
+    text-wrap: pretty;
+}
+
+[data-op-view="read"] #deck h1 { font-size: 2.75rem; }
+[data-op-view="read"] #deck h2 { font-size: 2rem; }
+[data-op-view="read"] #deck h3 { font-size: 1.5rem; }
+
+[data-op-view="read"] #deck h4,
+[data-op-view="read"] #deck h5,
+[data-op-view="read"] #deck h6 {
+    max-width: none;
+    margin: 2rem 0 0.8rem;
+    font-size: 1.25rem;
+    line-height: 1.3;
+    letter-spacing: 0;
+    text-align: left;
 }
 
 [data-op-view="read"] #deck p,
 [data-op-view="read"] #deck ul,
 [data-op-view="read"] #deck ol,
 [data-op-view="read"] #deck table { margin: 0 0 1.3rem; }
+
+[data-op-view="read"] #deck p,
+[data-op-view="read"] #deck li,
+[data-op-view="read"] #deck blockquote,
+[data-op-view="read"] #deck table,
+[data-op-view="read"] #deck .op-outline-item {
+    font-size: 1rem;
+    line-height: 1.65;
+}
+
+[data-op-view="read"] #deck ul,
+[data-op-view="read"] #deck ol {
+    display: block;
+    padding-inline-start: 1.4rem;
+}
+
+[data-op-view="read"] #deck li + li { margin-top: 0.35rem; }
+
+/* Renderer read mode promotes each speaker-note block into document order.
+   It is article prose here, not the subtitle panel used by the deck view. */
+[data-op-view="read"] #deck .op-notes.is-flow-note {
+    display: block;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+}
+
+[data-op-view="read"] #deck .op-slide-header,
+[data-op-view="read"] #deck .op-slide-footer,
+[data-op-view="read"] #deck .op-slide-number,
+[data-op-view="read"] #deck .op-progress {
+    display: none;
+}
 
 [data-op-view="read"] #deck img,
 [data-op-view="read"] #deck video,
@@ -439,11 +525,35 @@ a { color: var(--op-accent, #8ab); }
     margin: 2rem auto;
 }
 
+[data-op-view="read"] #deck .op-media { min-height: 0; }
+
+[data-op-view="read"] #deck .op-player {
+    height: auto;
+    max-height: 70vh;
+    aspect-ratio: 16 / 9;
+}
+
+[data-op-view="read"] #deck .op-media.is-vertical .op-player {
+    max-height: none;
+    aspect-ratio: 9 / 16;
+}
+
+[data-op-view="read"] #deck .op-images.is-bento {
+    display: block;
+    min-height: 0;
+}
+
+[data-op-view="read"] #deck .op-images.is-bento .op-image + .op-image {
+    margin-top: 1.3rem;
+}
+
 [data-op-view="read"] #deck pre {
     overflow-x: auto;
     padding: 1rem;
     background: var(--op-dark-background, #000);
     border-radius: 4px;
+    font-size: 0.9rem;
+    line-height: 1.5;
 }
 
 [data-op-view="read"] #deck code,
@@ -451,8 +561,10 @@ a { color: var(--op-accent, #8ab); }
 
 [data-op-view="read"] #deck blockquote {
     margin: 1.5rem 0;
-    padding-left: 1rem;
-    border-left: 3px solid var(--op-accent, #8ab);
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--op-selection, #333);
+    border-radius: 4px;
+    background: var(--op-dark-background, #000);
     color: var(--op-muted, #999);
 }
 

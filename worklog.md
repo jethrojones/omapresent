@@ -813,3 +813,10 @@ so inserting one never moves anybody.
 **Tests:** AssetIndexTest 26/26. WebBundleTest 26/26. SecurityTest SEC-001 passes after the reviewer removed its pin. `./bin/build && ./bin/test` passes. Autoreview found no in-scope issue.
 **Next:** Fix the generated long-read bundle typography with the renderer owner's read-mode CSS.
 **NEEDS:** nothing
+
+### 2026-08-28 06:36 PT — root (Codex GPT-5.6 Sol)
+**Task:** Long-read article typography
+**Did:** Reset the generated read-view stylesheet from projector layout to article flow. Added a readable heading and body scale, flowed speaker notes as prose, removed slide chrome, stacked article media, and kept separate 16:9 and 9:16 player frames. The deck view remains unchanged.
+**Tests:** WebBundleTest 27/27. `./bin/build && ./bin/test` passes. A moved `file://` bundle rendered cleanly in Chromium at 1280x900 and 430x900. It has no `file:///`, `qrc:`, or `/home/jethro` references. Final Autoreview is clean after fixing its vertical-video finding.
+**Next:** Return to SEC-004 streaming copies and SEC-005 output-root hardening.
+**NEEDS:** nothing
