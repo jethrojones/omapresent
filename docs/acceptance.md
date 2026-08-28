@@ -15,7 +15,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | Setext `Heading\n---` is not a break | `tst_deckmodel` |
 | x | `***`, `___`, `----`, `- - -` are not breaks | `tst_deckmodel` |
 | x | `---` inside a fenced code block is not a break | `tst_deckmodel` |
-| — | No separators = one slide | `tst_deckmodel` |
+| x | No separators = one slide | `tst_deckmodel`, integration seam fixture |
 | x | Frontmatter only when line 1 is `---`; closing `---` is not a break | `tst_deckmodel` |
 | x | All §4.4 keys parse, incl. nested `publish:` | `tst_deckmodel` |
 | x | `//`, `%%…%%`, `<!-- … -->` stripped — but not inside code fences | `tst_deckmodel` |
@@ -27,18 +27,18 @@ Status: `—` not started · `~` in progress · `x` done and verified
 
 | | Requirement | Verified by |
 |---|---|---|
-| — | Prose is a note; headings/lists/code/tables/quotes/math/media are audience | `tests/renderer` |
-| — | Every row of the §4.6 layout table, and nothing beyond it | `tests/renderer` |
-| — | Bento: 2 side by side, 3 row, 4 as 2×2, 5–6 mosaic, `\|main` hero | `tests/renderer` |
-| — | Lists reveal one item at a time; nested reveal with their parent | `tests/renderer` |
-| — | Never shrink to fit; overflow becomes a scroll surface | `tests/renderer` |
-| — | Audience mirrors presenter scroll (`scrollFraction` in state) | manual + contract |
-| — | Recognised video host → player; any other bare URL → QR **with URL beneath** | `tests/renderer` |
-| — | ` ```qr ` and `![[qr:…]]` force a QR | `tests/renderer` |
-| — | A URL inside a notes paragraph stays a link, not a QR | `tests/renderer` |
-| — | Missing image → theme background + "missing:" tag, hidden in present mode | `tests/renderer` |
-| — | `deck.css` uses only the contract's custom properties, no literal colours | grep |
-| — | Vendored markdown-it/KaTeX/QR, licences recorded, no runtime network | `LICENSES.md` |
+| x | Prose is a note; headings/lists/code/tables/quotes/math/media are audience | `deckparse.test.mjs`, recorded renderer gate |
+| x | Every row of the §4.6 layout table, and nothing beyond it | `layout.test.mjs` |
+| x | Bento: 2 side by side, 3 row, 4 as 2×2, 5–6 mosaic, `\|main` hero | `layout.test.mjs` |
+| x | Lists reveal one item at a time; nested reveal with their parent | `deckparse.test.mjs`, `tst_presentation` |
+| x | Never shrink to fit; overflow becomes a scroll surface | `layout.test.mjs`, recorded PDF inspection |
+| ~ | Audience mirrors presenter scroll (`scrollFraction` in state) | state contract tested; no live scroll observation in T19 |
+| x | Recognised video host → player; any other bare URL → QR **with URL beneath** | `media.test.mjs`, recorded renderer gate |
+| x | ` ```qr ` and `![[qr:…]]` force a QR | `media.test.mjs` |
+| x | A URL inside a notes paragraph stays a link, not a QR | `deckparse.test.mjs` |
+| ~ | Missing image → theme background + "missing:" tag, hidden in present mode | local fallback covered; T16 remote-image changes lack a post-change gate |
+| x | `deck.css` uses only the contract's custom properties, no literal colours | current stylesheet scan, `shell.test.mjs` |
+| ~ | Vendored markdown-it/KaTeX/QR, licences recorded, no runtime network | vendor checks and pre-T16 zero-request run; T16 changed image loading |
 
 ## §4.5 Images — `assets` (T4)
 
@@ -55,57 +55,57 @@ Status: `—` not started · `~` in progress · `x` done and verified
 
 | | Requirement | Verified by |
 |---|---|---|
-| — | Both `colors.toml` shapes parse; ANSI derives the named roles | `tst_omarchytheme` |
-| — | Every theme installed on this machine parses | `tst_omarchytheme` |
-| — | Live reload on theme switch, no lost position, debounced | manual |
-| — | `theme:` override, user dir before system, Omapresent windows only | `tst_omarchytheme` |
-| — | WCAG contrast floor on the audience window only | `tst_omarchytheme` |
-| — | `installedThemes()` enumerates both directories | `tst_omarchytheme` |
+| x | Both `colors.toml` shapes parse; ANSI derives the named roles | `tst_omarchytheme`, 29-theme probe |
+| x | Every theme installed on this machine parses | 29-theme probe |
+| ~ | Live reload on theme switch, no lost position, debounced | watcher tests pass; no safe live theme switch in T19; hook gap below |
+| x | `theme:` override, user dir before system, Omapresent windows only | `tst_omarchytheme` |
+| x | WCAG contrast floor on the audience window only | integration and theme tests |
+| x | `installedThemes()` enumerates both directories | `tst_omarchytheme` |
 
 ## §4.8 Media — `media` (T5)
 
 | | Requirement | Verified by |
 |---|---|---|
-| — | All eight hosts + direct files recognised, real URL shapes | `tst_videocache` |
-| — | Unrecognised host is **not** a video (no yt-dlp fallback) | `tst_videocache` |
-| — | `describe()` never blocks on the network | `tst_videocache` |
-| — | Offline prefetch to `.omapresent-cache/`, cached → embed → QR degrade | `tst_videocache` |
-| — | No test touches the network | review |
+| x | All eight hosts + direct files recognised, real URL shapes | `tst_videocache` |
+| x | Unrecognised host is **not** a video (no yt-dlp fallback) | `tst_videocache` |
+| x | `describe()` never blocks on the network | `tst_videocache` |
+| x | Offline prefetch to `.omapresent-cache/`, cached → embed → QR degrade | `tst_videocache` |
+| x | No test touches the network | review and recorded full gate |
 
-## §5 Present mode — `present` (T9, not yet assigned)
+## §5 Present mode — `present` (T9)
 
 | | Requirement | Verified by |
 |---|---|---|
-| — | Two independent top-level windows | manual |
-| — | Monitor assignment; single-monitor `N` notes overlay; hotplug | manual |
-| — | Every key in the §5.2 table | manual |
-| — | Idle inhibit and DND on, prior state restored on exit | manual |
-| — | Instant cuts, no animation | manual |
+| x | Two independent top-level windows | `tst_presentation` QML load; live single-output audience |
+| ~ | Monitor assignment; single-monitor `N` notes overlay; hotplug | assignment tests and live `HDMI-A-1`; two-output hotplug unavailable |
+| x | Every key in the §5.2 table | `tst_presentation`; live F5/N/Esc subset |
+| ~ | Idle inhibit and DND on, prior state restored on exit | live DND cycle only; idle inhibit was not safely re-run |
+| x | Instant cuts, no animation | presentation navigation tests and slide CSS review |
 
 ## §8 PDF, §4.10 editor, §10 app — `app-shell` (T8)
 
 | | Requirement | Verified by |
 |---|---|---|
-| — | Live preview beside the editor, position held across edits | manual |
-| — | Triple-return inserts a slide break | `tst_omapresent` |
-| — | Drag-drop inserts `![[shortest-name]]`; Wayland `text/uri-list` decoded | `tst_omapresent` |
-| — | PDF paginates tall slides, never scales; fragments fully expanded | manual |
-| — | Session restores last slide + scroll per file | manual |
-| — | Text scaling followed without restart | manual |
-| — | CLI: open / present / export --pdf / publish, publish confirms first | `tst_omapresent` |
-| — | First run installs the skill per-user and opens the welcome deck | manual |
+| x | Live preview beside the editor, position held across edits | live editor run |
+| x | Triple-return inserts a slide break | live editor run, `tst_omapresent` |
+| x | Drag-drop inserts `![[shortest-name]]`; Wayland `text/uri-list` decoded | `tst_omapresent`, live URI decode |
+| x | PDF paginates tall slides, never scales; fragments fully expanded | live PDF geometry and render inspection |
+| x | Session restores last slide + scroll per file | `tst_omapresent`, live seeded restore |
+| x | Text scaling followed without restart | `tst_omapresent` |
+| ~ | CLI: open / present / export --pdf / publish, publish confirms first | prior CLI checks pass; T15/T16 final tree lacks a post-change gate |
+| ~ | First run installs the skill per-user and opens the welcome deck | package path and code are present; no safe first-run mutation in T19 |
 
 ## §9 Publish — `publish` (T6)
 
 | | Requirement | Verified by |
 |---|---|---|
-| — | `publish.toml` parses; missing file = anonymous herenow | `tst_publisher` |
-| — | One-key patch preserves comments, order and unknown keys byte-for-byte | `tst_publisher` |
-| — | herenow publish → presigned PUTs → finalize; refresh on expiry | `tst_publisher` |
-| — | Anonymous 24h link + claimToken; authenticated bearer flow | `tst_publisher` |
-| — | `command` and `s3` providers | `tst_publisher` |
-| — | Deck view **and** long read, both from the shared renderer | manual |
-| — | Nothing uploads without an explicit user-initiated call | review |
+| x | `publish.toml` parses; missing file = anonymous herenow | `tst_publisher` |
+| x | One-key patch preserves comments, order and unknown keys byte-for-byte | `tst_publisher` |
+| x | herenow publish → presigned PUTs → finalize; refresh on expiry | `tst_publisher` |
+| x | Anonymous 24h link + claimToken; authenticated bearer flow | `tst_publisher` |
+| x | `command` and `s3` providers | `tst_publisher` |
+| ~ | Deck view **and** long read, both from the shared renderer | prior bundle inspection; T16 changed WebBundle and has no post-change gate |
+| x | Nothing uploads without an explicit user-initiated call | review and CLI confirmation check |
 
 ## §7, §11, §12, §13 Skill, welcome, packaging — `skill-docs` (T7)
 
@@ -113,7 +113,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 |---|---|---|
 | x | `SKILL.md` + four references; safety line on publishing | read |
 | x | PKGBUILD deps correct, no yt-dlp, no bundled fonts | `bash -n`, read |
-| x | Welcome deck is a valid deck: 24 slides, frontmatter, clean separators | validator |
+| x | Welcome deck is a valid deck: 25 slides, frontmatter, clean separators | validator |
 | x | Welcome deck demonstrates **every** row of §4.2 | review 1, verified |
 | x | Welcome deck inherits the live theme | review 1, verified |
 | x | `bin/check-skill-sync` passes in CI | CI |
@@ -126,9 +126,51 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | Started from Omawrite's source as the base commit | `git log` |
 | x | `bin/build`, `bin/install`, `bin/test` all work | run |
 | x | CI builds, tests, and checks skill/spec agreement | `.github/workflows` |
-| — | Fonts not bundled; system iA Writer S with a fallback stack | grep |
-| — | No network at runtime outside prefetch and publish | review |
-| — | Everything green end to end on a real deck | manual |
+| x | Fonts not bundled; system iA Writer S with a fallback stack | package inspection, grep |
+| ~ | No network at runtime outside prefetch and publish | empirical zero-request run before T16; final T16 image path needs a gate |
+| ~ | Everything green end to end on a real deck | recorded gate and live deck run pre-T15/T16; final tree needs a post-change gate |
+
+## T19 reconciliation and remaining verification
+
+The recorded desktop-capable gate is reused as directed: OmapresentTest 24/24,
+PresentationTest 55/55, LiveSyncTest 23/23, renderer 42/42, and the other
+suites were green. The recorded live run used the real Hyprland desktop with
+`HDMI-A-1` at 3840x2160 and the `gold-rush` theme. It showed the editor and
+preview, live edit position retention, triple-return, F5 present mode, the
+single-output audience, the `N` notes overlay, and clean Esc exit.
+
+Safe checks in this continuation found:
+
+- `omarchy-toggle-idle status` returned `{"enabled":true,...}`. The
+  `~/.local/state/omarchy/indicators/stay-awake` file exists. This is the
+  user's restored baseline. It was not toggled.
+- `omarchy-theme-current` returned `Gold Rush`. The live `colors.toml` is the
+  terminal `color0`–`color15` form. The installed `omarchy-theme-set` swaps
+  `current/theme`, then calls `omarchy-hook theme-set <name>`. Omapresent
+  watches `current/`, the theme directory, `colors.toml`, `theme.name`, and
+  the background link. No Omapresent hook is installed in the user's
+  `theme-set` hook path.
+- `hyprctl monitors -j` could not query the compositor from this restricted
+  shell (`Couldn't set socket timeout`). No compositor mutation was attempted.
+  The recorded live run saw one output only: `HDMI-A-1`, 3840x2160.
+
+Open rows have exact reasons and owners:
+
+- Renderer scroll mirroring: no live scroll observation; owner `present/T9`.
+- Renderer missing-image and network rows: T16 changed remote-image loading
+  after the green gate; owner `T16`.
+- Theme live reload: the watcher path is covered, but the frozen spec also
+  names an installed `theme-set` hook, and no Omapresent hook exists; owner
+  `theme/T3` or the package owner.
+- Monitor hotplug: the test machine exposed only one output, so projector
+  removal and restoration were not verifiable; owner `acceptance/T19` when a
+  second output is available.
+- Idle inhibit: a live present cycle was not re-run because it would change
+  desktop state and the restored Stay Awake baseline must remain untouched;
+  owner `acceptance/T19`.
+- CLI, first-run, publish bundle, and end-to-end rows: T15/T16 files remain
+  changed in the shared worktree, with no post-change full gate; owners
+  `T15` and `T16`.
 
 ## Verification log
 

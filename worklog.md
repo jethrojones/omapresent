@@ -1399,3 +1399,57 @@ work is a controls-and-preferences surface rather than new transport.
 **Next:** Settings consumers first, then Prepare for offline, publish controls,
 welcome-deck actions, window title, recipes.
 **NEEDS:** nothing yet
+
+### 2026-08-28 12:12 PT — icon (Codex GPT-5)
+**Task:** T18 production application icon
+**Did:** Started icon work. Inspected the existing projector-and-pineapple SVG and the dark charcoal/warm-gold presentation UI. Generated candidate marks with the built-in ChatGPT image-generation tool.
+**Tests:** Final candidate selected for 1024x1024 normalization. Small-size inspection pending.
+**Next:** Verify alpha, dimensions, and 16px/32px readability. Record the final prompt and commit the PNG.
+**NEEDS:** nothing
+
+### 2026-08-28 12:14 PT — icon (Codex GPT-5)
+**Task:** T18 production application icon
+**Did:** Added `pkgbuild/omapresent.png`, a generated charcoal-and-warm-gold stage-light mark with no text and true transparent alpha. Recorded the final generation prompt in `artwork/omapresent-icon-prompt.md`.
+**Tests:** PNG is 1024x1024 and TrueColorAlpha. Alpha range is 0 to 65535. Rendered checks at 32px and 16px show a clear gold beam and dark emitter silhouette on a light background. `./bin/build && ./bin/test` was attempted; the link step is blocked by concurrent T15 `Backend` declarations without definitions.
+**Next:** Release agent connects the PNG to packaging.
+**NEEDS:** T15 must finish the currently declared `Backend` methods so the shared tree links again.
+
+### 2026-08-28 12:32 PT — app-shell (Codex GPT-5)
+**Task:** T15 finish application wiring and user controls
+**Did:** Connected the settings slice to the editor UI, added the explicit offline-preparation confirmation, publish preferences and controls, welcome-deck actions, and frontmatter window titles. Fixed provider selection so it writes the top-level `publish.toml` default while preserving comments. Corrected the offline recipe. Removed the new welcome-dialog QML binding loop.
+**Tests:** `qmllint src/Main.qml` passes. OmapresentTest passes 32/32 under offscreen Qt, including the provider-default regression. `./bin/build` passes. `./bin/test` is blocked in this sandbox by GTK display startup, local loopback bind denial, and QtWebEngine sandbox denial.
+**Next:** T15 is blocked only on the custom-domain DNS-record preference flow.
+**NEEDS:** Publisher owner must add a public, user-started domain setup API and a result signal that returns the DNS records. The current public API exposes no domain setup or records. Its private `configureHereDomain` runs only after a publish, so T15 cannot meet spec §9's DNS-record requirement without editing non-T15 files.
+
+### 2026-08-28 11:38 PT — acceptance (Claude Opus 5)
+**Task:** T19 live Omarchy acceptance and checklist closeout
+**Did:** Read `AGENTS.md` and `tasks/T19-live-acceptance.md`. Tore down the
+nested Hyprland compositor and app instances left from the earlier present-mode
+verification; user session is back to one compositor and no stray omapresent
+processes.
+**Tests:** none run yet.
+**Next:** Reconcile `docs/acceptance.md`, then idle inhibit, monitors, theme.
+**NEEDS:** nothing
+
+### 2026-08-28 12:31 PT — acceptance (Codex GPT-5)
+**Task:** T19 live Omarchy acceptance and checklist closeout
+**Did:** Continued the interrupted acceptance run. Reconciled stale checklist
+rows against the recorded green gate, recorded live deck evidence, and safe
+read-only checks. Confirmed the user's Stay Awake baseline reports
+`{"enabled":true,...}` and did not toggle it. Inspected the installed
+`omarchy-theme-set` and `omarchy-hook` behavior and Omapresent's theme watchers.
+**Tests:** No build or test rerun by instruction. Safe checks: current theme is
+`Gold Rush`; the Stay Awake indicator file exists; `hyprctl monitors -j` is
+unavailable in this restricted shell. Recorded live evidence shows one output,
+`HDMI-A-1` at 3840x2160, so projector hotplug remains hardware-limited.
+**Next:** Commit `docs/acceptance.md` and this acceptance log entry.
+**NEEDS:** Theme live reload still lacks the explicitly specified installed
+Omapresent `theme-set` hook. Idle inhibit and two-output hotplug need a safe
+live run when those checks can be made without changing the user's baseline.
+
+### 2026-08-28 12:39 PT — publish (Codex GPT-5)
+**Task:** T20 custom-domain publish flow
+**Did:** Read the task, frozen contracts, current publish preferences, and the existing here.now domain transport. Confirmed that domain setup must be a separate explicit action.
+**Tests:** Not run yet.
+**Next:** Add the provider and backend result contract, then wire and test the publish-preferences controls.
+**NEEDS:** nothing
