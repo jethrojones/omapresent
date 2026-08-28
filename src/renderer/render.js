@@ -426,6 +426,30 @@ function renderAll() {
     root.className = "op-all-slides";
 }
 
+function clearPrintPageHeights() {
+    root.querySelectorAll(".op-slide").forEach(section => {
+        section.style.removeProperty("--op-print-slide-height");
+    });
+}
+
+function preparePrintPageHeights() {
+    if (role !== "export" && deck.mode !== "pdf")
+        return;
+    clearPrintPageHeights();
+    const ruler = document.createElement("div");
+    ruler.className = "op-print-page-ruler";
+    document.body.append(ruler);
+    const pageHeight = ruler.getBoundingClientRect().height;
+    ruler.remove();
+    if (!(pageHeight > 0))
+        return;
+    root.querySelectorAll(".op-all-slides > .op-slide").forEach(section => {
+        const naturalHeight = Math.max(section.scrollHeight, section.getBoundingClientRect().height);
+        const pageCount = Math.max(1, Math.ceil((naturalHeight - 0.5) / pageHeight));
+        section.style.setProperty("--op-print-slide-height", `${pageCount * pageHeight}px`);
+    });
+}
+
 function renderOverview() {
     const grid = document.createElement("div");
     grid.className = "op-overview";
@@ -727,6 +751,8 @@ root.addEventListener("scroll", event => {
     emitState();
 }, true);
 window.addEventListener("resize", scheduleFitUpdate);
+window.addEventListener("beforeprint", preparePrintPageHeights);
+window.addEventListener("afterprint", clearPrintPageHeights);
 document.addEventListener("keydown", event => {
     if (document.documentElement.dataset.opView || globalThis.omapresentHost || event.metaKey || event.ctrlKey || event.altKey)
         return;

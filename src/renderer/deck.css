@@ -176,8 +176,8 @@ table,
 ul,
 ol {
     display: grid;
+    width: 100%;
     gap: 0.34em;
-    max-width: 27ch;
     margin: 0 auto;
     padding-inline-start: 1.2em;
 }
@@ -635,7 +635,7 @@ html[data-op-view="read"] .op-all-slides > .op-slide {
     .op-all-slides > .op-slide {
         width: 100vw;
         height: auto;
-        min-height: 100vh;
+        min-height: var(--op-print-slide-height, 100vh);
         overflow: visible;
         break-after: page;
         page-break-after: always;
@@ -653,6 +653,14 @@ html[data-op-view="read"] .op-all-slides > .op-slide {
     .op-all-slides > .op-slide:last-child {
         break-after: auto;
         page-break-after: auto;
+    }
+
+    .op-print-page-ruler {
+        position: absolute;
+        width: 1px;
+        height: 100vh;
+        visibility: hidden;
+        pointer-events: none;
     }
 }
 

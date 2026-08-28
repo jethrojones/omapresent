@@ -40,9 +40,12 @@ test("deck CSS has no literal color values", async () => {
 
 test("print mode lets long slides paginate without clipping", async () => {
     const css = await source("deck.css");
+    const js = await source("render.js");
     const print = css.slice(css.indexOf("@media print"));
     assert.match(print, /\.op-all-slides > \.op-slide \{[\s\S]*height: auto;[\s\S]*overflow: visible;/);
     assert.match(print, /\.op-all-slides > \.op-slide > \.op-scroll \{[\s\S]*overflow: visible;/);
+    assert.match(print, /min-height: var\(--op-print-slide-height, 100vh\)/);
+    assert.match(js, /addEventListener\("beforeprint", preparePrintPageHeights\)/);
 });
 
 test("overview owns a viewport scroll surface", async () => {

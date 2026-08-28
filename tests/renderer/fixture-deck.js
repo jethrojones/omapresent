@@ -66,5 +66,15 @@ if (fixtureParams.get("view") === "read")
 if (fixtureParams.get("mode") === "pdf")
     globalThis.omapresentFixture.mode = "pdf";
 const fixtureSlide = Number(fixtureParams.get("slide"));
-if (Number.isInteger(fixtureSlide) && fixtureSlide > 0)
-    globalThis.addEventListener("load", () => setTimeout(() => globalThis.omapresent.goto(fixtureSlide), 0));
+globalThis.addEventListener("load", () => setTimeout(() => {
+    if (Number.isInteger(fixtureSlide) && fixtureSlide > 0)
+        globalThis.omapresent.goto(fixtureSlide);
+    if (fixtureParams.get("metrics") === "list-width") {
+        setTimeout(() => {
+            const content = document.querySelector(".op-content");
+            const list = document.querySelector(".op-block-list > ul, .op-block-list > ol");
+            if (content && list)
+                document.body.dataset.listWidthRatio = String(list.getBoundingClientRect().width / content.getBoundingClientRect().width);
+        }, 100);
+    }
+}, 0));
