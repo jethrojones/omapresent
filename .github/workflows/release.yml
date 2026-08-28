@@ -83,6 +83,7 @@ jobs:
       # makepkg refuses to run as root, so the build happens as a normal user.
       - name: Install dependencies
         run: |
+          printf '%s\n' '[omarchy]' 'SigLevel = Optional TrustAll' 'Server = https://pkgs.omarchy.org/stable/$arch' >> /etc/pacman.conf
           pacman -Syu --noconfirm curl git github-cli namcap sudo \
             qt6-base qt6-declarative qt6-webengine qt6-multimedia qt6-webchannel \
             xdg-desktop-portal ttf-ia-writer imagemagick hicolor-icon-theme
