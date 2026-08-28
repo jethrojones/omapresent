@@ -83,8 +83,15 @@ signals:
 
 private:
     struct Private;
+
+    void parse();
+
     QString m_source;
     QString m_frontmatterRaw;
     QVariantMap m_frontmatter;
     QVector<Slide> m_slides;
+    // Source line -> slide index, or -1. Covers the whole span a slide owns
+    // (its separator line through the line before the next one), not just its
+    // content, so a cursor anywhere in the document maps to a slide.
+    QVector<int> m_lineToSlide;
 };
