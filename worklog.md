@@ -100,3 +100,55 @@ suites registered and skipping.
 **Next:** Done with Review 1.
 **NEEDS:** nothing
 
+### 2026-08-27 17:57 PT — theme (Grok 4.6)
+**Task:** T3 Omarchy theme bridge
+**Did:** Starting. Inspected both `colors.toml` shapes across `/usr/share/omarchy/themes/` (rich named) and `~/.config/omarchy/themes/` (terminal `color0`–`color15`), plus `omarchy-theme-color`'s alias cascade so derivation matches the desktop.
+**Tests:** not yet.
+**Next:** `parseColorsToml`, contrast helpers, live reload, override, tests.
+**NEEDS:** nothing
+
+
+### 2026-08-27 18:05 PT — app-shell (Claude Opus 5)
+**Task:** T8 app shell — preview pane, WebEngine host, PDF export, CLI
+**Did:** Read AGENTS.md, the brief, spec §3/§4.10/§8/§10/§13/§15 and
+docs/renderer-contract.md. Confirmed the Omarchy agent-skill precedent on this
+machine for the routed NEEDS: `/usr/share/omarchy/default/agents/skills/<name>`
+is symlinked (absolute) into `~/.claude/skills`, `~/.agents/skills`,
+`~/.codex/skills` and `~/.pi/agent/skills`. Starting implementation.
+**Tests:** Baseline `./bin/build && ./bin/test` green before I touched anything.
+**Next:** renderhost.{h,cpp}, then Backend wiring, then Main.qml split.
+**NEEDS:** nothing yet
+
+### 2026-08-27 18:06 PT — media (Grok 4.6)
+**Task:** T5 video, embeds and the offline cache
+**Did:** Read AGENTS.md, tasks/T5-media.md, spec §4.8/§14.3/§14.4/§15.5 and docs/renderer-contract.md §1. Starting VideoCache: host recognition, bare-URL extraction, describe() from disk, then prefetch into `.omapresent-cache/`.
+**Tests:** not written yet
+**Next:** hostFor / isBareUrlLine / extractUrls / embedUrlFor with a table-driven suite that never touches the network.
+**NEEDS:** nothing
+
+### 2026-08-27 17:58 PT — skill-docs (Gemini 3.7 Flash)
+**Task:** T10 settings.toml support
+**Did:** Starting T10: implementing `Settings` in `src/settings.cpp` and unit test suite in `tests/tst_settings.cpp`.
+**Tests:** Baseline `./bin/build && ./bin/test` passing.
+**Next:** Implement `Settings::defaults()`, parsing via `Publisher::parseToml`, atomic patching via `Publisher::patchToml`, enum validation, file watching, and comprehensive unit tests.
+**NEEDS:** nothing
+
+
+### 2026-08-27 18:02 PT — present (Claude Opus 5)
+**Task:** T9 present mode
+**Did:** Read `AGENTS.md`, `tasks/T9-present-mode.md`, `docs/renderer-contract.md`
+and spec §5/§4.7/§4.9/§15. Confirmed baseline builds. Settled the design: C++
+holds the authoritative deck position and drives every window through the frozen
+page API, so the two windows cannot drift; `RenderHost` (app-shell) supplies the
+`omapresentHost` bridge and `callScript`.
+**Tests:** Baseline `./bin/build && ./bin/test` not re-run yet — other agents are
+mid-flight in the tree.
+**Next:** Header additions, `DeckNavigator`, the two windows, then the suite.
+**NEEDS:** nothing yet
+
+### 2026-08-27 18:10 PT — theme (Grok 4.6)
+**Task:** T3 Omarchy theme bridge
+**Did:** Implemented the Omarchy theme bridge. `parseColorsToml` handles both `colors.toml` shapes (rich named catppuccin/gruvbox and terminal gold-rush `color0`–`color15`), `#rgb`/`0x`/bare-hex, quoted and unquoted values, TOML tables, and never fails — missing keys follow `omarchy-theme-color`'s cascade (ANSI aliases, orange←yellow, brown mixed 50% toward black, brights mixed 20% toward white, dark_background mixed 25% toward black). `contrastRatio` is WCAG sRGB→linear luminance; `ensureContrast` walks HSL lightness only. Live reload watches `current/`, the theme dir, and `colors.toml`, debounced 150ms, emitting `themeChanged()` once per actual change. `setOverrideTheme` resolves user then system dirs and never writes the desktop. `installedThemes()` is sorted and deduplicated with user winning.
+**Tests:** `tests/tst_omarchytheme.cpp` — 19 cases, all green in isolation (21 including init/cleanup). Official `./bin/build` is currently red in other agents' files (`backend.cpp` Command enum, `presentation` moc); theme objects compile and the suite passes via a one-suite binary.
+**Next:** Done with T3.
+**NEEDS:** nothing

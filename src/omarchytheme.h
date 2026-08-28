@@ -48,6 +48,12 @@ public:
     // Themes installed under either themes directory, sorted, deduplicated.
     static QStringList installedThemes();
 
+    // Tests only: replace the well-known directories. Empty strings restore
+    // the Omarchy defaults. The application never calls this.
+    static void setDirectoriesForTest(const QString &userThemes,
+                                      const QString &systemThemes,
+                                      const QString &currentState);
+
     // --- Pure helpers, directly unit-tested -------------------------------
     // Parses either colors.toml shape into the canonical palette above.
     // Never fails: unknown or missing keys get sane derived defaults.
