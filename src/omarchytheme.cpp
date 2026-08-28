@@ -372,6 +372,51 @@ QString colorToHex(const QColor &color)
     return hexOf(color.red(), color.green(), color.blue());
 }
 
+// Nudge HSL lightness from startL toward 0 or 1. Returns the first colour
+// that clears minRatio; if none does, the colour along that walk with the
+// highest contrast. Mid-grey backgrounds fail one end of the axis, so the
+// caller tries both directions (relative luminance 0.5 is not mid-grey).
+struct LightnessWalk {
+    QString hex;
+    double ratio = 0;
+    bool cleared = false;
+};
+
+LightnessWalk walkLightness(const QColor &fg, const QString &bgHex, float startL,
+                            float dir, double minRatio)
+{
+    float h = fg.hslHueF();
+    if (h < 0)
+        h = 0;
+    const float s = fg.hslSaturationF();
+    const float a = fg.alphaF();
+
+    LightnessWalk best;
+    best.hex = colorToHex(fg);
+    best.ratio = OmarchyTheme::contrastRatio(best.hex, bgHex);
+
+    for (int i = 1; i <= 255; ++i) {
+        const float newL = qBound(0.0f, startL + dir * (i / 255.0f), 1.0f);
+        QColor candidate;
+        candidate.setHslF(h, s, newL, a);
+        const QString hex = colorToHex(candidate);
+        const double ratio = OmarchyTheme::contrastRatio(hex, bgHex);
+        if (ratio > best.ratio) {
+            best.hex = hex;
+            best.ratio = ratio;
+        }
+        if (ratio >= minRatio) {
+            best.hex = hex;
+            best.ratio = ratio;
+            best.cleared = true;
+            return best;
+        }
+        if (newL == 0.0f || newL == 1.0f)
+            break;
+    }
+    return best;
+}
+
 bool isSafeThemeName(const QString &name)
 {
     if (name.isEmpty() || name == QLatin1Char('.') || name == QStringLiteral(".."))
@@ -550,31 +595,21 @@ QString OmarchyTheme::ensureContrast(const QString &foreground, const QString &b
         return foreground;
 
     QColor fg(fgHex);
-    // Qt 6's getHslF takes float*, not qreal*. The F-suffixed getters return
-    // float directly and avoid the pointer conversion entirely.
-    float h = fg.hslHueF();
-    const float s = fg.hslSaturationF();
     const float l = fg.lightnessF();
-    const float a = fg.alphaF();
-    if (h < 0)
-        h = 0;
+    const LightnessWalk up = walkLightness(fg, bgHex, l, 1.0f, minRatio);
+    const LightnessWalk down = walkLightness(fg, bgHex, l, -1.0f, minRatio);
 
-    // Walk lightness toward the end of the axis farther from the background
-    // so contrast is monotonic once we pick a direction.
-    const float dir = (relativeLuminance(bgHex) < 0.5) ? 1.0f : -1.0f;
-    QString best = fgHex;
-    for (int i = 1; i <= 255; ++i) {
-        const float newL = qBound(0.0f, l + dir * (i / 255.0f), 1.0f);
-        QColor candidate;
-        candidate.setHslF(h, s, newL, a);
-        const QString hex = colorToHex(candidate);
-        best = hex;
-        if (contrastRatio(hex, bgHex) >= minRatio)
-            return hex;
-        if (newL == 0.0f || newL == 1.0f)
-            break;
+    if (up.cleared && down.cleared) {
+        // Keep light text light and dark text dark when either end would work.
+        if (relativeLuminance(fgHex) >= relativeLuminance(bgHex))
+            return up.hex;
+        return down.hex;
     }
-    return best;
+    if (up.cleared)
+        return up.hex;
+    if (down.cleared)
+        return down.hex;
+    return (up.ratio >= down.ratio) ? up.hex : down.hex;
 }
 
 void OmarchyTheme::reload()

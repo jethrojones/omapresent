@@ -208,6 +208,10 @@ private slots:
     void contrastMidTonePairs();
     void ensureContrastAlreadySufficientUnchanged();
     void ensureContrastRaisesFailingPairKeepsHue();
+    void ensureContrastMidGreyPicksReachableEnd();
+    void ensureContrastSweepClearsWhenPossible();
+    void ensureContrastReturnsBestWhenFloorImpossible();
+    void ensureContrastPrefersOriginalLightnessRelationship();
     void installedThemesUserWinsSorted();
     void overrideResolutionOrder();
     void overrideUnknownFallsBackToLive();
@@ -446,6 +450,79 @@ void OmarchyThemeTest::ensureContrastRaisesFailingPairKeepsHue()
     const float l1 = QColor(raised).lightnessF();
     QVERIFY2(qAbs(h0 - h1) < 0.02f, "hue must be preserved while lightness is nudged");
     QVERIFY(l1 < l0);
+}
+
+void OmarchyThemeTest::ensureContrastMidGreyPicksReachableEnd()
+{
+    const QString fg = QStringLiteral("#767676");
+    const QString bg = QStringLiteral("#808080");
+    QVERIFY(OmarchyTheme::contrastRatio(fg, bg) < 4.5);
+    QVERIFY(OmarchyTheme::contrastRatio(QStringLiteral("#ffffff"), bg) < 4.5);
+
+    const QString raised = OmarchyTheme::ensureContrast(fg, bg);
+    QVERIFY(OmarchyTheme::contrastRatio(raised, bg) >= 4.5);
+}
+
+void OmarchyThemeTest::ensureContrastSweepClearsWhenPossible()
+{
+    const QStringList backgrounds = {
+        QStringLiteral("#000000"), QStringLiteral("#202020"), QStringLiteral("#404040"),
+        QStringLiteral("#606060"), QStringLiteral("#707070"), QStringLiteral("#767676"),
+        QStringLiteral("#7a7a7a"), QStringLiteral("#808080"), QStringLiteral("#909090"),
+        QStringLiteral("#a0a0a0"), QStringLiteral("#c0c0c0"), QStringLiteral("#e0e0e0"),
+        QStringLiteral("#ffffff"), QStringLiteral("#804040"), QStringLiteral("#408080"),
+        QStringLiteral("#808040")
+    };
+    const QStringList foregrounds = {
+        QStringLiteral("#767676"), QStringLiteral("#cc6666"), QStringLiteral("#888888"),
+        QStringLiteral("#aaaaaa"), QStringLiteral("#333333"), QStringLiteral("#f0f0f0")
+    };
+
+    for (const QString &bg : backgrounds) {
+        const double reachable = qMax(
+            OmarchyTheme::contrastRatio(QStringLiteral("#000000"), bg),
+            OmarchyTheme::contrastRatio(QStringLiteral("#ffffff"), bg));
+        for (const QString &fg : foregrounds) {
+            const QString raised = OmarchyTheme::ensureContrast(fg, bg);
+            const double got = OmarchyTheme::contrastRatio(raised, bg);
+            if (reachable >= 4.5) {
+                QVERIFY2(got >= 4.5,
+                         qPrintable(QStringLiteral("%1 on %2 -> %3 (%4)")
+                                        .arg(fg, bg, raised)
+                                        .arg(got, 0, 'f', 4)));
+            }
+        }
+    }
+}
+
+void OmarchyThemeTest::ensureContrastReturnsBestWhenFloorImpossible()
+{
+    const QString fg = QStringLiteral("#767676");
+    const QString bg = QStringLiteral("#808080");
+    const double floor = 7.0;
+    const double black = OmarchyTheme::contrastRatio(QStringLiteral("#000000"), bg);
+    const double white = OmarchyTheme::contrastRatio(QStringLiteral("#ffffff"), bg);
+    QVERIFY(qMax(black, white) < floor);
+
+    const QString raised = OmarchyTheme::ensureContrast(fg, bg, floor);
+    const double got = OmarchyTheme::contrastRatio(raised, bg);
+    QVERIFY(got < floor);
+    QVERIFY2(qAbs(got - qMax(black, white)) < 0.05,
+             qPrintable(QStringLiteral("got %1 best-end %2")
+                            .arg(got, 0, 'f', 4)
+                            .arg(qMax(black, white), 0, 'f', 4)));
+}
+
+void OmarchyThemeTest::ensureContrastPrefersOriginalLightnessRelationship()
+{
+    // Against #767676 both black (4.62) and white (4.54) clear 4.5.
+    const QString bg = QStringLiteral("#767676");
+    const QString lightOut = OmarchyTheme::ensureContrast(QStringLiteral("#aaaaaa"), bg);
+    const QString darkOut = OmarchyTheme::ensureContrast(QStringLiteral("#444444"), bg);
+    QVERIFY(OmarchyTheme::contrastRatio(lightOut, bg) >= 4.5);
+    QVERIFY(OmarchyTheme::contrastRatio(darkOut, bg) >= 4.5);
+    QVERIFY(QColor(lightOut).lightnessF() > QColor(bg).lightnessF());
+    QVERIFY(QColor(darkOut).lightnessF() < QColor(bg).lightnessF());
 }
 
 void OmarchyThemeTest::installedThemesUserWinsSorted()
