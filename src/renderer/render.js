@@ -8,6 +8,7 @@ import qrcode from "./vendor/qrcode.mjs";
 const root = document.getElementById("deck");
 const roleValues = new Set(["audience", "presenter", "editor", "export", "web"]);
 const scrollPositions = new Map();
+const deferredPlayers = new WeakMap();
 
 let deck = { mode: "preview", slides: [] };
 let slides = [];
@@ -221,6 +222,106 @@ function qrElement(value) {
     return container;
 }
 
+function isRemoteMediaSource(source) {
+    return /^https?:\/\//i.test(String(source ?? "").trim());
+}
+
+function sendEmbedPlayback(player, playing) {
+    const message = player.dataset.host === "youtube"
+        ? JSON.stringify({ event: "command", func: playing ? "playVideo" : "pauseVideo", args: [] })
+        : { method: playing ? "play" : "pause" };
+    player.contentWindow?.postMessage(message, "*");
+    player.dataset.playing = playing ? "true" : "false";
+}
+
+function autoplaySource(source) {
+    try {
+        const url = new URL(source);
+        url.searchParams.set("autoplay", "1");
+        return url.toString();
+    } catch {
+        return source;
+    }
+}
+
+function playerElement(decision, allowRemote = false, requestPlayback = false) {
+    const remoteSource = isRemoteMediaSource(decision.source);
+    let player;
+    if (decision.player === "file") {
+        player = document.createElement("video");
+        player.controls = true;
+        player.preload = remoteSource ? "none" : "metadata";
+        player.playsInline = true;
+        if (!remoteSource || allowRemote)
+            player.src = decision.source;
+        if (decision.poster && (!isRemoteMediaSource(decision.poster) || allowRemote))
+            player.poster = decision.poster;
+        player.addEventListener("ended", () => {
+            player.dataset.ended = "true";
+            emitState();
+        });
+        player.addEventListener("play", () => {
+            player.dataset.ended = "false";
+            emitState();
+        });
+    } else {
+        player = document.createElement("iframe");
+        if (!remoteSource || allowRemote)
+            player.src = requestPlayback ? autoplaySource(decision.source) : decision.source;
+        player.loading = "eager";
+        player.allow = requestPlayback
+            ? "autoplay; fullscreen; picture-in-picture"
+            : "fullscreen; picture-in-picture";
+        player.referrerPolicy = "strict-origin-when-cross-origin";
+        player.title = decision.title || `${decision.host} video`;
+    }
+    player.className = "op-player";
+    player.tabIndex = 0;
+    player.dataset.host = decision.host;
+    return player;
+}
+
+function activateDeferredPlayer(loader) {
+    const decision = deferredPlayers.get(loader);
+    if (!decision)
+        return null;
+    const player = playerElement(decision, true, true);
+    loader.replaceWith(player);
+    player.focus({ preventScroll: true });
+    if (player.tagName === "VIDEO") {
+        player.play().catch(() => {});
+    } else {
+        player.dataset.playing = "true";
+        player.addEventListener("load", () => {
+            sendEmbedPlayback(player, player.dataset.playing === "true");
+        }, { once: true });
+    }
+    emitState();
+    return player;
+}
+
+function deferredPlayerElement(decision) {
+    const loader = document.createElement("button");
+    loader.type = "button";
+    loader.className = "op-player op-media-loader";
+    loader.dataset.host = decision.host;
+    loader.setAttribute("aria-label", `Play ${decision.host || "remote"} video`);
+    const mark = document.createElement("span");
+    mark.className = "op-media-loader-mark";
+    mark.textContent = "▶";
+    mark.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.className = "op-media-loader-label";
+    label.textContent = "Play video";
+    const detail = document.createElement("span");
+    detail.className = "op-media-loader-detail";
+    detail.textContent = "Loads remote media";
+    loader.append(mark, label, detail);
+    deferredPlayers.set(loader, decision);
+    loader.addEventListener("click", () => activateDeferredPlayer(loader));
+    return loader;
+}
+
 function mediaElement(block) {
     if (block.media?.kind === "qr")
         return qrElement(block.media.value);
@@ -238,34 +339,9 @@ function mediaElement(block) {
         figure.append(missingTag(value));
         return figure;
     }
-    let player;
-    if (decision.player === "file") {
-        player = document.createElement("video");
-        player.src = decision.source;
-        player.controls = true;
-        player.preload = "metadata";
-        player.playsInline = true;
-        if (decision.poster)
-            player.poster = decision.poster;
-        player.addEventListener("ended", () => {
-            player.dataset.ended = "true";
-            emitState();
-        });
-        player.addEventListener("play", () => {
-            player.dataset.ended = "false";
-            emitState();
-        });
-    } else {
-        player = document.createElement("iframe");
-        player.src = decision.source;
-        player.loading = "eager";
-        player.allow = "fullscreen; picture-in-picture";
-        player.referrerPolicy = "strict-origin-when-cross-origin";
-        player.title = decision.title || `${decision.host} video`;
-    }
-    player.className = "op-player";
-    player.tabIndex = 0;
-    player.dataset.host = decision.host;
+    const player = isRemoteMediaSource(decision.source)
+        ? deferredPlayerElement(decision)
+        : playerElement(decision);
     figure.append(player);
     return figure;
 }
@@ -569,7 +645,7 @@ function stateObject() {
         heading: headingText(slide.markdown ?? ""), notesHtml: notesHtmlFor(parsed),
         nextSlideHtml: nextHtml, recallKeys: [...recallSlides().keys()],
         mediaCount: players.length,
-        mediaActive: [...players].some(player => player.tagName === "VIDEO" && !player.paused),
+        mediaActive: players.length > 0,
     };
 }
 
@@ -697,6 +773,10 @@ const api = {
             return;
         }
         const player = players[0];
+        if (player.classList.contains("op-media-loader")) {
+            activateDeferredPlayer(player);
+            return;
+        }
         if (player.dataset.ended === "true") {
             player.dataset.ended = "false";
             api.next();
@@ -709,9 +789,7 @@ const api = {
                 player.pause();
         } else {
             const playing = player.dataset.playing === "true";
-            const message = player.dataset.host === "youtube" ? JSON.stringify({ event: "command", func: playing ? "pauseVideo" : "playVideo", args: [] }) : { method: playing ? "pause" : "play" };
-            player.contentWindow?.postMessage(message, "*");
-            player.dataset.playing = playing ? "false" : "true";
+            sendEmbedPlayback(player, !playing);
         }
         emitState();
     },
@@ -755,6 +833,10 @@ window.addEventListener("beforeprint", preparePrintPageHeights);
 window.addEventListener("afterprint", clearPrintPageHeights);
 document.addEventListener("keydown", event => {
     if (document.documentElement.dataset.opView || globalThis.omapresentHost || event.metaKey || event.ctrlKey || event.altKey)
+        return;
+    if ((event.key === " " || event.key === "Enter")
+        && event.target instanceof Element
+        && event.target.closest(".op-media-loader"))
         return;
     if (event.key === "ArrowRight") api.next();
     else if (event.key === "ArrowLeft") api.previous();

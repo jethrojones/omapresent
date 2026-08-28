@@ -417,6 +417,48 @@ html[data-mode="present"] .op-missing-tag {
     object-fit: contain;
 }
 
+.op-media-loader {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 0.55rem;
+    padding: 2rem;
+    color: var(--op-foreground);
+    font: inherit;
+    cursor: pointer;
+    transition: border-color 160ms ease-out, color 160ms ease-out, transform 160ms ease-out;
+}
+
+.op-media-loader:hover {
+    border-color: var(--op-accent);
+    color: var(--op-accent);
+}
+
+.op-media-loader:focus-visible {
+    outline: 3px solid var(--op-accent);
+    outline-offset: 0.25rem;
+}
+
+.op-media-loader:active {
+    transform: scale(0.99);
+}
+
+.op-media-loader-mark {
+    color: var(--op-accent);
+    font-size: clamp(2.4rem, 6vw, 5.5rem);
+    line-height: 1;
+}
+
+.op-media-loader-label {
+    font-size: clamp(1.4rem, 2.4vw, 2.4rem);
+    font-weight: 700;
+}
+
+.op-media-loader-detail {
+    color: var(--op-muted);
+    font-size: clamp(0.9rem, 1.3vw, 1.2rem);
+}
+
 .op-media.is-vertical .op-player {
     width: min(100%, 32rem);
 }

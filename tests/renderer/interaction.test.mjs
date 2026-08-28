@@ -24,24 +24,50 @@ function attribute(html, name) {
     return html.match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? "";
 }
 
-test("fragments reveal in DOM order and report every state through the host callback", {
-    skip: !(await hasChromium()),
-}, async () => {
+async function fixtureDom(search, extraArguments = []) {
     const fixture = pathToFileURL(resolve(here, "fixture.html"));
-    fixture.search = "?metrics=interaction";
+    fixture.search = search;
     const profile = await mkdtemp(join(tmpdir(), "omapresent-chromium-"));
     try {
         const { stdout } = await execute(chromium, [
             "--headless", "--no-sandbox", "--disable-gpu", "--allow-file-access-from-files",
-            `--user-data-dir=${profile}`, "--virtual-time-budget=1500", "--dump-dom", fixture.href,
+            `--user-data-dir=${profile}`, "--virtual-time-budget=1500", ...extraArguments,
+            "--dump-dom", fixture.href,
         ], { maxBuffer: 2 * 1024 * 1024 });
-
-        assert.equal(attribute(stdout, "data-fragment-steps"), "0000,1000,1100,1110,1111");
-        assert.equal(attribute(stdout, "data-host-state-serialized"), "true");
-        assert.ok(Number(attribute(stdout, "data-host-state-count")) >= 6);
-        assert.equal(attribute(stdout, "data-host-last-slide"), "2");
-        assert.equal(attribute(stdout, "data-host-last-fragment"), "0");
+        return stdout;
     } finally {
         await rm(profile, { recursive: true, force: true });
     }
+}
+
+test("fragments reveal in DOM order and report every state through the host callback", {
+    skip: !(await hasChromium()),
+}, async () => {
+    const html = await fixtureDom("?metrics=interaction");
+    assert.equal(attribute(html, "data-fragment-steps"), "0000,1000,1100,1110,1111");
+    assert.equal(attribute(html, "data-host-state-serialized"), "true");
+    assert.ok(Number(attribute(html, "data-host-state-count")) >= 6);
+    assert.equal(attribute(html, "data-host-last-slide"), "2");
+    assert.equal(attribute(html, "data-host-last-fragment"), "0");
+});
+
+test("remote video sources do not enter the DOM until play", {
+    skip: !(await hasChromium()),
+}, async () => {
+    const html = await fixtureDom("?metrics=remote-media", ["--host-resolver-rules=MAP * 127.0.0.1"]);
+    assert.equal(attribute(html, "data-loader-media-active"), "true");
+    assert.equal(attribute(html, "data-direct-before-play"), "false");
+    assert.equal(attribute(html, "data-direct-placeholder"), "true");
+    assert.equal(attribute(html, "data-direct-space-prevented"), "false");
+    assert.equal(attribute(html, "data-direct-enter-prevented"), "false");
+    assert.equal(attribute(html, "data-direct-after-play"), "true");
+    assert.equal(attribute(html, "data-direct-preload"), "none");
+    assert.equal(attribute(html, "data-embed-before-play"), "false");
+    assert.equal(attribute(html, "data-embed-placeholder"), "true");
+    assert.equal(attribute(html, "data-embed-after-play"), "true");
+    assert.equal(attribute(html, "data-embed-autoplay"), "1");
+    assert.equal(attribute(html, "data-embed-allows-autoplay"), "true");
+    assert.equal(attribute(html, "data-cached-placeholder"), "false");
+    assert.equal(attribute(html, "data-cached-source"), "file:///tmp/cached-test.mp4");
+    assert.equal(attribute(html, "data-cached-preload"), "metadata");
 });

@@ -62,6 +62,20 @@ globalThis.omapresentFixture = {
 
 const fixtureParams = new URLSearchParams(globalThis.location.search);
 const fixtureHostPayloads = [];
+if (fixtureParams.get("metrics") === "remote-media" || fixtureParams.get("deck") === "remote-media") {
+    globalThis.omapresentFixture.slides = [
+        { index: 0, markdown: "http://127.0.0.1:9/clip.mp4", recallKey: "", skip: false },
+        { index: 1, markdown: "https://youtu.be/remote-test", recallKey: "", skip: false },
+        { index: 2, markdown: "https://youtu.be/cached-test", recallKey: "", skip: false },
+    ];
+    globalThis.omapresentFixture.media = {
+        "https://youtu.be/cached-test": {
+            host: "youtube",
+            cachedFile: "file:///tmp/cached-test.mp4",
+            status: "cached",
+        },
+    };
+}
 if (fixtureParams.get("metrics") === "interaction") {
     globalThis.omapresentHost = {
         state(payload) {
@@ -102,5 +116,38 @@ globalThis.addEventListener("load", () => setTimeout(() => {
         document.body.dataset.hostStateCount = String(fixtureHostPayloads.length);
         document.body.dataset.hostLastSlide = String(lastState.slideIndex);
         document.body.dataset.hostLastFragment = String(lastState.fragment);
+    }
+    if (fixtureParams.get("metrics") === "remote-media") {
+        const remoteStates = [];
+        globalThis.omapresent.onState = state => remoteStates.push(state);
+        globalThis.omapresent.goto(0);
+        document.body.dataset.loaderMediaActive = String(remoteStates.at(-1)?.mediaActive);
+        const hasRemoteSource = () => [...document.querySelectorAll("video[src], iframe[src]")]
+            .some(element => /^https?:\/\//i.test(element.getAttribute("src") ?? ""));
+        document.body.dataset.directBeforePlay = String(hasRemoteSource());
+        document.body.dataset.directPlaceholder = String(Boolean(document.querySelector(".op-media-loader")));
+        const directLoader = document.querySelector(".op-media-loader");
+        directLoader?.focus();
+        for (const key of [" ", "Enter"]) {
+            const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+            directLoader?.dispatchEvent(event);
+            document.body.dataset[key === " " ? "directSpacePrevented" : "directEnterPrevented"] = String(event.defaultPrevented);
+        }
+        directLoader?.click();
+        document.body.dataset.directAfterPlay = String(hasRemoteSource());
+        document.body.dataset.directPreload = document.querySelector("video")?.preload ?? "";
+        globalThis.omapresent.goto(1);
+        document.body.dataset.embedBeforePlay = String(hasRemoteSource());
+        document.body.dataset.embedPlaceholder = String(Boolean(document.querySelector(".op-media-loader")));
+        document.querySelector(".op-media-loader")?.click();
+        document.body.dataset.embedAfterPlay = String(hasRemoteSource());
+        const embed = document.querySelector("iframe");
+        document.body.dataset.embedAutoplay = new URL(embed?.src ?? "https://invalid.example").searchParams.get("autoplay") ?? "";
+        document.body.dataset.embedAllowsAutoplay = String(embed?.allow.split(";").map(value => value.trim()).includes("autoplay"));
+        globalThis.omapresent.goto(2);
+        const cached = document.querySelector("video");
+        document.body.dataset.cachedPlaceholder = String(Boolean(document.querySelector(".op-media-loader")));
+        document.body.dataset.cachedSource = cached?.getAttribute("src") ?? "";
+        document.body.dataset.cachedPreload = cached?.preload ?? "";
     }
 }, 0));
