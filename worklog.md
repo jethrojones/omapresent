@@ -1553,3 +1553,10 @@ live run when those checks can be made without changing the user's baseline.
 **Tests:** Final approved gate passed at release-candidate HEAD: 517 C++ tests and renderer 43/43. Final Arch package rebuild, required-path checks, desktop validation, hook checks, and Namcap passed. Package SHA-256 is `608acb219a5c740dd24785663d06e1ebb8844f04bf5492383423236a558ee50c`.
 **Next:** Create the public GitHub repository, push the final tree and tag, fill the immutable tag checksum, publish v0.1.0, and submit the Omarchy package pull request.
 **NEEDS:** GitHub browser confirmation for the prepared public repository creation. CLI and SSH credentials are not valid on this host.
+
+### 2026-08-28 13:42 PDT — release (Codex GPT-5)
+**Task:** T17 GitHub release publication
+**Did:** Started the authorized public repository, tag, checksum, package, and GitHub release publication sequence from clean HEAD `7c18b9b`.
+**Tests:** Repository rules, T17 scope, release workflow, release notes, and checksum procedure inspected. No external mutation performed yet.
+**Next:** Verify GitHub auth and repository state, then publish the approved release sequence.
+**NEEDS:** nothing
