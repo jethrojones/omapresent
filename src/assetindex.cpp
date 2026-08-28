@@ -144,6 +144,83 @@ static QString expandEnvironmentAndTilde(const QString &input)
     return str;
 }
 
+// Blanks out inline code spans, keeping the line the same length so the match
+// offsets that order the results still line up with it.
+//
+// Inline code is documentation *about* the syntax, not a use of it: the welcome
+// deck shows readers what `![[figure.png]]` looks like. The renderer never
+// draws those, so neither may we — an embed we invent here resolves to nothing
+// and paints the missing-image placeholder (spec §4.5 step 5).
+static QString withoutInlineCode(const QString &line)
+{
+    QString masked = line;
+    int index = 0;
+
+    while (index < masked.size()) {
+        if (masked.at(index) != u'`') {
+            ++index;
+            continue;
+        }
+
+        // A run of N backticks is closed by the next run of exactly N.
+        const int openStart = index;
+        while (index < masked.size() && masked.at(index) == u'`')
+            ++index;
+        const int fenceLength = index - openStart;
+
+        int search = index;
+        while (search < masked.size()) {
+            if (masked.at(search) != u'`') {
+                ++search;
+                continue;
+            }
+            const int closeStart = search;
+            while (search < masked.size() && masked.at(search) == u'`')
+                ++search;
+            if (search - closeStart == fenceLength) {
+                for (int i = openStart; i < search; ++i)
+                    masked[i] = u' ';
+                index = search;
+                break;
+            }
+        }
+        // An unclosed run is not a code span; leave it and carry on from just
+        // past it, so the rest of the line is still read normally.
+    }
+
+    return masked;
+}
+
+// `![[qr:https://…]]` forces a QR code (spec §4.8); it never names a file. The
+// renderer's parseObsidianImage excludes the prefix, so this side must too.
+static bool isQrReference(const QString &reference)
+{
+    return reference.startsWith(QStringLiteral("qr:"), Qt::CaseInsensitive);
+}
+
+// True for a line that is a single token rooted like a path and naming
+// something at the end: "~/photos/holiday", "./img/x", "../up/x", "/mnt/x".
+// A root is what separates a path from a pair of words joined by a slash, and
+// the absence of prose punctuation is what keeps a sentence out.
+static bool isRootedPathToken(const QString &str)
+{
+    const bool rooted = str.startsWith(u'/')
+        || str.startsWith(QStringLiteral("./"))
+        || str.startsWith(QStringLiteral("../"))
+        || str.startsWith(QStringLiteral("~/"));
+    if (!rooted)
+        return false;
+
+    static const QString prose = QStringLiteral(",;:!?\"'`$*<>|=(){}[]");
+    for (const QChar character : str) {
+        if (character.isSpace() || prose.contains(character))
+            return false;
+    }
+
+    // "/", "~/" and "//" are roots that name nothing.
+    return !str.endsWith(u'/');
+}
+
 static bool hasImageExtension(const QString &str)
 {
     static const QStringList extensions = {
@@ -419,10 +496,18 @@ bool AssetIndex::looksLikeImageReference(const QString &line)
     if (s.isEmpty() || s.contains('\n') || s.contains('\r'))
         return false;
 
-    if (s.contains('/') || s.contains('\\'))
+    // A known image extension is the strong signal, and the only one that can
+    // survive spaces — spec §4.5 is explicit that a path with spaces needs no
+    // escaping, so "./img/chart with spaces.png" has to pass.
+    if (hasImageExtension(s))
         return true;
 
-    return hasImageExtension(s);
+    // Without an extension the whole line has to read as one path, not merely
+    // contain a slash somewhere. Accepting any slash is what let "and/or",
+    // "X/Twitter" and "$$e^{i\pi} + 1 = 0$$" through, and a speaker note read
+    // as an image paints the missing-image placeholder over the slide
+    // (spec §4.5 step 5).
+    return isRootedPathToken(s);
 }
 
 void AssetIndex::parseSizeHint(const QString &reference,
@@ -501,6 +586,12 @@ QStringList AssetIndex::extractReferences(const QString &slideMarkdown)
         if (trimmedLine.startsWith(QStringLiteral("---")))
             continue;
 
+        // Everything below reads the line with its inline code spans blanked
+        // out, so example syntax inside backticks is not mistaken for a use of
+        // that syntax.
+        const QString line = withoutInlineCode(rawLine);
+        const QString trimmed = line.trimmed();
+
         struct MatchItem {
             int pos;
             QString target;
@@ -508,21 +599,21 @@ QStringList AssetIndex::extractReferences(const QString &slideMarkdown)
         QList<MatchItem> matches;
 
         // Match Obsidian embeds ![[ ... ]]
-        QRegularExpressionMatchIterator obsIt = obsidianRegex.globalMatch(rawLine);
+        QRegularExpressionMatchIterator obsIt = obsidianRegex.globalMatch(line);
         while (obsIt.hasNext()) {
             QRegularExpressionMatch m = obsIt.next();
             QString content = m.captured(1).trimmed();
-            if (!content.isEmpty()) {
+            if (!content.isEmpty() && !isQrReference(content)) {
                 QString bare;
                 parseSizeHint(content, &bare, nullptr, nullptr);
-                if (!bare.isEmpty()) {
+                if (!bare.isEmpty() && !isQrReference(bare)) {
                     matches.append({ static_cast<int>(m.capturedStart()), bare });
                 }
             }
         }
 
         // Match Markdown images ![ ... ]( ... )
-        QRegularExpressionMatchIterator mdIt = markdownRegex.globalMatch(rawLine);
+        QRegularExpressionMatchIterator mdIt = markdownRegex.globalMatch(line);
         while (mdIt.hasNext()) {
             QRegularExpressionMatch m = mdIt.next();
             QString urlPart = m.captured(2).trimmed();
@@ -533,10 +624,10 @@ QStringList AssetIndex::extractReferences(const QString &slideMarkdown)
             if (spaceIdx > 0 && (urlPart.contains('"') || urlPart.contains('\''))) {
                 urlPart = urlPart.left(spaceIdx).trimmed();
             }
-            if (!urlPart.isEmpty()) {
+            if (!urlPart.isEmpty() && !isQrReference(urlPart)) {
                 QString bare;
                 parseSizeHint(urlPart, &bare, nullptr, nullptr);
-                if (!bare.isEmpty()) {
+                if (!bare.isEmpty() && !isQrReference(bare)) {
                     matches.append({ static_cast<int>(m.capturedStart()), bare });
                 }
             }
@@ -551,18 +642,18 @@ QStringList AssetIndex::extractReferences(const QString &slideMarkdown)
             }
         } else {
             // Check for bare image path on its own line
-            if (!trimmedLine.startsWith('#') &&
-                !trimmedLine.startsWith('>') &&
-                !trimmedLine.startsWith("- ") &&
-                !trimmedLine.startsWith("* ") &&
-                !trimmedLine.startsWith("+ ") &&
-                !trimmedLine.startsWith('-') &&
-                !trimmedLine.startsWith('*') &&
-                !trimmedLine.contains(QRegularExpression(QStringLiteral(R"(^\d+\.\s)")))
+            if (!trimmed.startsWith('#') &&
+                !trimmed.startsWith('>') &&
+                !trimmed.startsWith("- ") &&
+                !trimmed.startsWith("* ") &&
+                !trimmed.startsWith("+ ") &&
+                !trimmed.startsWith('-') &&
+                !trimmed.startsWith('*') &&
+                !trimmed.contains(QRegularExpression(QStringLiteral(R"(^\d+\.\s)")))
             ) {
                 QString bare;
-                parseSizeHint(trimmedLine, &bare, nullptr, nullptr);
-                if (looksLikeImageReference(bare)) {
+                parseSizeHint(trimmed, &bare, nullptr, nullptr);
+                if (!isQrReference(bare) && looksLikeImageReference(bare)) {
                     result.append(bare);
                 }
             }

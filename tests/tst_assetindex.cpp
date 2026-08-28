@@ -17,6 +17,7 @@ private slots:
     void parseSizeHint();
     void extractReferencesFromSlide();
     void extractReferencesIgnoresCodeBlocksAndLoneWords();
+    void extractReferencesIgnoresInlineCodeAndQr();
     void resolveRelativePathDeckDir();
     void resolveTildeAndEnvExpansion();
     void resolveShortestWinsAtDifferentDepths();
@@ -38,39 +39,118 @@ private slots:
 
 void AssetIndexTest::looksLikeImageReference()
 {
-    // Paths containing slashes
-    QVERIFY(AssetIndex::looksLikeImageReference("~/Pictures/budget.png"));
-    QVERIFY(AssetIndex::looksLikeImageReference("./img/x.png"));
-    QVERIFY(AssetIndex::looksLikeImageReference("/abs/path/image.jpg"));
-    QVERIFY(AssetIndex::looksLikeImageReference("sub/photo"));
-    QVERIFY(AssetIndex::looksLikeImageReference("images/diagram.webp"));
+    // Whole lines that are an image path. Spec §4.5: a path with spaces needs
+    // no escaping, so the extension has to carry those on its own.
+    const QStringList images = {
+        QStringLiteral("~/Pictures/budget.png"),
+        QStringLiteral("./img/chart with spaces.png"),
+        QStringLiteral("./img/x.png"),
+        QStringLiteral("/abs/path/photo.jpeg"),
+        QStringLiteral("/abs/path/image.jpg"),
+        QStringLiteral("images/diagram.webp"),
+        QStringLiteral("budget.png"),
+        QStringLiteral("logo.svg"),
+        QStringLiteral("budget.PNG"),
+        QStringLiteral("photo.jpg"),
+        QStringLiteral("animation.gif"),
+        QStringLiteral("shot.heic"),
+        QStringLiteral("document.pdf"),
+        QStringLiteral("raw.tiff"),
+        QStringLiteral("graphic.avif"),
+        // Extensionless, but rooted like a path and naming something.
+        QStringLiteral("~/photos/holiday"),
+        QStringLiteral("./img/diagram"),
+        QStringLiteral("../shared/logo"),
+        QStringLiteral("/mnt/photos/scan"),
+        // Size hints come off before the decision.
+        QStringLiteral("budget.png|600"),
+        QStringLiteral("./img/photo|main"),
+    };
+    for (const QString &line : images)
+        QVERIFY2(AssetIndex::looksLikeImageReference(line), qPrintable(line));
 
-    // Known image extensions
-    QVERIFY(AssetIndex::looksLikeImageReference("budget.png"));
-    QVERIFY(AssetIndex::looksLikeImageReference("budget.PNG"));
-    QVERIFY(AssetIndex::looksLikeImageReference("photo.jpg"));
-    QVERIFY(AssetIndex::looksLikeImageReference("photo.jpeg"));
-    QVERIFY(AssetIndex::looksLikeImageReference("animation.gif"));
-    QVERIFY(AssetIndex::looksLikeImageReference("vector.svg"));
-    QVERIFY(AssetIndex::looksLikeImageReference("shot.heic"));
-    QVERIFY(AssetIndex::looksLikeImageReference("document.pdf"));
-    QVERIFY(AssetIndex::looksLikeImageReference("raw.tiff"));
-    QVERIFY(AssetIndex::looksLikeImageReference("graphic.avif"));
+    // Prose. Per spec §4.2 every one of these is a speaker note, and a note
+    // read as an image paints the missing-image placeholder over the slide
+    // (spec §4.5 step 5). Containing a slash is not enough to be a path.
+    const QStringList prose = {
+        QStringLiteral("and/or"),
+        QStringLiteral("X/Twitter"),
+        QStringLiteral("budget"),
+        QStringLiteral("word"),
+        QStringLiteral("lone_word"),
+        QStringLiteral("Introduction"),
+        QStringLiteral("heading"),
+        QStringLiteral("The ratio is 16:9 and the file lives in ~/Documents/aibrain somewhere"),
+        QStringLiteral("Recognised hosts: YouTube, Vimeo, X/Twitter, Instagram"),
+        QStringLiteral("Recognised hosts: YouTube, Vimeo, Loom, Descript, TikTok, X/Twitter"),
+        QStringLiteral("$$e^{i\\pi} + 1 = 0$$"),
+        QStringLiteral("Omapresent supports line comments with `//`"),
+        QStringLiteral("Omapresent supports line comments with `//`, "
+                       "Obsidian comments with %%...%%"),
+        QStringLiteral("Reads and/or writes, then returns"),
+        QStringLiteral(""),
+        QStringLiteral("   "),
+        QStringLiteral(".png"),
+        QStringLiteral("notes.txt"),
+        QStringLiteral("report.doc"),
+        // Roots that name nothing.
+        QStringLiteral("/"),
+        QStringLiteral("//"),
+        QStringLiteral("~/"),
+        QStringLiteral("./"),
+        // A relative path with neither a root nor an extension is
+        // indistinguishable from "and/or", so it went with it. `sub/photo.png`
+        // still works, and so does `./sub/photo`.
+        QStringLiteral("sub/photo"),
+    };
+    for (const QString &line : prose)
+        QVERIFY2(!AssetIndex::looksLikeImageReference(line), qPrintable(line));
+}
 
-    // Size hints on bare paths
-    QVERIFY(AssetIndex::looksLikeImageReference("budget.png|600"));
-    QVERIFY(AssetIndex::looksLikeImageReference("sub/photo|main"));
+void AssetIndexTest::extractReferencesIgnoresInlineCodeAndQr()
+{
+    // Syntax shown to the reader inside backticks is documentation about the
+    // syntax, not a use of it. The renderer draws none of these, and a
+    // reference we invent here resolves to nothing and paints the
+    // missing-image placeholder over the slide (spec §4.5 step 5).
+    QCOMPARE(AssetIndex::extractReferences(
+                 QStringLiteral("A table cell holding `![[figure.png]]` as example syntax")),
+             QStringList());
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral(
+                 "- Obsidian embeds: `![[diagram.png]]` or `![[diagram.png|600]]`")),
+             QStringList());
+    QCOMPARE(AssetIndex::extractReferences(
+                 QStringLiteral("Write `![alt](photo.png)` for a Markdown image")),
+             QStringList());
+    // Double backticks so the span itself can contain one.
+    QCOMPARE(AssetIndex::extractReferences(
+                 QStringLiteral("Escaped: ``![[a.png]] and `` after")),
+             QStringList());
 
-    // Lone words and non-image text must not be misread
-    QVERIFY(!AssetIndex::looksLikeImageReference("word"));
-    QVERIFY(!AssetIndex::looksLikeImageReference("lone_word"));
-    QVERIFY(!AssetIndex::looksLikeImageReference("Introduction"));
-    QVERIFY(!AssetIndex::looksLikeImageReference("heading"));
-    QVERIFY(!AssetIndex::looksLikeImageReference(""));
-    QVERIFY(!AssetIndex::looksLikeImageReference("   "));
-    QVERIFY(!AssetIndex::looksLikeImageReference(".png"));
-    QVERIFY(!AssetIndex::looksLikeImageReference("notes.txt"));
-    QVERIFY(!AssetIndex::looksLikeImageReference("report.doc"));
+    // An unclosed backtick is not a code span, so the rest of the line is
+    // still read normally.
+    QCOMPARE(AssetIndex::extractReferences(
+                 QStringLiteral("Unclosed ` then ![[real.png]]")),
+             QStringList({QStringLiteral("real.png")}));
+
+    // Outside backticks the same embeds are real references again.
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("![[figure.png]]")),
+             QStringList({QStringLiteral("figure.png")}));
+    QCOMPARE(AssetIndex::extractReferences(
+                 QStringLiteral("![[one.png]] and ![[two.png]]")),
+             QStringList({QStringLiteral("one.png"), QStringLiteral("two.png")}));
+
+    // `qr:` forces a QR code (spec §4.8); it never names a file, and the
+    // renderer's parseObsidianImage excludes it, so this side must agree.
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("![[qr:https://example.com]]")),
+             QStringList());
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("![[QR:https://example.com]]")),
+             QStringList());
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("![](qr:https://example.com)")),
+             QStringList());
+    // A file that merely starts with the letters is not a QR.
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("![[qrcode.png]]")),
+             QStringList({QStringLiteral("qrcode.png")}));
 }
 
 void AssetIndexTest::parseSizeHint()

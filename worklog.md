@@ -453,3 +453,64 @@ T12: drop `rendererReadsBareVideoFilenamesAsWebUrls` once the renderer matches; 
 **Tests:** OmarchyThemeTest 29/29, including `liveReloadFollowsThemeSymlink`, `liveReloadDebouncesSymlinkBurst`, `keepsPaletteWhenLiveThemeVanishes`, `keepsPaletteWhenColorsTomlUnreadable`. `./bin/build` green. Official `./bin/test` still has one failure in `IntegrationTest::assetIndexReadsProseAsImagePaths` (not our file).
 **Next:** live-reload gap closed.
 **NEEDS:** nothing
+
+### 2026-08-27 21:17 PT — reviewer (Codex GPT-5.6 Sol)
+**Task:** T14 adversarial review of risky paths
+**Did:** Loaded the vault context, task scope, shared-tree rules, and current worktree state. Started a read-only review of publish, file-copy, cache, network, and hostile-input paths.
+**Tests:** Not run yet.
+**Next:** Read the named spec sections and trace each risky path. Add only reproducible findings and T14-owned tests.
+**NEEDS:** nothing
+
+### 2026-08-27 21:44 PT — present (Claude Opus 5)
+**Task:** Review — AssetIndex prose-as-image and inline-code/qr references
+(inherited `src/assetindex.cpp` and `tests/tst_assetindex.cpp` from `assets`)
+**Did:** Two fixes, both the same class of bug — documentation *about* the
+syntax being read as a use of it.
+- `looksLikeImageReference` no longer accepts any line containing a slash.
+  A known image extension still accepts on its own, because spec §4.5 says a
+  path with spaces needs no escaping and that is the only signal that can carry
+  `./img/chart with spaces.png`. Without an extension the line now has to be a
+  single token rooted like a path (`/`, `./`, `../`, `~/`), carry no prose
+  punctuation, and name something after the last slash. A root is what separates
+  a path from two words joined by a slash.
+- `extractReferences` blanks out inline code spans before matching (offsets
+  preserved, so result order is unchanged) and skips the `qr:` prefix in both
+  the `![[…]]` and `![](…)` forms, matching the renderer's `parseObsidianImage`.
+  Fenced blocks were already handled.
+**Deliberate narrowing:** `sub/photo` — a relative path with neither a root nor
+an extension — is no longer a bare-line image reference. It is structurally
+identical to `and/or`, so there is no rule that keeps one and drops the other.
+`sub/photo.png` and `./sub/photo` both still work. The two cases that changed
+were the only positives in the old suite that relied on it.
+**Tests:** `tests/tst_assetindex.cpp` — 24 cases green, including the explicit
+positive/negative table from the review note and a new
+`extractReferencesIgnoresInlineCodeAndQr` covering backticked example syntax,
+double-backtick spans, an unclosed backtick, and `qr:` in both embed forms.
+Measured against the real manual: `welcome/welcome.md` went from 20 extracted
+references to 5 — exactly its five real `![[…]]` embeds, with all 15 phantoms
+gone. `IntegrationTest::welcomeImagesResolveOrAreDeliberatelyMissing` is green.
+`./bin/build` passes.
+**Next:** done. Waiting for the next task.
+**NEEDS:**
+- `doc-model`: `tests/tst_integration.cpp` pins the old behaviour on purpose
+  ("so a fix on the AssetIndex side fails here and has to be acknowledged"), so
+  both now fail. Acknowledging it here with the exact new answers — I did not
+  touch your file:
+  - `rendererAgreesOnInlineCodeAndQrReferences` (~L583): `lines.at(0)`,
+    `lines.at(1)` and `lines.at(2)` now all extract `QStringList()`. `lines.at(3)`
+    is unchanged at `{"inline.png"}` — an inline image inside a speaker note is
+    still worth resolving, because the presenter and web roles render notes as
+    formatted Markdown. C++ and the renderer now agree on all four.
+  - `assetIndexReadsProseAsImagePaths` (~L336): `looksLikeImageReference(
+    "Recognises YouTube, Vimeo, TikTok, X/Twitter and Facebook.")` is now false,
+    `extractReferences("![[qr:https://example.com]]")` is now `QStringList()`,
+    and `extras.size()` is now **0**, not 15. The `inlineCodePhantoms` list and
+    the loop that explains each extra have nothing left to explain.
+- Not mine, still red in the shared tree:
+  `IntegrationTest::rendererReadsBareVideoFilenamesAsWebUrls` (`clip.webm`) —
+  the bare-local-video item the renderer agent already raised for the backend
+  owner's `VideoCache::extractUrls()`.
+- `assets` (or whoever lands it): `src/assetindex.h` line 50-51 still documents
+  the old rule, "it contains a '/' or ends in a known image extension". The
+  behaviour is now the narrower one above; the header comment should follow. I
+  left the header alone since the handover named only the two files.
