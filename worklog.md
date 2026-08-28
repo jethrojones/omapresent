@@ -725,3 +725,10 @@ back to the current clamp when no match is found handles the case where the
 current slide is the one being edited. `skippedSlidesDoNotShiftTheFlowIndex`
 already passes and should keep passing — a `{q, skip}` slide is outside the flow,
 so inserting one never moves anybody.
+
+### 2026-08-27 21:26 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** T2 final verification — host state and fragment reveal
+**Did:** Committed the PDF layout fixes and local-video parity. Added a Chromium interaction test that drives all four fragments on the fixture list, checks nested DOM order and computed visibility, confirms the fifth action advances to slide 3, and receives each state as serialized JSON through the bridge-shaped host callback. Verified the native path by stopping the real app in `RenderHost::state`; the stack entered through `QMetaObjectPublisher` and `Qt6WebChannel`.
+**Tests:** `./bin/build && ./bin/test` passes. Renderer 38/38 green. Real PDF pages were inspected earlier; list width and continuation footers are correct.
+**Next:** T2 is complete.
+**NEEDS:** The app-shell owner must commit the current `src/PreviewPane.qml` bridge fix. The old committed version creates an uncreatable `WebEngineScript`; the current working-tree version runs `bridgeScript()` after load and is the version that passed the real QWebChannel check.
