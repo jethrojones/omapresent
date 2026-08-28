@@ -281,37 +281,59 @@ private slots:
                  QStringLiteral("web"));
     }
 
-    void longReadResetsProjectorTypographyIntoArticleFlow()
+    void longReadSetsThePageAroundTheArticle()
     {
         WebBundle bundle;
         configure(&bundle);
         QVERIFY2(bundle.build(outputDir()), qPrintable(bundle.lastError()));
 
         const QString css = readText(outputDir() + QStringLiteral("/assets/bundle.css"));
-        QVERIFY(css.contains(QStringLiteral(
-            "[data-op-view=\"read\"] #deck .op-stack {\n"
-            "    display: block;")));
-        QVERIFY(css.contains(QStringLiteral(
-            "[data-op-view=\"read\"] #deck h1 { font-size: 2.75rem; }")));
-        QVERIFY(css.contains(QStringLiteral(
-            "[data-op-view=\"read\"] #deck p,\n"
-            "[data-op-view=\"read\"] #deck li,")));
-        QVERIFY(css.contains(QStringLiteral(
-            "[data-op-view=\"read\"] #deck .op-notes.is-flow-note {")));
-        QVERIFY(css.contains(QStringLiteral("background: transparent;")));
-        QVERIFY(css.contains(QStringLiteral(
-            "[data-op-view=\"read\"] #deck .op-slide-header,")));
-        QVERIFY(css.contains(QStringLiteral(
-            "[data-op-view=\"read\"] #deck .op-media.is-vertical .op-player {")));
-        QVERIFY(css.contains(QStringLiteral("aspect-ratio: 9 / 16;")));
 
-        // The final bundle stylesheet must win over the renderer's projector
-        // rules without changing the deck view.
+        // The article inside #deck belongs to the renderer's read branch in
+        // deck.css. This stylesheet must not reach into it: two owners of the
+        // same rules is how the long read ended up being set for a projector
+        // in the first place, and the duplicate loses on specificity anyway.
+        QVERIFY2(!css.contains(QStringLiteral("[data-op-view=\"read\"] #deck")),
+                 "bundle.css is styling the renderer's article again");
+
+        // What it does own is the page around the article.
+        QVERIFY(css.contains(QStringLiteral(".op-masthead,")));
+        QVERIFY(css.contains(QStringLiteral("[data-op-view=\"read\"] .op-chrome")));
+        QVERIFY(css.contains(QStringLiteral("[data-op-view=\"read\"] .op-footer")));
+
+        // deck.css sets every heading for a projector — centred, inside 24ch —
+        // and the masthead sits outside #deck where the read branch never
+        // reaches it, so it has to opt out by name or it is set as a slide.
+        const qsizetype masthead = css.indexOf(QStringLiteral(".op-masthead h1 {"));
+        QVERIFY(masthead >= 0);
+        const QString mastheadRule = css.mid(masthead, css.indexOf(u'}', masthead) - masthead);
+        QVERIFY(mastheadRule.contains(QStringLiteral("max-width: none;")));
+        QVERIFY(mastheadRule.contains(QStringLiteral("text-align: left;")));
+
+        // The chrome is drawn to the article's text box (38rem less its two
+        // 1.25rem gutters), not to the outer column, so its rules line up with
+        // the prose rather than overhanging it.
+        QVERIFY(css.contains(QStringLiteral("width: min(35.5rem, 100% - 2.5rem);")));
+
+        // Load order still matters for what little does overlap.
         const QString html = readText(outputDir() + QStringLiteral("/read/index.html"));
         const qsizetype rendererCss = html.indexOf(QStringLiteral("assets/deck.css"));
         const qsizetype bundleCss = html.indexOf(QStringLiteral("assets/bundle.css"));
         QVERIFY(rendererCss >= 0);
         QVERIFY(bundleCss > rendererCss);
+
+        // §9.2's promotion of speaker-note prose to body text is the renderer's
+        // doing, and it keys off this attribute — so what is testable here is
+        // the flag, not the prose. The deck JSON is inlined in both pages, so
+        // note text is present in both files either way; only the rendered DOM
+        // differs, and that is checked in a browser, not from C++.
+        QVERIFY(html.contains(QStringLiteral("<html lang=\"en\" data-op-view=\"read\">")));
+
+        const QString deckHtml = readText(outputDir() + QStringLiteral("/index.html"));
+        QVERIFY(deckHtml.contains(QStringLiteral("<html lang=\"en\" data-op-view=\"deck\">")));
+        // The deck view keeps its notes in the subtitle track instead.
+        QVERIFY(deckHtml.contains(QStringLiteral("id=\"op-notes\"")));
+        QVERIFY(!html.contains(QStringLiteral("id=\"op-notes\"")));
     }
 
     void reportsExactlyWhatItWrote()

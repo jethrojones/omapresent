@@ -311,11 +311,14 @@ a { color: var(--op-accent, #8ab); }
 .op-chrome a { text-decoration: none; }
 .op-chrome a:hover { text-decoration: underline; }
 
+/* Also a <p>, so it opts out of the projector body type the same way. */
 .op-failure {
     margin: 4rem auto;
     max-width: 32rem;
     padding: 0 1.25rem;
     color: var(--op-muted, #999);
+    font-size: 1rem;
+    line-height: 1.5;
     text-align: center;
 }
 
@@ -364,6 +367,24 @@ a { color: var(--op-accent, #8ab); }
 .op-notes > :first-child { margin-top: 0; }
 .op-notes > :last-child { margin-bottom: 0; }
 
+/* The renderer writes formatted Markdown into the track, and deck.css sets
+   every p/li/blockquote on the page for a projector — clamp(1.65rem, 3.2vw,
+   3.4rem). Subtitles are read at reading size, so they opt out by name; the
+   container's own font-size does not reach children that style themselves. */
+.op-notes p,
+.op-notes li,
+.op-notes blockquote {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin: 0 0 0.6rem;
+}
+
+.op-notes ul,
+.op-notes ol {
+    margin: 0 0 0.6rem;
+    padding-inline-start: 1.2rem;
+}
+
 #op-progress {
     flex: 0 0 auto;
     height: 2px;
@@ -379,229 +400,67 @@ a { color: var(--op-accent, #8ab); }
 
 /* ---- long read --------------------------------------------------------- */
 
+/* The article is the renderer's. deck.css owns every rule inside #deck in read
+   mode, so nothing here reaches into it — one owner, no cascade fight. What is
+   left is the page around the article: the masthead, the cross-link chrome and
+   the footer, none of which the renderer ever sees.
+   They sit outside #deck, where deck.css's projector defaults still land on
+   them — headings centered at clamp(3rem, 8.5vw, 8.5rem) inside 24ch, body
+   text at clamp(1.65rem, 3.2vw, 3.4rem) — so each one opts out explicitly.
+   That is why the masthead was centered and broke early: it was being set for
+   a projector. */
+
 [data-op-view="read"] body { overflow-y: auto; }
 
+/* deck.css sets the article column to 38rem with 1.25rem gutters, so the
+   article's text sits in a 35.5rem box. Match the text box and not the outer
+   one: a rule drawn to the outer width overhangs the prose it divides. */
 .op-masthead,
-[data-op-view="read"] #deck {
-    max-width: 38rem;
-    margin: 0 auto;
-    padding: 0 1.25rem;
+[data-op-view="read"] .op-chrome,
+[data-op-view="read"] .op-footer {
+    width: min(35.5rem, 100% - 2.5rem);
+    max-width: none;
+    margin-inline: auto;
+    padding-inline: 0;
 }
+
+[data-op-view="read"] .op-chrome { padding-top: 1rem; }
 
 .op-masthead {
-    padding-top: 4rem;
-    padding-bottom: 2rem;
+    margin-top: 0;
+    margin-bottom: 2.5rem;
+    padding-top: 3.5rem;
+    padding-bottom: 1.5rem;
     border-bottom: 1px solid var(--op-selection, #333);
-    margin-bottom: 3rem;
 }
 
+/* The document title: one step above the section headings the renderer sets
+   inside the article, so the page reads as one piece. */
 .op-masthead h1 {
-    margin: 0 0 0.5rem;
-    font-size: 2.2rem;
-    line-height: 1.15;
+    max-width: none;
+    margin: 0 0 0.6rem;
+    /* Bounded, unlike the projector's clamp(3rem, 8.5vw, 8.5rem). The floor
+       clears the article's own h1 (2.1rem in deck.css) so the document title
+       outranks a section heading at every width, phone included. */
+    font-size: clamp(2.3rem, 6vw, 2.6rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    text-align: left;
+    text-wrap: balance;
 }
 
 .op-masthead p {
-    margin: 0 0 1rem;
-    color: var(--op-muted, #999);
-    font-size: 0.9rem;
-}
-
-[data-op-view="read"] #deck {
-    padding-bottom: 6rem;
-    line-height: 1.65;
-}
-
-/* The renderer sizes a slide to a screen. In the long read each slide is an
-   article section. Reset the whole layout branch instead of trying to shrink
-   viewport type one rule at a time. bundle.css loads after deck.css. */
-[data-op-view="read"] #deck section,
-[data-op-view="read"] #deck .op-slide {
-    display: block;
-    width: auto;
-    height: auto;
-    min-height: 0;
-    padding: 0;
-    margin: 0 0 3.5rem;
-    text-align: left;
-}
-
-[data-op-view="read"] #deck .op-scroll {
-    width: auto;
-    min-height: 0;
-    overflow: visible;
-}
-
-[data-op-view="read"] #deck .op-stack {
-    display: block;
-    min-height: 0;
-    padding: 0;
-}
-
-[data-op-view="read"] #deck .op-content {
-    display: block;
-    width: 100%;
-    max-width: none;
-}
-
-[data-op-view="read"] #deck .op-block,
-[data-op-view="read"] #deck .op-images,
-[data-op-view="read"] #deck .op-media,
-[data-op-view="read"] #deck .op-qr,
-[data-op-view="read"] #deck .op-outline {
-    margin: 0 0 1.3rem;
-}
-
-[data-op-view="read"] #deck section + section,
-[data-op-view="read"] #deck .op-slide + .op-slide {
-    border-top: 1px solid var(--op-selection, #333);
-    padding-top: 3.5rem;
-}
-
-[data-op-view="read"] #deck h1,
-[data-op-view="read"] #deck h2,
-[data-op-view="read"] #deck h3 {
-    max-width: none;
-    line-height: 1.2;
-    letter-spacing: -0.02em;
-    margin: 2.4rem 0 1rem;
-    overflow-wrap: anywhere;
-    text-align: left;
-    text-wrap: pretty;
-}
-
-[data-op-view="read"] #deck h1 { font-size: 2.75rem; }
-[data-op-view="read"] #deck h2 { font-size: 2rem; }
-[data-op-view="read"] #deck h3 { font-size: 1.5rem; }
-
-[data-op-view="read"] #deck h4,
-[data-op-view="read"] #deck h5,
-[data-op-view="read"] #deck h6 {
-    max-width: none;
-    margin: 2rem 0 0.8rem;
-    font-size: 1.25rem;
-    line-height: 1.3;
-    letter-spacing: 0;
-    text-align: left;
-}
-
-[data-op-view="read"] #deck p,
-[data-op-view="read"] #deck ul,
-[data-op-view="read"] #deck ol,
-[data-op-view="read"] #deck table { margin: 0 0 1.3rem; }
-
-[data-op-view="read"] #deck p,
-[data-op-view="read"] #deck li,
-[data-op-view="read"] #deck blockquote,
-[data-op-view="read"] #deck table,
-[data-op-view="read"] #deck .op-outline-item {
-    font-size: 1rem;
-    line-height: 1.65;
-}
-
-[data-op-view="read"] #deck ul,
-[data-op-view="read"] #deck ol {
-    display: block;
-    padding-inline-start: 1.4rem;
-}
-
-[data-op-view="read"] #deck li + li { margin-top: 0.35rem; }
-
-/* Renderer read mode promotes each speaker-note block into document order.
-   It is article prose here, not the subtitle panel used by the deck view. */
-[data-op-view="read"] #deck .op-notes.is-flow-note {
-    display: block;
-    max-height: none;
     margin: 0;
-    padding: 0;
-    overflow: visible;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font-size: inherit;
-    line-height: inherit;
-}
-
-[data-op-view="read"] #deck .op-slide-header,
-[data-op-view="read"] #deck .op-slide-footer,
-[data-op-view="read"] #deck .op-slide-number,
-[data-op-view="read"] #deck .op-progress {
-    display: none;
-}
-
-[data-op-view="read"] #deck img,
-[data-op-view="read"] #deck video,
-[data-op-view="read"] #deck iframe,
-[data-op-view="read"] #deck canvas,
-[data-op-view="read"] #deck svg {
-    display: block;
-    max-width: 100%;
-    height: auto;
-    margin: 2rem auto;
-}
-
-[data-op-view="read"] #deck .op-media { min-height: 0; }
-
-[data-op-view="read"] #deck .op-player {
-    height: auto;
-    max-height: 70vh;
-    aspect-ratio: 16 / 9;
-}
-
-[data-op-view="read"] #deck .op-media.is-vertical .op-player {
-    max-height: none;
-    aspect-ratio: 9 / 16;
-}
-
-[data-op-view="read"] #deck .op-images.is-bento {
-    display: block;
-    min-height: 0;
-}
-
-[data-op-view="read"] #deck .op-images.is-bento .op-image + .op-image {
-    margin-top: 1.3rem;
-}
-
-[data-op-view="read"] #deck pre {
-    overflow-x: auto;
-    padding: 1rem;
-    background: var(--op-dark-background, #000);
-    border-radius: 4px;
+    color: var(--op-muted, #999);
     font-size: 0.9rem;
     line-height: 1.5;
-}
-
-[data-op-view="read"] #deck code,
-[data-op-view="read"] #deck pre { font-family: var(--op-font-mono, ui-monospace, monospace); }
-
-[data-op-view="read"] #deck blockquote {
-    margin: 1.5rem 0;
-    padding: 1rem 1.1rem;
-    border: 1px solid var(--op-selection, #333);
-    border-radius: 4px;
-    background: var(--op-dark-background, #000);
-    color: var(--op-muted, #999);
-}
-
-[data-op-view="read"] #deck table { width: 100%; border-collapse: collapse; }
-
-[data-op-view="read"] #deck th,
-[data-op-view="read"] #deck td {
-    border-bottom: 1px solid var(--op-selection, #333);
-    padding: 0.4rem 0.6rem;
     text-align: left;
-}
-
-[data-op-view="read"] .op-chrome {
-    max-width: 38rem;
-    margin: 0 auto;
-    padding: 1rem 1.25rem 0;
 }
 
 [data-op-view="read"] .op-footer {
-    max-width: 38rem;
-    margin: 0 auto;
-    padding: 2rem 1.25rem 4rem;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    padding-bottom: 4rem;
     border-top: 1px solid var(--op-selection, #333);
     color: var(--op-muted, #999);
     font-size: 0.85rem;
