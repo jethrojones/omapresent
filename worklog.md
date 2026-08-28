@@ -152,3 +152,65 @@ mid-flight in the tree.
 **Tests:** `tests/tst_omarchytheme.cpp` — 19 cases, all green in isolation (21 including init/cleanup). Official `./bin/build` is currently red in other agents' files (`backend.cpp` Command enum, `presentation` moc); theme objects compile and the suite passes via a one-suite binary.
 **Next:** Done with T3.
 **NEEDS:** nothing
+
+### 2026-08-27 18:20 PT — webbundle (Claude Opus 5)
+**Task:** T11 the static web bundle
+**Did:** Read `AGENTS.md`, `tasks/T11-web-bundle.md`, `docs/renderer-contract.md`
+and spec §9. Measured the one thing that decides the design: Chromium blocks
+`<script type="module" src=…>` from `file://` (CORS, origin `null`), while inline
+modules, classic external scripts, external CSS and relative images all load
+fine. So a bundle that "opens from `file://` with no server" cannot reference the
+renderer's ES modules as files — the module graph has to be inlined into the
+page. That is what I am building.
+**Tests:** Baseline `./bin/build && ./bin/test` not yet re-run; several agents are
+mid-flight in the tree.
+**Next:** `webbundle.cpp`: renderer inlining, media copy with stable names,
+themed `index.html` + `read/index.html`, then `tests/tst_webbundle.cpp`.
+**NEEDS:** nothing yet
+
+### 2026-08-27 19:25 PT — doc-model (Claude Opus 5)
+**Task:** T1 document model
+**Did:** Implemented `DeckModel` in `src/deckmodel.cpp` — frontmatter (§4.4),
+separators (§4.1), comments (§4.3), recall tags (§4.9), line mapping, `toJson()`.
+Pipeline is: normalise line endings → lift frontmatter (only when line 0 is
+`---`) → one comment-stripping pass over the body that also tracks fences →
+split on separators → assemble slides. Comment stripping removes whole lines
+(so `a\n// note\nb` stays one paragraph) but every surviving line keeps its
+original line number, which is what the editor sync needs.
+
+Decisions the spec left open, all commented in the code:
+- **Empty slides are dropped.** A trailing `---`, two separators in a row, or an
+  empty file yield no slide rather than a blank one.
+- **A 9th recall tag loses the whole tag, not just the key** — clearing the key
+  but keeping `skip` would leave a slide with no way to reach it. Logged with
+  `qWarning` as the brief asks.
+- **`sourceStartLine`/`sourceEndLine` are the content range** (first to last
+  non-blank line). `slideIndexForLine` maps the wider span a slide *owns* — its
+  separator line through the line before the next one — so a cursor on a blank
+  line or a separator still resolves to a slide. Frontmatter lines and the lines
+  of a `// ---` draft slide return -1.
+- **An unterminated `%%` or `<!--` runs to end of file**, matching Obsidian and
+  HTML.
+- `--- {qq}` and other unparseable tag words are ignored rather than guessed.
+
+`src/deckmodel.h` gained two private members only — `void parse()` and
+`QVector<int> m_lineToSlide`. No existing declaration changed.
+**Tests:** `tests/tst_deckmodel.cpp` — 84 cases, no `QSKIP`. Covers every
+separator shape (Setext, `***`/`___`/`- - -`/`----`, missing blank line, inside
+back-tick and tilde fences of length ≥ 3 with info strings, a short fence that
+cannot close a long one), both frontmatter shapes plus malformed YAML, all three
+comment forms inline and multi-line, comments left alone inside fences, the
+`// ---` draft slide and its non-shifting of neighbouring recall bindings, the
+recall-tag grammar, the 8-binding cap, CRLF input, and a 44-line realistic deck
+asserting exact slide count, markdown, recall keys, flow indices and line ranges.
+`./bin/build && ./bin/test` pass.
+Also removed a stale `build-tests/moc_videocache.cpp` that a Qt 5.15 moc had
+written into the shared build dir; it made every test build fail with "the moc
+has changed too much". It is a generated artifact, so make regenerated it with
+Qt 6 and the tree went green. Worth knowing if it comes back: something in the
+tree is invoking Qt 5's `moc`/`qmake` rather than `qmake6`.
+**Next:** nothing on T1.
+**NEEDS:** Nothing blocking. One note for whoever builds present mode: if two
+separators bind the same key, `DeckModel` keeps both slides and both keys — the
+spec does not say which wins, so the key handler needs a rule (first match is
+the obvious one).
