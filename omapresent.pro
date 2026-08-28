@@ -17,6 +17,7 @@ HEADERS += \
     src/webbundle.h \
     src/presentation.h \
     src/markdownhighlighter.h \
+    src/commandlinepolicy.h \
     src/systemtheme.h
 
 SOURCES += \
@@ -32,6 +33,7 @@ SOURCES += \
     src/webbundle.cpp \
     src/presentation.cpp \
     src/markdownhighlighter.cpp \
+    src/commandlinepolicy.cpp \
     src/systemtheme.cpp
 
 RESOURCES += src/resources.qrc src/renderer/renderer.qrc

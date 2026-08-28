@@ -14,6 +14,7 @@
 #include <QtWebEngineQuick>
 
 #include "backend.h"
+#include "commandlinepolicy.h"
 #include "systemtheme.h"
 
 int main(int argc, char *argv[]) {
@@ -96,13 +97,18 @@ int main(int argc, char *argv[]) {
 
     backend.setParentWindow(qobject_cast<QWindow *>(engine.rootObjects().constFirst()));
 
-    if (!command.file.isEmpty()) {
+    const auto launchMode = command.command == Backend::CommandLine::Present
+        ? CommandLinePolicy::LaunchMode::Present
+        : CommandLinePolicy::LaunchMode::Edit;
+    if (CommandLinePolicy::chooseStartupSource(
+            launchMode, !command.file.isEmpty(), backend.modified())
+        == CommandLinePolicy::StartupSource::ExplicitFile) {
         if (command.command == Backend::CommandLine::Present) {
             if (!backend.openCommandFile(command.file)) {
                 QTextStream(stderr) << backend.status() << '\n';
                 return 1;
             }
-        } else if (!backend.modified()) {
+        } else {
             backend.openCommandFile(command.file);
         }
     }

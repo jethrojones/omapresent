@@ -8,6 +8,7 @@ INCLUDEPATH += ../src
 
 SOURCES += \
     main.cpp \
+    tst_commandline_recovery.cpp \
     tst_omapresent.cpp \
     tst_deckmodel.cpp \
     tst_assetindex.cpp \
@@ -31,7 +32,8 @@ SOURCES += \
     ../src/renderhost.cpp \
     ../src/settings.cpp \
     ../src/webbundle.cpp \
-    ../src/markdownhighlighter.cpp
+    ../src/markdownhighlighter.cpp \
+    ../src/commandlinepolicy.cpp
 
 HEADERS += \
     testrunner.h \
