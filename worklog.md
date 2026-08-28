@@ -739,3 +739,10 @@ so inserting one never moves anybody.
 **Tests:** `./bin/build && ./bin/test` pass. `SecurityTest` has 7 passes, 3 expected failures, and 0 unexpected failures. All 38 renderer tests pass. Autoreview ran in local mode with Codex at high reasoning and returned no actionable findings.
 **Next:** T14 is complete.
 **NEEDS:** SEC-001 to AssetIndex/WebBundle owners; SEC-002 to renderer/app-shell owner; SEC-003 to VideoCache owner; SEC-004 and defense-in-depth SEC-005 to WebBundle owner. See `docs/review-findings.md` for exact reproductions and severity.
+
+### 2026-08-27 21:32 PT — publish (Codex GPT-5.6 Sol)
+**Task:** T6 local here.now protocol integration coverage
+**Did:** Added a loopback-only here.now endpoint seam and an in-process HTTP server. The suite drives anonymous and authenticated create, presigned PUT, expired-URL refresh, finalize, access, private placeholder, failure, and command-provider flows. It asserts request bodies, signature queries, headers, ordering, idempotent version handling, and no work before explicit `publish()`.
+**Tests:** `PublisherTest` — 20 passed. `./bin/build && ./bin/test` pass. Final Autoreview is clean.
+**Next:** T6 is complete.
+**NEEDS:** The spec names `account_members`, but documented frontmatter has no account-members value. Current here.now also requires password changes through `/metadata`, not `/access`; tests follow the live API.
