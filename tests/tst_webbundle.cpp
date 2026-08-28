@@ -403,6 +403,55 @@ private slots:
         QVERIFY(QFileInfo::exists(QDir(outputDir()).filePath(background)));
     }
 
+    void streamsLargeMediaWithoutChangingBytes()
+    {
+        const QString sourcePath =
+            sandbox(QStringLiteral("sources/deck/large-video.mp4"));
+        QVERIFY(QDir().mkpath(QFileInfo(sourcePath).path()));
+
+        constexpr qint64 chunk = 1024 * 1024;
+        constexpr qint64 sourceSize = 5 * chunk + 37;
+        const QByteArray first("BEGIN");
+        const QByteArray boundary("CHUNK-BOUNDARY");
+        const QByteArray last("END");
+        QFile source(sourcePath);
+        QVERIFY2(source.open(QIODevice::ReadWrite | QIODevice::Truncate),
+                 qPrintable(source.errorString()));
+        QVERIFY(source.resize(sourceSize));
+        QCOMPARE(source.write(first), first.size());
+        QVERIFY(source.seek(chunk - 4));
+        QCOMPARE(source.write(boundary), boundary.size());
+        QVERIFY(source.seek(sourceSize - last.size()));
+        QCOMPARE(source.write(last), last.size());
+        source.close();
+
+        QJsonObject deck = sampleDeck();
+        QJsonObject assets = deck.value(QStringLiteral("assets")).toObject();
+        assets.insert(QStringLiteral("large-video.mp4"), fileUrl(sourcePath));
+        deck.insert(QStringLiteral("assets"), assets);
+
+        WebBundle bundle;
+        bundle.setDeck(deck);
+        bundle.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        bundle.setRendererDir(sandbox(QStringLiteral("renderer")));
+        QVERIFY2(bundle.build(outputDir()), qPrintable(bundle.lastError()));
+
+        const QString relative =
+            inlinedDeck(outputDir() + QStringLiteral("/index.html"))
+                .value(QStringLiteral("assets")).toObject()
+                .value(QStringLiteral("large-video.mp4")).toString();
+        QVERIFY(relative.startsWith(QStringLiteral("media/")));
+
+        QFile copied(QDir(outputDir()).filePath(relative));
+        QVERIFY2(copied.open(QIODevice::ReadOnly), qPrintable(copied.errorString()));
+        QCOMPARE(copied.size(), sourceSize);
+        QCOMPARE(copied.read(first.size()), first);
+        QVERIFY(copied.seek(chunk - 4));
+        QCOMPARE(copied.read(boundary.size()), boundary);
+        QVERIFY(copied.seek(sourceSize - last.size()));
+        QCOMPARE(copied.read(last.size()), last);
+    }
+
     void sameNamedImagesFromDifferentDirectoriesBothSurvive()
     {
         WebBundle bundle;
@@ -818,6 +867,45 @@ private slots:
         QVERIFY(!QFileInfo::exists(locked + QStringLiteral("/bundle")));
 
         QFile::setPermissions(locked, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    }
+
+    void rejectsSymlinkedOutputSubdirectory()
+    {
+        const QString outside = sandbox(QStringLiteral("outside"));
+        const QString sentinel = outside + QStringLiteral("/render.js");
+        const QString assetsLink = outputDir() + QStringLiteral("/assets");
+        writeText(sentinel, QStringLiteral("must stay unchanged"));
+        QVERIFY(QDir().mkpath(outputDir()));
+        if (!makeSymlink(outside, assetsLink))
+            QSKIP("This filesystem cannot create symlinks.");
+
+        WebBundle bundle;
+        configure(&bundle);
+        QVERIFY(!bundle.build(outputDir()));
+        QVERIFY(bundle.lastError().contains(QStringLiteral("writable")));
+        QVERIFY(bundle.files().isEmpty());
+        QCOMPARE(bundle.totalBytes(), 0);
+        QCOMPARE(readText(sentinel), QStringLiteral("must stay unchanged"));
+        QVERIFY(QFileInfo(assetsLink).isSymLink());
+    }
+
+    void rejectsSymlinkedOutputFile()
+    {
+        const QString outside = sandbox(QStringLiteral("outside/render.js"));
+        const QString linkedFile = outputDir() + QStringLiteral("/assets/render.js");
+        writeText(outside, QStringLiteral("must stay unchanged"));
+        QVERIFY(QDir().mkpath(QFileInfo(linkedFile).path()));
+        if (!makeSymlink(outside, linkedFile))
+            QSKIP("This filesystem cannot create symlinks.");
+
+        WebBundle bundle;
+        configure(&bundle);
+        QVERIFY(!bundle.build(outputDir()));
+        QVERIFY(bundle.lastError().contains(QStringLiteral("Refused")));
+        QVERIFY(bundle.files().isEmpty());
+        QCOMPARE(bundle.totalBytes(), 0);
+        QCOMPARE(readText(outside), QStringLiteral("must stay unchanged"));
+        QVERIFY(QFileInfo(linkedFile).isSymLink());
     }
 
     void leavesNoPartialBundleWhenAWriteFails()

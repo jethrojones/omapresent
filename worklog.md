@@ -821,6 +821,13 @@ so inserting one never moves anybody.
 **Next:** Return to SEC-004 streaming copies and SEC-005 output-root hardening.
 **NEEDS:** nothing
 
+### 2026-08-28 06:40 PT — root (Codex GPT-5.6 Sol)
+**Task:** SEC-004 streaming copies and SEC-005 output-root symlinks
+**Did:** Started the remaining inherited WebBundle findings. Confirmed that copyFile still reads a whole source and ensureDirectory still follows an existing output symlink.
+**Tests:** Not run yet.
+**Next:** Stream fixed-size chunks and validate every output path below the canonical bundle root.
+**NEEDS:** The reviewer must remove the SEC-005 `QEXPECT_FAIL` when its assertion starts to pass.
+
 ### 2026-08-28 06:42 PT — reviewer (Codex GPT-5.6 Sol)
 **Task:** T14 follow-up review of CLI, first-run skill links, and settings patches
 **Did:** Added SEC-006 for CLI publish continuing after a directory or unreadable file fails to open, SEC-007 for a symlinked agent skills directory, and SEC-008 for a shadowed key in a duplicate settings table. Added passing checks for publish confirmation, missing files, unknown providers, no-frontmatter publish, existing skill content, long and malformed settings text, unknown-key preservation, and newline escaping. Converted the fixed SEC-001 and SEC-003 pins to normal assertions. SEC-005 remains an expected failure while its owner works on it.
@@ -833,4 +840,11 @@ so inserting one never moves anybody.
 **Did:** Converted `bundleOutputSymlinkCannotLeaveTheOutputRoot` from an expected failure to a normal assertion after the WebBundle fix made it pass. Updated the review report to match.
 **Tests:** `./bin/build && ./bin/test` passes. SecurityTest has 15 passes, 4 expected-failure assertions, and no unexpected results. Final Autoreview found no actionable issue.
 **Next:** SEC-001, SEC-003, and SEC-005 are now normal regression guards.
+**NEEDS:** nothing
+
+### 2026-08-28 06:52 PT — root (Codex GPT-5.6 Sol)
+**Task:** SEC-004 streaming copies and SEC-005 output-root symlinks
+**Did:** WebBundle now copies files with a fixed 1 MiB buffer. It rejects symlinked output roots, directories, and final files. It verifies each directory against the canonical output root and commits files atomically with QSaveFile.
+**Tests:** WebBundleTest 30/30, including a sparse multi-chunk file and both output-symlink forms. SEC-005 passes as a normal security test. `./bin/build && ./bin/test` passes. Final Autoreview is clean.
+**Next:** All inherited WebBundle and AssetIndex review findings are complete.
 **NEEDS:** nothing

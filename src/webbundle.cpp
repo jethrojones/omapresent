@@ -10,6 +10,7 @@
 #include <QJsonValue>
 #include <QMap>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSet>
 #include <QUrl>
 
@@ -168,6 +169,20 @@ bool sourceIsInside(const QString &sourcePath, const QStringList &canonicalRoots
             return true;
     }
     return false;
+}
+
+QString outputPathFor(const QString &outputRoot, const QString &relativePath)
+{
+    const QString normalized = QDir::fromNativeSeparators(relativePath);
+    const QString clean = QDir::cleanPath(normalized);
+    if (clean.isEmpty() || clean == QStringLiteral(".")
+        || QDir::isAbsolutePath(clean) || clean == QStringLiteral("..")
+        || clean.startsWith(QStringLiteral("../"))) {
+        return {};
+    }
+
+    const QString absolute = QDir::cleanPath(QDir(outputRoot).filePath(clean));
+    return isWithinRoot(absolute, QDir::cleanPath(outputRoot)) ? absolute : QString();
 }
 
 // Marks a module specifier the loader has to point at a blob: URL. Nothing
@@ -742,6 +757,7 @@ const char *kBundleJs = R"JS(/* Omapresent published deck — page chrome around
 struct WebBundle::Private {
     QString rendererDir = QStringLiteral(":/renderer");
     QString outputRoot;
+    QString outputCanonicalRoot;
     bool outputRootExisted = false;
     // Absolute paths of everything this build made, for the rollback that keeps
     // a failure from leaving half a bundle behind.
@@ -882,23 +898,47 @@ void WebBundle::rollback()
 
 bool WebBundle::ensureDirectory(const QString &relativeDir)
 {
-    QDir root(d->outputRoot);
-    const QString absolute = relativeDir.isEmpty()
-        ? d->outputRoot
-        : QDir::cleanPath(root.filePath(relativeDir));
-    if (QFileInfo::exists(absolute))
-        return QFileInfo(absolute).isDir();
-
-    if (!root.mkpath(relativeDir.isEmpty() ? QStringLiteral(".") : relativeDir))
+    const QFileInfo rootInfo(d->outputRoot);
+    if (rootInfo.isSymLink() || !rootInfo.isDir()
+        || rootInfo.canonicalFilePath() != d->outputCanonicalRoot) {
         return false;
+    }
 
-    // Remember every level we made, so a rollback can unmake exactly those.
+    const QString clean = QDir::cleanPath(QDir::fromNativeSeparators(relativeDir));
+    if (relativeDir.isEmpty() || clean == QStringLiteral("."))
+        return true;
+    if (QDir::isAbsolutePath(clean) || clean == QStringLiteral("..")
+        || clean.startsWith(QStringLiteral("../"))) {
+        return false;
+    }
+
+    // Walk one level at a time. QFileInfo::isDir() follows symlinks, which
+    // would let a pre-placed output/assets link redirect bundle writes.
     QString walked = d->outputRoot;
-    const QStringList parts = relativeDir.split(u'/', Qt::SkipEmptyParts);
+    const QStringList parts = clean.split(u'/', Qt::SkipEmptyParts);
     for (const QString &part : parts) {
         walked = QDir::cleanPath(walked + u'/' + part);
+        QFileInfo info(walked);
+        if (info.isSymLink())
+            return false;
+        if (info.exists()) {
+            if (!info.isDir()
+                || !isWithinRoot(info.canonicalFilePath(), d->outputCanonicalRoot)) {
+                return false;
+            }
+            continue;
+        }
+
+        const QString parent = QFileInfo(walked).path();
+        if (!QDir(parent).mkdir(QFileInfo(walked).fileName()))
+            return false;
         if (!d->createdDirs.contains(walked))
             d->createdDirs += walked;
+        info.setFile(walked);
+        if (info.isSymLink() || !info.isDir()
+            || !isWithinRoot(info.canonicalFilePath(), d->outputCanonicalRoot)) {
+            return false;
+        }
     }
     return true;
 }
@@ -910,13 +950,24 @@ bool WebBundle::writeFile(const QString &relativePath, const QByteArray &data)
         return fail(QStringLiteral("Could not create %1/%2 — check that %3 is writable.")
                         .arg(d->outputRoot, parent, d->outputRoot));
 
-    const QString absolute = QDir(d->outputRoot).filePath(relativePath);
-    QFile file(absolute);
+    const QString absolute = outputPathFor(d->outputRoot, relativePath);
+    const QFileInfo parentInfo(QFileInfo(absolute).path());
+    if (absolute.isEmpty() || QFileInfo(absolute).isSymLink()
+        || !isWithinRoot(parentInfo.canonicalFilePath(), d->outputCanonicalRoot)) {
+        return fail(QStringLiteral("Refused to write %1 outside the bundle directory.")
+                        .arg(relativePath));
+    }
+
+    QSaveFile file(absolute);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
         return fail(QStringLiteral("Could not write %1: %2").arg(absolute, file.errorString()));
-    if (file.write(data) != data.size())
+    if (file.write(data) != data.size()) {
+        file.cancelWriting();
         return fail(QStringLiteral("Could not write %1: %2").arg(absolute, file.errorString()));
-    file.close();
+    }
+    if (!file.commit())
+        return fail(QStringLiteral("Could not finish writing %1: %2")
+                        .arg(absolute, file.errorString()));
 
     d->writtenPaths += absolute;
     m_files += relativePath;
@@ -936,7 +987,62 @@ bool WebBundle::copyFile(const QString &sourcePath, const QString &relativePath)
     if (!source.open(QIODevice::ReadOnly))
         return fail(QStringLiteral("Could not read %1: %2")
                         .arg(sourcePath, source.errorString()));
-    return writeFile(relativePath, source.readAll());
+
+    const QString parent = QFileInfo(relativePath).path();
+    if (!ensureDirectory(parent == QStringLiteral(".") ? QString() : parent))
+        return fail(QStringLiteral("Could not create %1/%2 — check that %3 is writable.")
+                        .arg(d->outputRoot, parent, d->outputRoot));
+
+    const QString absolute = outputPathFor(d->outputRoot, relativePath);
+    const QFileInfo parentInfo(QFileInfo(absolute).path());
+    if (absolute.isEmpty() || QFileInfo(absolute).isSymLink()
+        || !isWithinRoot(parentInfo.canonicalFilePath(), d->outputCanonicalRoot)) {
+        return fail(QStringLiteral("Refused to write %1 outside the bundle directory.")
+                        .arg(relativePath));
+    }
+
+    QSaveFile destination(absolute);
+    if (!destination.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return fail(QStringLiteral("Could not write %1: %2")
+                        .arg(absolute, destination.errorString()));
+    }
+
+    constexpr qsizetype kCopyBufferSize = 1024 * 1024;
+    QByteArray buffer;
+    buffer.resize(kCopyBufferSize);
+    qint64 copied = 0;
+    while (true) {
+        const qint64 count = source.read(buffer.data(), buffer.size());
+        if (count < 0) {
+            destination.cancelWriting();
+            return fail(QStringLiteral("Could not read %1: %2")
+                            .arg(sourcePath, source.errorString()));
+        }
+        if (count == 0)
+            break;
+
+        qint64 offset = 0;
+        while (offset < count) {
+            const qint64 written = destination.write(buffer.constData() + offset,
+                                                     count - offset);
+            if (written <= 0) {
+                destination.cancelWriting();
+                return fail(QStringLiteral("Could not write %1: %2")
+                                .arg(absolute, destination.errorString()));
+            }
+            offset += written;
+        }
+        copied += count;
+    }
+    if (!destination.commit()) {
+        return fail(QStringLiteral("Could not finish writing %1: %2")
+                        .arg(absolute, destination.errorString()));
+    }
+
+    d->writtenPaths += absolute;
+    m_files += relativePath;
+    m_totalBytes += copied;
+    return true;
 }
 
 bool WebBundle::buildRenderer()
@@ -1308,6 +1414,7 @@ bool WebBundle::build(const QString &outputDir)
     d->styleSheets.clear();
     d->classicScripts.clear();
     d->mediaRoots.clear();
+    d->outputCanonicalRoot.clear();
 
     if (m_deck.isEmpty())
         return fail(QStringLiteral("There is no deck to publish."));
@@ -1316,6 +1423,9 @@ bool WebBundle::build(const QString &outputDir)
 
     d->outputRoot = QDir::cleanPath(QFileInfo(outputDir).absoluteFilePath());
     d->outputRootExisted = QFileInfo::exists(d->outputRoot);
+    if (QFileInfo(d->outputRoot).isSymLink())
+        return fail(QStringLiteral("The bundle directory %1 must not be a symbolic link.")
+                        .arg(d->outputRoot));
     if (d->outputRootExisted && !QFileInfo(d->outputRoot).isDir())
         return fail(QStringLiteral("%1 is a file, not a directory.").arg(d->outputRoot));
     if (!QDir().mkpath(d->outputRoot))
@@ -1324,6 +1434,10 @@ bool WebBundle::build(const QString &outputDir)
                         .arg(d->outputRoot));
     if (!d->outputRootExisted)
         d->createdDirs += d->outputRoot;
+    d->outputCanonicalRoot = QFileInfo(d->outputRoot).canonicalFilePath();
+    if (d->outputCanonicalRoot.isEmpty())
+        return fail(QStringLiteral("Could not verify the bundle directory %1.")
+                        .arg(d->outputRoot));
 
     auto addMediaRoot = [this](const QString &path) {
         const QString canonical = QFileInfo(path).canonicalFilePath();
