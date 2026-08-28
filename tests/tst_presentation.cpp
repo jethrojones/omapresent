@@ -1,6 +1,8 @@
 #include <QGuiApplication>
 #include <QFile>
 #include <QJsonArray>
+#include <QPointer>
+#include <QQuickWindow>
 #include <QSet>
 #include <QtTest>
 
@@ -880,6 +882,79 @@ private slots:
         const QString resizeEvent = QStringLiteral("window.dispatchEvent(new Event('resize'))");
         QVERIFY(audience.contains(resizeEvent));
         QCOMPARE(presenter.count(resizeEvent), 2);
+    }
+
+    void audienceWindowHasAnExplicitIndependentTopLevelIdentity() {
+        // These fields are read by QQuickWindow before the compositor sees a
+        // surface. Keeping them in QML prevents a future component refactor
+        // from turning the shareable audience surface into a dialog or child.
+        const QByteArray relative = QByteArrayLiteral("../src/AudienceWindow.qml");
+        QFile file(QFINDTESTDATA(relative.constData()));
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString audience = QString::fromUtf8(file.readAll());
+
+        QVERIFY(audience.contains(QStringLiteral("Window {")));
+        QVERIFY(audience.contains(QStringLiteral("visible: false")));
+        QVERIFY(audience.contains(QStringLiteral("flags: Qt.Window")));
+        QVERIFY(audience.contains(QStringLiteral("modality: Qt.NonModal")));
+        QVERIFY(audience.contains(QStringLiteral("transientParent: null")));
+        QVERIFY(audience.contains(QStringLiteral("presentation.deckTitle.length > 0")));
+        QVERIFY(audience.contains(QStringLiteral("presentation.deckTitle + \" — Omapresent\"")));
+        QVERIFY(audience.contains(QStringLiteral(": \"Omapresent\"")));
+    }
+
+    void presentationLifecycleKeepsTheAudienceAsATopLevel() {
+        // This uses the production lifecycle with a native factory, rather
+        // than a WebEngineView. Desktop holds are off so the test cannot alter
+        // the running desktop session.
+        if (QGuiApplication::screens().isEmpty())
+            QSKIP("No screen is available for a presentation window.");
+
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(2));
+        QPointer<QQuickWindow> audience;
+        presentation.setWindowFactoryForTesting([&audience](const QString &source) {
+            auto *window = new QQuickWindow;
+            if (source == QStringLiteral("qrc:/AudienceWindow.qml"))
+                audience = window;
+            return window;
+        });
+        presentation.start(0);
+
+        QVERIFY(audience);
+        QVERIFY(presentation.active());
+
+        QCOMPARE(audience->parent(), nullptr);
+        QCOMPARE(audience->transientParent(), nullptr);
+        QCOMPARE(audience->modality(), Qt::NonModal);
+        QCOMPARE(audience->type(), Qt::Window);
+        QVERIFY(audience->flags().testFlag(Qt::Window));
+        QVERIFY(audience->isVisible());
+
+        presentation.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(audience.isNull(), 5000);
+        QVERIFY(!presentation.active());
+    }
+
+    void presenterAndEditorRemainSeparateWindowDeclarations() {
+        const auto qml = [](const QString &name) {
+            const QByteArray relative = (QStringLiteral("../src/") + name).toUtf8();
+            QFile file(QFINDTESTDATA(relative.constData()));
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+                return QString();
+            return QString::fromUtf8(file.readAll());
+        };
+
+        const QString presenter = qml(QStringLiteral("PresenterWindow.qml"));
+        QVERIFY(!presenter.isEmpty());
+        QVERIFY(presenter.contains(QStringLiteral("Window {")));
+        QVERIFY(presenter.contains(QStringLiteral("title: \"Presenter - Omapresent\"")));
+
+        const QString editor = qml(QStringLiteral("Main.qml"));
+        QVERIFY(!editor.isEmpty());
+        QVERIFY(editor.contains(QStringLiteral("ApplicationWindow {")));
+        QVERIFY(editor.contains(QStringLiteral("backend.deckTitle + \" - Omapresent\"")));
     }
 };
 

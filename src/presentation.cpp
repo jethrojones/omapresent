@@ -16,6 +16,7 @@
 #include <QQmlError>
 #include <QQuickWindow>
 #include <QScreen>
+#include <QWindow>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
@@ -748,6 +749,7 @@ struct Presentation::Private {
 
     QQmlEngine *engine = nullptr;
     std::unique_ptr<QQmlEngine> ownEngine;
+    Presentation::WindowFactory windowFactory;
     QPointer<QQuickWindow> audienceWindow;
     QPointer<QQuickWindow> presenterWindow;
     QHash<QString, ViewState> views;
@@ -841,6 +843,10 @@ bool Presentation::shortcutsVisible() const { return d->shortcuts; }
 bool Presentation::singleOutput() const { return d->assignment.sharedOutput(); }
 
 void Presentation::setQmlEngine(QQmlEngine *engine) { d->engine = engine; }
+
+void Presentation::setWindowFactoryForTesting(WindowFactory factory) {
+    d->windowFactory = std::move(factory);
+}
 
 void Presentation::setEnvironmentPreferences(bool inhibitIdle, bool doNotDisturb) {
     d->environment->setPreferences(inhibitIdle, doNotDisturb);
@@ -1385,6 +1391,17 @@ void Presentation::assignMonitors() {
 }
 
 QQuickWindow *Presentation::createWindow(const QString &source) {
+    if (d->windowFactory) {
+        QQuickWindow *window = d->windowFactory(source);
+        if (!window)
+            return nullptr;
+        window->setParent(static_cast<QWindow *>(nullptr));
+        window->setTransientParent(nullptr);
+        window->setModality(Qt::NonModal);
+        window->setFlags(Qt::Window);
+        return window;
+    }
+
     QQmlEngine *engine = d->engine;
     if (!engine) {
         // Present mode can be asked for before anyone has handed us the
@@ -1419,6 +1436,13 @@ QQuickWindow *Presentation::createWindow(const QString &source) {
         return nullptr;
     }
     context->setParent(window);
+    // QML Window defaults happen to describe this today. Make the desktop
+    // contract explicit before placeWindow creates the native Wayland surface:
+    // present windows are peers of the editor, never a dialog or transient.
+    window->setParent(static_cast<QWindow *>(nullptr));
+    window->setTransientParent(nullptr);
+    window->setModality(Qt::NonModal);
+    window->setFlags(Qt::Window);
     QQmlEngine::setObjectOwnership(window, QQmlEngine::CppOwnership);
     return window;
 }

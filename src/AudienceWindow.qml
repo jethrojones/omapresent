@@ -12,10 +12,16 @@ import QtWebEngine
 Window {
     id: audience
     objectName: "audienceWindow"
-    visible: true
+    // Create the Wayland surface only after Presentation has selected its
+    // output. These properties must not depend on QML defaults: the audience
+    // is an independently shareable desktop top-level, never an editor child.
+    visible: false
+    flags: Qt.Window
+    modality: Qt.NonModal
+    transientParent: null
     color: background
     title: presentation.deckTitle.length > 0
-        ? presentation.deckTitle + " - Omapresent"
+        ? presentation.deckTitle + " — Omapresent"
         : "Omapresent"
 
     readonly property color background: paletteColor("background", "#101010")

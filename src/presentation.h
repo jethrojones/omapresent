@@ -205,6 +205,8 @@ class Presentation : public QObject {
     Q_PROPERTY(bool singleOutput READ singleOutput NOTIFY activeChanged)
 
 public:
+    using WindowFactory = std::function<QQuickWindow *(const QString &source)>;
+
     explicit Presentation(QObject *parent = nullptr);
     ~Presentation() override;
 
@@ -243,6 +245,10 @@ public:
     // Present mode creates its own windows, so it needs an engine to create
     // them with. Optional: without one it builds a private engine on first use.
     void setQmlEngine(QQmlEngine *engine);
+
+    // A narrow test seam for native-window lifecycle coverage. Production
+    // leaves this empty and creates the QML windows above.
+    void setWindowFactoryForTesting(WindowFactory factory);
 
     // Settings §11 controls whether present mode takes each desktop hold.
     // Changing a preference during a talk applies it at once.

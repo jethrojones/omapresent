@@ -1588,3 +1588,18 @@ live run when those checks can be made without changing the user's baseline.
 **Tests:** CI run https://github.com/jethrojones/omapresent/actions/runs/33211971954 succeeded. Omarchy PR https://github.com/omacom/omarchy-pkgs/pull/235 is open and mergeable.
 **Next:** Upstream maintainer review and merge.
 **NEEDS:** The upstream `Tests` workflow remains `action_required`; an Omarchy maintainer must approve the first-time fork workflow.
+
+### 2026-08-28 14:34 PT — app-final (Codex GPT-5)
+**Task:** T24 audience top-level window identity
+**Did:** Started after reading the project rules, spec, relevant tasks, current worklog, and window code. Read-only Hyprland inspection found a transient `aquamarine - WAYLAND-1` client, then source search found no Aquamarine or nested-compositor launch path in Omapresent. The audience is currently a QML `Window`; its top-level identity relies on Qt defaults.
+**Tests:** Not run yet.
+**Next:** Make the native top-level state explicit, add lifecycle and identity regressions, and inspect live Omapresent clients.
+**NEEDS:** nothing
+
+### 2026-08-28 14:43 PT — app-final (Codex GPT-5)
+**Task:** T24 audience top-level window identity
+**Did:** Made the audience QML window explicitly normal, non-modal, and without a transient parent. It stays hidden until `placeWindow()` selects its output. Its title is `<deck title> — Omapresent`, with `Omapresent` as the empty-title fallback. `Presentation::createWindow()` clears native parent/transient/modality state before showing either presentation window. Added a native window-factory test seam so start/stop lifecycle coverage does not load Chromium under the offscreen test platform.
+**Tests:** `qmllint src/AudienceWindow.qml` passes. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: 520 C++ tests and renderer 43/43. PresentationTest 63/63 covers title contract, `type() == Qt::Window`, null parent/transient parent, `Qt::NonModal`, lifecycle cleanup, resize wiring, and separate presenter/editor declarations.
+**Live:** `omapresent present welcome/welcome.md` created two native Wayland clients from PID 3011450: editor `0x55cf9aaa3360`, class/initialClass `omapresent`, title `How Omapresent Works - Omapresent`; audience `0x55cf9abad140`, class/initialClass `omapresent`, title `How Omapresent Works — Omapresent`, fullscreen, `xwayland: false`. The separately existing outer compositor was `0x55cf9a388ab0`, PID 1422813, class/initialClass `aquamarine`, title `aquamarine - WAYLAND-1`, also `xwayland: false`. The test process was stopped.
+**Next:** Done.
+**NEEDS:** The portal picker label is outside Omapresent. Omapresent cannot control the outer Aquamarine source. The portal must be used in the physical Hyprland session and the direct Omapresent audience window must be selected.
