@@ -171,3 +171,31 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   and neither is an unrecognised host (spec §4.8 has no yt-dlp fallback).
   `isBareUrlLine` and `extractUrls` correctly ignore a URL inside prose and one
   inside a code fence.
+- **2026-08-27 — end to end, for the first time.** Ran
+  `omapresent export --pdf welcome/welcome.md`, which drives DeckModel →
+  AssetIndex → OmarchyTheme → the renderer in `pdf` mode →
+  `QWebEnginePage::printToPdf`. It produced a 499 KB PDF of the real deck in the
+  live `gold-rush` theme, with header, footer tokens resolved
+  (`How Omapresent Works — Slide 1/25`), slide numbers and the progress bar.
+  Rendered pages to PNG and looked at them. Title slide, tables and block quotes
+  are genuinely good. Two defects found that no unit test could see:
+  **lists lay out in a ~150px column** and wrap after two words (which also
+  inflated 25 slides into 61 PDF pages), and **continuation pages strand the
+  footer mid-page**. Reported as `tasks/review/renderer-1.md`.
+  - A third suspicion — that markdown-it's `typographer` was turning `---` into
+    an em dash and corrupting the manual's own explanation of the separator —
+    was **wrong**. Checked it directly against the vendored build: `---` inside
+    code spans and fences is preserved, and only bare prose `---` becomes an em
+    dash, which is correct. The `--` I saw was a `pdftotext` extraction artifact.
+- **2026-08-27 — integration suite earns its keep.** Its first run found three
+  real cross-component problems: `AssetIndex::looksLikeImageReference` accepts
+  any line containing a `/`, so prose like `and/or`, `X/Twitter` and a LaTeX
+  formula are treated as bare image paths (confirmed with a direct probe — it
+  fires on our own welcome deck); C++ `VideoCache` and the renderer's
+  `media.js` disagree about a bare `clip.webm` line, on both whether it is media
+  and what host it is; and BOM handling. Reported and reassigned — the `assets`
+  agent's provider had run out of quota, so `src/assetindex.cpp` moved to the
+  `present` agent.
+- **2026-08-27 — theme contrast fix verified.** Re-ran the probe:
+  `ensureContrast("#767676","#808080")` now returns `#171717` at ratio 4.54,
+  clearing the floor by darkening. All 29 themes still parse.

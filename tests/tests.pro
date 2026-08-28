@@ -14,8 +14,10 @@ SOURCES += \
     tst_omarchytheme.cpp \
     tst_videocache.cpp \
     tst_publisher.cpp \
+    tst_presentation.cpp \
     tst_settings.cpp \
     tst_webbundle.cpp \
+    tst_integration.cpp \
     ../src/backend.cpp \
     ../src/deckmodel.cpp \
     ../src/assetindex.cpp \

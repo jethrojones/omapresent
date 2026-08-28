@@ -255,6 +255,17 @@ QVariant scalarValue(const QString &raw)
 
 } // namespace
 
+QDebug operator<<(QDebug debug, const Slide &slide)
+{
+    const QDebugStateSaver saver(debug);
+    debug.nospace() << "Slide(lines " << slide.sourceStartLine << '-' << slide.sourceEndLine;
+    if (!slide.recallKey.isEmpty())
+        debug << ", recall \"" << slide.recallKey << '"';
+    if (slide.skipInFlow)
+        debug << ", skipped";
+    return debug << ", markdown " << slide.markdown << ')';
+}
+
 DeckModel::DeckModel(QObject *parent) : QObject(parent) {}
 
 void DeckModel::setSource(const QString &text)
@@ -422,7 +433,13 @@ void DeckModel::parse()
     m_frontmatter.clear();
     m_slides.clear();
 
-    const QStringList lines = sourceLines(m_source);
+    QStringList lines = sourceLines(m_source);
+    // A file saved with a UTF-8 BOM starts with U+FEFF, which would otherwise
+    // hide the frontmatter's opening `---` and the first separator. source()
+    // still returns the text exactly as it was set.
+    if (!lines.isEmpty() && lines.first().startsWith(QChar(0xFEFF)))
+        lines.first().remove(0, 1);
+
     m_lineToSlide.fill(-1, lines.size());
 
     // Frontmatter, spec §4.4: only when the very first line is `---`, running

@@ -9,6 +9,7 @@
 // Owner: the doc-model agent. Contract frozen — add members, never change the
 // meaning or signature of what is already here.
 
+#include <QDebug>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
@@ -29,6 +30,24 @@ struct Slide {
     int sourceStartLine = 0;
     int sourceEndLine = 0;
 };
+
+// Field-wise, so tests can compare whole slides and print a useful diff when
+// they differ.
+inline bool operator==(const Slide &left, const Slide &right)
+{
+    return left.markdown == right.markdown
+        && left.recallKey == right.recallKey
+        && left.skipInFlow == right.skipInFlow
+        && left.sourceStartLine == right.sourceStartLine
+        && left.sourceEndLine == right.sourceEndLine;
+}
+
+inline bool operator!=(const Slide &left, const Slide &right)
+{
+    return !(left == right);
+}
+
+QDebug operator<<(QDebug debug, const Slide &slide);
 
 class DeckModel : public QObject {
     Q_OBJECT
