@@ -1312,3 +1312,70 @@ is clear of them.
 **Tests:** Not run. This entry records task ownership before agents edit.
 **Next:** Start Claude, Codex Spark, release, and image agents. Check them on timers and route review after each handoff.
 **NEEDS:** No blocker.
+
+### 2026-08-28 12:08 PT — codex (GPT-5.3 Codex Spark)
+**Task:** T16 renderer completion
+**Did:** Read the project and vault rules. Started the renderer completion work in the assigned files.
+**Tests:** Not run yet.
+**Next:** Add regression tests for remote images, published subtitles, title fallback, and secure wallpaper fallback. Implement each fix and run the full gate.
+**NEEDS:** nothing
+
+### 2026-08-28 12:15 PT — app-shell (Claude Opus 5)
+**Task:** Visual verification of the editor and present mode on the live desktop
+**Did:** Ran the app on Hyprland (HDMI-A-1, gold-rush) and captured each step.
+Screenshots are under
+`/tmp/claude-1000/-home-jethro-projects-omapresent/857540a4-fc78-44cc-a730-8297c1738c08/scratchpad/`.
+
+1. **Editor + live preview, themed — works.** `v1-open.png` (welcome.md):
+   editor left, rendered slide right, gold-rush colours, header/footer and
+   `1/25` slide number drawn by the renderer.
+2. **Live update holds position — works.** With a seeded session position of
+   slide 2, the preview opened on Slide Three (`v5-restore.png`), and typing in
+   the editor left it on Slide Three rather than jumping to slide 1
+   (`t2-typed.png`). Editing audience content re-rendered it: the heading
+   became "Slide Three ALIVE" (`t3-heading.png`). Prose edits correctly do not
+   appear on the audience screen — they are notes (§4.2).
+3. **Triple-return — works.** Three Returns at the end of the document wrote
+   `\n\n---\n\n` and left the caret on the new slide; confirmed on disk after
+   Ctrl+S (`t4-triple-return.png`).
+4. **Ctrl+? — works**, and is the full §13 reference: Editor, Start presenting,
+   Present (`t6-crop.png`). My first attempt looked inert only because I
+   injected Ctrl+Shift+slash rather than the `question` keysym.
+5. **uri-list decode** stays covered by `decodesWaylandUriListDrops`, including
+   `file:///home/jethro/My%20Pictures/q3%20budget.png` → a path with spaces.
+6. **F5 present mode — works.** The audience window fills the single output
+   (3840x2160) showing slide 1 (`t7-present.png`); `N` toggles the notes
+   overlay with an "N to close" hint (`t8-notes.png`); `Esc` closes the
+   presentation and leaves the editor running. Only the audience window opens
+   on one output, which is what §5.1 asks for. No crash, no core dump from any
+   of my runs.
+
+**Defects found**
+- **Session state is keyed by the path as typed.** `omapresent welcome/welcome.md`
+  stores the key `welcome/welcome.md` in `~/.local/state/omapresent/sessions.json`
+  instead of the absolute path, so the same deck opened from another directory
+  restores the wrong position. Mine; `src/backend.cpp` is T15-owned so I will
+  fix it there.
+- **After an abnormal exit, `omapresent <file>` silently ignores the file.**
+  Draft recovery restores the previous document and marks it modified, and
+  `src/main.cpp` only opens the command-line file when `!backend.modified()`.
+  I reproduced this twice: launching on `check.md` gave a window titled
+  `* welcome.md`. See NEEDS.
+
+**Also observed (not mine):** six `omapresent` SIGABRT core dumps from 06:33-06:45
+under COMM `present`, all predating my session; a notification that was already
+on screen stayed on top of the audience window after present mode started.
+
+**Housekeeping:** I closed a leftover Chrome window titled "How Omapresent Works"
+while clearing stale windows — it matched a title filter and turned out to be
+the web-bundle agent's preview of a published bundle, not an app window. Nothing
+was lost but it is reopenable from the bundle. I also briefly moved the user's
+ChatGPT window to workspace 9 with a mistargeted dispatch and moved it back.
+
+**Tests:** No code changed in this entry. `welcome/welcome.md` is byte-identical
+(md5 4cd40b3d9fdc2f590ff9f3e22c62c3c1); all typing went to scratch copies.
+**Next:** T15.
+**NEEDS:** `src/main.cpp` (not T15-owned): the command-line file should win over
+a recovered draft — either open the file and offer the recovery separately, or
+drop the `!backend.modified()` guard when a file was named on the command line.
+Today a crash makes `omapresent <file>` open the wrong document.
