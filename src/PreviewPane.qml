@@ -25,16 +25,6 @@ Item {
         Component.onCompleted: registerObjects({"omapresentHost": backend.renderHost})
     }
 
-    WebEngineScript {
-        id: hostBridge
-        name: "omapresent-host-bridge"
-        sourceCode: backend.bridgeScript()
-        // Deferred, so the renderer's module has already defined
-        // window.omapresent by the time onState is assigned to it.
-        injectionPoint: WebEngineScript.Deferred
-        worldId: WebEngineScript.MainWorld
-    }
-
     WebEngineView {
         id: view
         anchors.fill: parent
@@ -42,15 +32,27 @@ Item {
         // Paint the theme, not Chromium's white, while the page loads.
         backgroundColor: backend.themeBackground
         webChannel: hostChannel
-        userScripts.collection: [hostBridge]
 
         onLoadingChanged: function(loadRequest) {
             if (loadRequest.status === WebEngineLoadingInfo.LoadSucceededStatus) {
                 pane.ready = true;
+                // The bridge goes in here rather than as a user script because
+                // this page is loaded once and never navigates, and because a
+                // load that has succeeded is a load whose deferred module has
+                // already defined window.omapresent for onState to hang off.
+                view.runJavaScript(backend.bridgeScript());
                 view.runJavaScript(backend.previewRenderScript());
             } else if (loadRequest.status === WebEngineLoadingInfo.LoadStartedStatus) {
                 pane.ready = false;
+            } else if (loadRequest.status === WebEngineLoadingInfo.LoadFailedStatus) {
+                console.warn("preview: could not load the renderer:", loadRequest.errorString);
             }
+        }
+
+        // A renderer that throws would otherwise fail by going blank. Its
+        // diagnostics belong in the app's log like everything else's.
+        onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceId) {
+            console.warn("renderer:", sourceId + ":" + lineNumber, message);
         }
     }
 }

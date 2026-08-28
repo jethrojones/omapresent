@@ -22,8 +22,11 @@ Window {
     readonly property color foreground: paletteColor("foreground", "#eeeeee")
     readonly property color muted: paletteColor("muted", "#909090")
 
+    // The audience palette, not the exact one: this chrome is on the same
+    // washed-out projector the slides are, so it takes the same spec §6
+    // legibility floor (OmarchyTheme::paletteForRole).
     function paletteColor(key, fallback) {
-        var value = presentation.palette[key];
+        var value = presentation.audiencePalette[key];
         return value !== undefined && value !== "" ? value : fallback;
     }
 

@@ -238,6 +238,9 @@ void Backend::setTextScale(qreal textScale) {
         return;
 
     m_textScale = textScale;
+    // The renderer sizes itself from the deck's textScale, so it needs the new
+    // one to reflow without a restart (spec §10).
+    scheduleDeckRebuild();
     emit textScaleChanged();
 }
 

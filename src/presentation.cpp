@@ -22,6 +22,7 @@
 
 #include <memory>
 
+#include "omarchytheme.h"
 #include "renderhost.h"
 
 namespace {
@@ -456,7 +457,11 @@ bool DeckNavigator::hideRecall() {
 struct Presentation::Private {
     DeckNavigator nav;
     QJsonObject deck;
+    // The same deck with the spec §6 projector floor applied to its palette.
+    // Only the audience window gets this one.
+    QJsonObject audienceDeck;
     QVariantMap palette;
+    QVariantMap audiencePalette;
     QString deckTitle;
     QString heading;
     QString notesHtml;
@@ -538,6 +543,14 @@ QString Presentation::bridgeScript() const { return RenderHost::bridgeScript(); 
 RenderHost *Presentation::audienceHost() const { return d->audienceHost; }
 RenderHost *Presentation::presenterHost() const { return d->presenterHost; }
 QVariantMap Presentation::palette() const { return d->palette; }
+QVariantMap Presentation::audiencePalette() const { return d->audiencePalette; }
+
+QJsonObject Presentation::deckForRole(const QString &role) const {
+    // The next-slide preview lives in the presenter window, on the presenter's
+    // screen, so it keeps the exact theme even though its page role is
+    // "audience" — that role only decides whether notes are drawn.
+    return role == audienceRole ? d->audienceDeck : d->deck;
+}
 QString Presentation::deckTitle() const { return d->deckTitle; }
 QString Presentation::heading() const { return d->heading; }
 QString Presentation::notesHtml() const { return d->notesHtml; }
@@ -603,7 +616,21 @@ void Presentation::setDeck(const QJsonObject &deckJson) {
     d->deck = deckJson;
     d->nav.setDeck(deckJson);
 
-    d->palette = deckJson.value(QStringLiteral("palette")).toObject().toVariantMap();
+    // Spec §6: the audience is reading a washed-out projector across a room, so
+    // its text colours get nudged until they clear the legibility floor. The
+    // presenter is a foot from a laptop screen, and nudging their colours would
+    // only stop the notes matching the theme they chose — so the presenter, the
+    // preview and the PDF all keep the palette exactly as the theme gave it.
+    const QJsonObject exact = deckJson.value(QStringLiteral("palette")).toObject();
+    d->audienceDeck = deckJson;
+    d->audienceDeck.insert(
+        QStringLiteral("palette"),
+        OmarchyTheme::paletteForRole(exact, audienceRole));
+
+    d->palette = exact.toVariantMap();
+    d->audiencePalette = d->audienceDeck.value(QStringLiteral("palette"))
+                             .toObject()
+                             .toVariantMap();
     d->deckTitle = deckJson.value(QStringLiteral("frontmatter"))
                        .toObject()
                        .value(QStringLiteral("title"))
@@ -612,8 +639,10 @@ void Presentation::setDeck(const QJsonObject &deckJson) {
     // A live edit keeps both windows where they are (renderer contract §2), so
     // pages that already hold the deck get update(), not render().
     for (auto it = d->views.begin(); it != d->views.end(); ++it) {
-        if (it->deckSent && it->ready)
-            emit runInView(it.key(), RenderHost::callScript(QStringLiteral("update"), d->deck));
+        if (it->deckSent && it->ready) {
+            emit runInView(it.key(), RenderHost::callScript(QStringLiteral("update"),
+                                                           deckForRole(it.key())));
+        }
     }
 
     emit deckChanged();
@@ -947,7 +976,7 @@ void Presentation::applyTo(const QString &role) {
 
     QStringList script;
     if (!view.deckSent) {
-        script << RenderHost::callScript(QStringLiteral("render"), d->deck);
+        script << RenderHost::callScript(QStringLiteral("render"), deckForRole(role));
         script << QStringLiteral("window.omapresent && (window.omapresent.role = %1);")
                       .arg(role == previewRole ? QStringLiteral("'audience'")
                                                : QStringLiteral("'%1'").arg(role));

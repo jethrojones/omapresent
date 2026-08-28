@@ -1,5 +1,6 @@
 #include "renderhost.h"
 
+#include <QDebug>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -113,8 +114,11 @@ QPageLayout RenderHost::pageLayoutFor(const QString &aspect) {
 
 QString RenderHost::bridgeScript() {
     const QString client = webChannelClient();
-    if (client.isEmpty())
+    if (client.isEmpty()) {
+        qWarning() << "No qwebchannel.js: the renderer will draw, but it will "
+                      "not be able to report where the reader is.";
         return {};
+    }
 
     return QStringLiteral(R"JS((function () {
 %1

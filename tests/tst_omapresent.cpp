@@ -431,6 +431,34 @@ private slots:
         QVERIFY(script.contains(QStringLiteral("\\u2028")));
     }
 
+    void injectsAWorkingHostBridge() {
+        // Without this script the renderer draws but never reports where the
+        // reader is, and it fails by going quiet rather than by crashing.
+        const QString bridge = RenderHost::bridgeScript();
+        QVERIFY(!bridge.isEmpty());
+        QVERIFY(bridge.contains(QStringLiteral("new QWebChannel(")));
+        QVERIFY(bridge.contains(QStringLiteral("channel.objects.omapresentHost")));
+        QVERIFY(bridge.contains(QStringLiteral("window.omapresent.onState")));
+    }
+
+    void recordsWhatTheRendererReports() {
+        RenderHost host;
+        QSignalSpy stateSpy(&host, &RenderHost::stateChanged);
+
+        host.state(QStringLiteral(
+            "{\"slideIndex\":4,\"slideCount\":12,\"scrollFraction\":0.25}"));
+        QCOMPARE(stateSpy.count(), 1);
+        QCOMPARE(host.slideIndex(), 4);
+        QCOMPARE(host.slideCount(), 12);
+        QCOMPARE(host.scrollFraction(), 0.25);
+
+        // A page mid-load can say something unhelpful; it must not clear what
+        // we already knew.
+        host.state(QStringLiteral("not json at all"));
+        QCOMPARE(stateSpy.count(), 1);
+        QCOMPARE(host.slideIndex(), 4);
+    }
+
     void sizesThePdfCanvasFromTheAspectKey() {
         const QPageLayout wide = RenderHost::pageLayoutFor(QStringLiteral("16:9"));
         QCOMPARE(wide.orientation(), QPageLayout::Landscape);

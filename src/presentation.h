@@ -147,6 +147,7 @@ class Presentation : public QObject {
     Q_PROPERTY(RenderHost *audienceHost READ audienceHost CONSTANT)
     Q_PROPERTY(RenderHost *presenterHost READ presenterHost CONSTANT)
     Q_PROPERTY(QVariantMap palette READ palette NOTIFY deckChanged)
+    Q_PROPERTY(QVariantMap audiencePalette READ audiencePalette NOTIFY deckChanged)
     Q_PROPERTY(QString deckTitle READ deckTitle NOTIFY deckChanged)
     Q_PROPERTY(QString heading READ heading NOTIFY positionChanged)
     Q_PROPERTY(QString notesHtml READ notesHtml NOTIFY positionChanged)
@@ -216,6 +217,7 @@ public:
     RenderHost *audienceHost() const;
     RenderHost *presenterHost() const;
     QVariantMap palette() const;
+    QVariantMap audiencePalette() const;
     QString deckTitle() const;
     QString heading() const;
     QString notesHtml() const;
@@ -231,6 +233,11 @@ public:
     // Called by the windows as their renderer pages come up and report back.
     Q_INVOKABLE void viewReady(const QString &role);
     Q_INVOKABLE void viewGone(const QString &role);
+
+    // The deck as one role's window receives it. Only the audience's differs,
+    // and only in its palette: spec §6 puts the projector legibility floor on
+    // the audience screen alone.
+    Q_INVOKABLE QJsonObject deckForRole(const QString &role) const;
 
     // The navigation model, for tests and for anything that needs to ask where
     // the talk is without going through the properties.
