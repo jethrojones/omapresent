@@ -870,6 +870,20 @@ so inserting one never moves anybody.
 **Next:** Renderer review work is complete.
 **NEEDS:** nothing
 
+### 2026-08-28 07:01 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** Long-read article scale and section rhythm
+**Did:** Kept all article-body rules inside `#deck`. Set h1/h2/h3 to 2.1/1.65/1.3rem against the 1rem body. Reduced section separation from 7rem to 4rem around the rule. The WebBundle masthead remains larger at 2.6rem and owns only content outside `#deck`.
+**Tests:** Chromium wide and 430px images pass. Renderer 41/41. `./bin/build && ./bin/test` passes. Isolated Autoreview is clean.
+**Next:** Commit the renderer refinement.
+**NEEDS:** nothing
+
+### 2026-08-28 07:02 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** Long-read article scale committed
+**Did:** Committed the renderer refinement as `d912ff3`. The WebBundle and renderer ownership boundary is now explicit and has no body-rule duplication.
+**Tests:** `./bin/build && ./bin/test` passes. Renderer 41/41. Autoreview is clean.
+**Next:** Renderer long-read work is complete.
+**NEEDS:** nothing
+
 ### 2026-08-28 06:57 PT — renderer (Codex GPT-5.6 Sol)
 **Task:** Long-read article scale and section rhythm
 **Did:** Accepted the ownership split. Renderer owns only `#deck`. WebBundle owns the masthead, read navigation, and footer. Started a smaller article heading scale and a tighter section separator.
@@ -941,3 +955,81 @@ tests, 0 failures.
 **NEEDS:** nothing new. The T13 navigator defect
 (`DeckNavigator::setDeck` follows the slide number, not the slide) is still
 open and still pinned by two `LiveSyncTest` cases named after it.
+
+### 2026-08-28 07:02 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** Long-read article scale closeout
+**Did:** Final renderer files are ready. The article body stays inside `#deck`. H1/h2/h3 are 2.1/1.65/1.3rem. Section separation is 4rem total. The WebBundle masthead stays at 2.6rem outside `#deck`.
+**Tests:** Chromium wide and 430px images pass. Renderer 41/41. `./bin/build && ./bin/test` passes. Isolated Autoreview is clean.
+**Next:** Commit the renderer refinement.
+**NEEDS:** nothing
+
+### 2026-08-28 07:35 PT — webbundle (Claude Opus 5)
+**Task:** tasks/review/longread-typography.md — the long read was set for a projector
+**Did:** Two causes, and the type scale was only one of them.
+
+*Two owners.* `bundle.css` carried a near-copy of the renderer's read-mode
+article rules — column, section flow, heading sizes, code, blockquote, tables —
+which lost to `deck.css` on specificity anyway. Agreed the split with the
+renderer agent through the orchestrator before editing: renderer owns everything
+inside `#deck`, I own the page around it. Deleted my ~120 duplicated lines. One
+owner, no cascade fight.
+
+*The page around the article never opted out of the projector.* `deck.css` sets
+every heading centred inside `24ch` at `clamp(3rem, 8.5vw, 8.5rem)` and every
+`p`/`li`/`blockquote` at `clamp(1.65rem, 3.2vw, 3.4rem)`. `.op-masthead`,
+`.op-chrome`, `.op-footer` and the deck view's `.op-notes` track all sit outside
+`#deck`, where the read branch never reaches them — so they were being set as
+slides. That is why the masthead was centred, broke early at 24ch, and drew its
+rule to the outer column width so it overhung the prose it introduced. Each now
+opts out by name at the article's own text measure (38rem less its two 1.25rem
+gutters), with the document title one step above the article's `h1`
+(`clamp(2.3rem, 6vw, 2.6rem)` against their `2.1rem`) at every width.
+
+The same leak was setting the deck view's speaker-note subtitles at projector
+size. Fixed here too.
+
+**Tests:** 30 cases, all green. Replaced the inherited
+`longReadResetsProjectorTypographyIntoArticleFlow`, which asserted the literal
+source text of `deck.css` — the renderer's file to reformat, so it broke on
+`22624ab` without anything regressing. It now asserts what is mine: that
+`bundle.css` styles the page and never `#deck` (the assertion that keeps the
+duplication from creeping back), that the masthead opts out by name, and that
+each page carries the `data-op-view` flag the renderer keys its article branch
+off. §9.2's note promotion itself is only observable in a rendered DOM — the
+deck JSON is inlined in both pages, so note text is in both files either way —
+so it is verified in a browser, below, not from C++.
+
+**Verified by looking.** Built `welcome/welcome.md`, copied the bundle to an
+unrelated path, rendered from `file://` with no server, at 1280 and 420 wide.
+Screenshots in `~/Pictures/omapresent/webbundle-verification/`:
+- `before-read.png` — masthead centred, rule overhanging, projector scale
+- `final-read-top.png`, `after-read-tall.png` — the article: masthead aligned to
+  the measure, note prose flowed as body text, code, lists, media down the page
+- `final-read-narrow.png` — 420px, gutters and hierarchy intact
+- `after-deck.png` — deck view, no regression from the deletions
+- `after-deck-notes-probe.png` — the NEEDS below, demonstrated
+
+**Next:** nothing outstanding on my side.
+
+**NEEDS:**
+- `src/renderer/deck.css` (renderer): spec §9.1's notes-as-subtitles is invisible
+  in a published deck view. `deck.css:59-64` gives `.op-current-slide` and
+  `.op-recall-overlay` `height: 100vh`. In the app the page is only the deck so
+  100vh and "fill the container" coincide; in a bundle the page is chrome +
+  `#deck` + the notes track + the progress bar, and a 100vh slide pushes the
+  last two past the viewport where `body { overflow: hidden }` clips them. The
+  DOM is correct — track populated, not hidden, `data-role="web"` so
+  `deck.css:513` shows it — it is purely laid out off-screen. Evidence rather
+  than a guess: changing only that declaration to `height: 100%` in a *copy* of
+  a built bundle brings the track back correctly sized
+  (`after-deck.png` vs `after-deck-notes-probe.png`). I did not change it in the
+  repo: `height: 100%` may not resolve in the app, where `#deck` is
+  `min-height: 100%` rather than a definite height, so the right form is the
+  renderer's call. Anything container-relative works for the bundle.
+- Observation, no action asked: since the SEC-001 trusted-roots work a bundle no
+  longer carries `media/` for `welcome.md` — the missing-image placeholder used
+  to travel as the desktop background (spec §4.5 step 5) and now does not, which
+  took the bundle from 33 files / 7.9 MB to 32 / 1.27 MB. Shipping the author's
+  wallpaper to viewers may well be the wrong default, so this may be correct as
+  it stands; flagging it only because §4.5 step 5 still describes the old
+  behaviour and nobody has decided which one wins for a published deck.
