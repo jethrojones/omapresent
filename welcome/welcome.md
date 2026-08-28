@@ -2,7 +2,6 @@
 title: "How Omapresent Works"
 author: "Jethro Jones"
 date: 2026-08-27
-theme: default
 aspect: "16:9"
 header: "Omapresent"
 footer: "{title} — Slide {slide}/{count}"
@@ -141,7 +140,7 @@ This progressive reveal keeps your audience focused on what you are saying right
 
 ---
 
-# Code, Tables, Quotes & Math
+# Code, Tables & Block Quotes
 
 ```python
 def present(markdown: str) -> Presentation:
@@ -153,13 +152,27 @@ def present(markdown: str) -> Presentation:
 | :--- | :--- | :--- |
 | `# Heading` | Large title | Title context |
 | `Prose paragraph` | *(Hidden)* | Rendered notes |
-| `$e^{i\pi} + 1 = 0$` | KaTeX math | Math reference |
+| `![[figure.png]]` | Sized media | Media preview |
 
 > "Perfection is achieved not when there is nothing more to add, but when there is nothing left to take away."
 
-Code blocks, tables, block quotes, and KaTeX math formulas are first-class audience elements.
+Code blocks, tables, and block quotes are first-class audience elements.
 
 Each renders centered at its natural size with syntax highlighting powered by your desktop theme. Notice how everything on the slide is crisp and legible without manual formatting.
+
+---
+
+# Mathematical Notation
+
+$$e^{i\pi} + 1 = 0$$
+
+- KaTeX renders LaTeX math formulas into crisp vector typography
+- Display math `$$...$$` renders as an isolated, centered equation block
+- Inline math like $\sigma = \sqrt{\frac{1}{N}\sum_{i=1}^N (x_i - \mu)^2}$ embeds seamlessly within text
+
+Mathematical expressions are rendered locally using bundled KaTeX without requiring an internet connection.
+
+Display equations form their own centered blocks on the audience screen, while inline formulas scale harmoniously with surrounding typography.
 
 ---
 
@@ -286,7 +299,13 @@ Tagging a separator with `--- {k}` binds the subsequent slide to key `k`. The pr
 
 # Theming & Desktop Harmony
 
-- Inherits your live Omarchy desktop theme (`colors.toml`)
+```yaml
+---
+theme: gruvbox
+---
+```
+
+- Inherits your live Omarchy desktop theme (`colors.toml`) by default
 - Supports rich named color palettes and 16-color ANSI terminal themes
 - Watches theme files and repaints instantly on system theme changes
 - Override theme per-deck via `theme: <name>` frontmatter (Omapresent windows only)
@@ -294,7 +313,9 @@ Tagging a separator with `--- {k}` binds the subsequent slide to key `k`. The pr
 
 Omapresent feels right at home on your desktop.
 
-It reads your Omarchy theme directly, mapping background, foreground, accent, and syntax colors to the presentation canvas. A built-in projector legibility check automatically enhances contrast on the audience display if a theme is too faint on low-contrast projectors.
+By default, Omapresent leaves the theme key unset so your presentations automatically inherit whatever theme your desktop is currently wearing.
+
+When you want a specific presentation to use a particular palette, setting `theme: <name>` loads that theme from `~/.config/omarchy/themes/` or `/usr/share/omarchy/themes/`. The override applies strictly to Omapresent's windows and never alters the rest of your desktop.
 
 ---
 
