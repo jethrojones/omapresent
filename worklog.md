@@ -1400,6 +1400,37 @@ work is a controls-and-preferences surface rather than new transport.
 welcome-deck actions, window title, recipes.
 **NEEDS:** nothing yet
 
+### 2026-08-28 12:12 PT — icon (Codex GPT-5)
+**Task:** T18 production application icon
+**Did:** Started icon work. Inspected the existing projector-and-pineapple SVG and the dark charcoal/warm-gold presentation UI. Generated candidate marks with the built-in ChatGPT image-generation tool.
+**Tests:** Final candidate selected for 1024x1024 normalization. Small-size inspection pending.
+**Next:** Verify alpha, dimensions, and 16px/32px readability. Record the final prompt and commit the PNG.
+**NEEDS:** nothing
+
+### 2026-08-28 12:14 PT — icon (Codex GPT-5)
+**Task:** T18 production application icon
+**Did:** Added `pkgbuild/omapresent.png`, a generated charcoal-and-warm-gold stage-light mark with no text and true transparent alpha. Recorded the final generation prompt in `artwork/omapresent-icon-prompt.md`.
+**Tests:** PNG is 1024x1024 and TrueColorAlpha. Alpha range is 0 to 65535. Rendered checks at 32px and 16px show a clear gold beam and dark emitter silhouette on a light background. `./bin/build && ./bin/test` was attempted; the link step is blocked by concurrent T15 `Backend` declarations without definitions.
+**Next:** Release agent connects the PNG to packaging.
+**NEEDS:** T15 must finish the currently declared `Backend` methods so the shared tree links again.
+
+### 2026-08-28 12:32 PT — app-shell (Codex GPT-5)
+**Task:** T15 finish application wiring and user controls
+**Did:** Connected the settings slice to the editor UI, added the explicit offline-preparation confirmation, publish preferences and controls, welcome-deck actions, and frontmatter window titles. Fixed provider selection so it writes the top-level `publish.toml` default while preserving comments. Corrected the offline recipe. Removed the new welcome-dialog QML binding loop.
+**Tests:** `qmllint src/Main.qml` passes. OmapresentTest passes 32/32 under offscreen Qt, including the provider-default regression. `./bin/build` passes. `./bin/test` is blocked in this sandbox by GTK display startup, local loopback bind denial, and QtWebEngine sandbox denial.
+**Next:** T15 is blocked only on the custom-domain DNS-record preference flow.
+**NEEDS:** Publisher owner must add a public, user-started domain setup API and a result signal that returns the DNS records. The current public API exposes no domain setup or records. Its private `configureHereDomain` runs only after a publish, so T15 cannot meet spec §9's DNS-record requirement without editing non-T15 files.
+
+### 2026-08-28 11:38 PT — acceptance (Claude Opus 5)
+**Task:** T19 live Omarchy acceptance and checklist closeout
+**Did:** Read `AGENTS.md` and `tasks/T19-live-acceptance.md`. Tore down the
+nested Hyprland compositor and app instances left from the earlier present-mode
+verification; user session is back to one compositor and no stray omapresent
+processes.
+**Tests:** none run yet.
+**Next:** Reconcile `docs/acceptance.md`, then idle inhibit, monitors, theme.
+**NEEDS:** nothing
+
 ### 2026-08-28 12:31 PT — acceptance (Codex GPT-5)
 **Task:** T19 live Omarchy acceptance and checklist closeout
 **Did:** Continued the interrupted acceptance run. Reconciled stale checklist
@@ -1430,12 +1461,49 @@ live run when those checks can be made without changing the user's baseline.
 **Next:** none
 **NEEDS:** nothing
 
+### 2026-08-28 14:28 PDT — renderer-final (Codex GPT-5)
+**Task:** T23 editor open failure
+**Did:** Unified explicit edit and present file loading behind the command-line failure policy. Failed opens now print the backend status and return non-zero; explicit-file precedence and file-free recovery remain unchanged.
+**Tests:** Focused `explicitFileOpenResultControlsFailure` passed. Full C++ run passed all five `CommandLineRecoveryTest` cases. `./bin/build` passed. `./bin/test` reached the registered suites but remains blocked by existing loopback `server.listen()` restrictions, QtWebEngine sandbox shutdown crashes in export child processes, and the renderer harness environment.
+**Next:** none
+**NEEDS:** none
+
+### 2026-08-28 14:00 PDT — renderer-final (Codex GPT-5)
+**Task:** T23 editor open failure
+**Did:** Started T23 from the final audit finding. Added a pure explicit-file open-result policy and routed both edit and present launches through one non-zero failure path while preserving explicit-file precedence and file-free recovery.
+**Tests:** Added success, failure, and recovery cases to `CommandLineRecoveryTest`; no QtWebEngine launch is used.
+**Next:** Run the focused suite and full build/test gates.
+**NEEDS:** nothing
+### 2026-08-28 12:55 PT — recovery (Codex GPT-5)
+**Task:** T22 command-line file recovery precedence
+**Did:** Started T22. Reviewed `AGENTS.md`, `tasks/T22-command-line-recovery.md`, `omapresent-spec.md`, and current worklog context. Patched `src/main.cpp` so command-line file open for edit/present no longer depends on `backend.modified()`, ensuring explicit CLI files take priority. Added a test-only launch hook behind `OMAPRESENT_TEST_DUMP_OPEN_FILE`.
+**Next:** Add focused regression suite and register it in `tests/tests.pro`.
+**NEEDS:** nothing
+
+### 2026-08-28 13:05 PT — recovery (Codex GPT-5)
+**Task:** T22 command-line file recovery precedence
+**Did:** Added `tests/tst_commandline_recovery.cpp` with focused CLI regression for stale recovery snapshots, added to `tests/tests.pro`, and confirmed build updates in `src/main.cpp` are present.
+**Tests:** `./bin/build` passed. Focused test cannot complete in this container because `tst_omapresent` requires a GUI display (`Gtk-WARNING cannot open display: :0`). `./bin/test` fails in this container with the same display warning and a renderer test failure (`tests/renderer`).
+**Next:** Commit owned files if and when the shared environment can run headless tests.
+**NEEDS:** nothing
+
 ### 2026-08-28 12:58 PT — codex (GPT-5.3 Codex Spark)
 **Task:** T16 renderer completion
 **Did:** Deferred every remote image behind an explicit themed load control in all renderer modes. Fixed published subtitle layout, toggle use, remote-note image persistence, and chrome keyboard focus. Added fenced-code-safe published title fallback. Added a narrow, documented Omarchy wallpaper package exception that rejects outside final and parent symlinks.
 **Tests:** Real Chromium proved zero image requests before activation, one request after activation, visible and toggleable subtitles, successful subtitle-image persistence, stable title fallback, and keyboard navigation after chrome focus. `./bin/build` and `./bin/test` pass. All C++ suites pass with no skips. Renderer 43/43 passes. Final scoped Autoreview is clean.
 **Next:** none
 **NEEDS:** nothing
+### 2026-08-28 13:01 PDT — recovery (Codex GPT-5)
+**Task:** T22 command-line recovery precedence
+**Did:** Started by adding test environment and regression coverage for explicit command-line file precedence.
+**Next:** Add headless QtWebEngine child-process execution mode, separate edit/present explicit-file checks, add recovery-only file-free launch check, run full build/test gates.
+**NEEDS:** nothing
+### 2026-08-28 13:02 PDT — recovery (Codex GPT-5)
+**Task:** T22 command-line recovery precedence
+**Did:** Added focused child-process regression helpers and assertions for explicit edit launch, explicit present launch, and file-free recovery fallback.
+**Tests:** `./bin/build` and `./bin/test` ran. `CommandLineRecoveryTest` exits with code 5 in all three new cases due `QtWebEngine` sandbox_host shutdown crash: `FATAL ... sandbox_host_linux.cc: Operation not permitted (1)`. Additional blockers remain: `customDomain...` tests report `server.listen()` failures and `ExportTest` PDF export cases crash on `sandbox_host_linux.cc`.
+**Next:** Hold commit request for `src/main.cpp`, `tests/tests.pro`, `tests/tst_commandline_recovery.cpp` once `QtWebEngine` sandbox runtime is resolvable.
+**NEEDS:** environment fix for QtWebEngine sandbox in this container before child-process regression can prove expected file open precedence behavior.
 
 ### 2026-08-28 13:02 PT — publish (Codex GPT-5.6 Sol)
 **Task:** T21 presentation environment controls and Omarchy theme changes
@@ -1451,9 +1519,37 @@ live run when those checks can be made without changing the user's baseline.
 **Next:** none
 **NEEDS:** nothing
 
+### 2026-08-28 13:27 PDT — acceptance (Codex GPT-5)
+**Task:** T19 final acceptance closeout
+**Did:** Reconciled T16, T21, and T22 evidence. Recorded T22 pure recovery coverage and T21 settings/theme-hook coverage. Kept one-output hotplug and live idle/DND checks partial without changing the desktop.
+**Tests:** `qmllint src/Main.qml` passed. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passed with all C++ suites green and renderer 43/43.
+**Next:** none
+**NEEDS:** Two-output projector hotplug, live idle/DND, renderer scroll observation, broader no-network behavior, first-run mutation, and live end-to-end CLI/deck checks remain partial.
+
+### 2026-08-28 13:28 PDT — release (Codex GPT-5)
+**Task:** T17/T21 final local package validation
+**Did:** Rebuilt the Arch package from the final tree with the approved local-source override. Verified the binary, desktop entry, nine generated icon sizes, welcome deck, licenses, skill references, and executable Omarchy theme-set hook at their package paths.
+**Tests:** `makepkg`, `pacman -Qip`, `makepkg --printsrcinfo`, `desktop-file-validate`, hook `bash -n`, icon dimension checks, and dependency metadata checks passed. `./bin/build` passed. `./bin/test` failed because GTK could not open `:0` and the renderer suite failed. `namcap` is unavailable (`command not found`).
+**Next:** Await orchestrator approval before external release actions.
+**NEEDS:** A namcap-capable environment and GUI/renderer-capable test environment for the remaining checks.
+
 ### 2026-08-28 13:32 PDT — acceptance (Codex GPT-5)
 **Task:** T19 final acceptance closeout on `cd3d74e`
 **Did:** Reconciled T16, T21, T22, and T23 evidence. Recorded the T23 explicit editor-file open-failure regression. Kept two-output hotplug and other live or hardware-only checks partial without changing the desktop.
 **Tests:** `qmllint src/Main.qml` passed. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passed: 517 C++ tests and renderer 43/43.
 **Next:** none
 **NEEDS:** Two-output projector hotplug, live idle/DND, renderer scroll observation, broader no-network behavior, first-run mutation, and live end-to-end CLI/deck checks remain partial.
+
+### 2026-08-28 13:38 PDT — release (Codex GPT-5)
+**Task:** T17/T21 final package validation after T23
+**Did:** Rebuilt the package from HEAD `9512e5c` with the approved local-source override. The archive changed from SHA-256 `645d1616bb1ad67acd7661d32cc4a1522ce21faab26f75019c633392689ddb7e` to `608acb219a5c740dd24785663d06e1ebb8844f04bf5492383423236a558ee50c` at 13:37:27 PDT. Required paths and the executable Omarchy theme-set hook passed.
+**Tests:** Namcap PKGBUILD exit `0` with no findings. Namcap package exit `0` with warnings for implicit `glibc`, `bash`, `libgcc`, and `libstdc++`, and possibly unnecessary `qt6-multimedia`, `xdg-desktop-portal`, and `ttf-ia-writer`. No source or external release action occurred.
+**Next:** Await orchestrator approval before publication.
+**NEEDS:** nothing
+
+### 2026-08-28 13:39 PDT — orchestrator (Codex GPT-5)
+**Task:** Final product and release orchestration
+**Did:** Closed T15–T23 through Herdr workers. Added the generated application icon, complete editor and presenter controls, explicit domain setup, deferred remote images, published subtitles and title fallback, safe Omarchy wallpaper handling, presentation settings, the packaged theme hook, and command-line recovery and open-failure policies. Prepared the GitHub release workflow and Omarchy package submission tree.
+**Tests:** Final approved gate passed at release-candidate HEAD: 517 C++ tests and renderer 43/43. Final Arch package rebuild, required-path checks, desktop validation, hook checks, and Namcap passed. Package SHA-256 is `608acb219a5c740dd24785663d06e1ebb8844f04bf5492383423236a558ee50c`.
+**Next:** Create the public GitHub repository, push the final tree and tag, fill the immutable tag checksum, publish v0.1.0, and submit the Omarchy package pull request.
+**NEEDS:** GitHub browser confirmation for the prepared public repository creation. CLI and SSH credentials are not valid on this host.
