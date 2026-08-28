@@ -156,6 +156,9 @@ public:
     Q_INVOKABLE QString imageEmbedsForDrop(const QString &uriListText) const;
     // The slide the editing caret sits in, for "present from here" (spec §10).
     Q_INVOKABLE int slideIndexForCursor(int cursorPosition) const;
+    // Keep the editor preview on the slide that contains the caret. Document
+    // edits still use the normal debounce; caret-only moves can follow at once.
+    Q_INVOKABLE void followEditorCaret(int cursorPosition);
 
     // The first script the preview page runs once it has loaded: a full
     // render(), plus the slide and scroll position this deck was left at.
@@ -164,6 +167,9 @@ public:
     Q_INVOKABLE QString bridgeScript() const { return RenderHost::bridgeScript(); }
 
     Q_INVOKABLE void presentFrom(int slideIndex);
+    // Reparse the current editor text before finding its caret slide. This is
+    // the launch path for Ctrl+Return and the footer Present control.
+    Q_INVOKABLE void presentFromCaret(int cursorPosition);
     Q_INVOKABLE void exportPdfDialog();
     Q_INVOKABLE void exportPdf(const QUrl &url);
     // Uploads the deck. Only ever called after the user has confirmed. An empty
@@ -190,6 +196,11 @@ signals:
     void previewUpdate(const QString &script);
     void pdfDialogRequested(const QUrl &suggestedUrl);
     void commandFinished(int exitCode);
+
+protected:
+    // Window creation is a side effect. Keep it behind this seam so the
+    // editor-to-presentation hand-off remains unit-testable without WebEngine.
+    virtual void startPresentation(int slideIndex);
 
 private:
     bool openLocalFile(const QUrl &url);
@@ -218,6 +229,7 @@ private:
     void rebuildDeck();
     void applyFrontmatter();
     QJsonObject deckDocument(const QString &mode) const;
+    static QString previewGotoScript(int slideIndex);
     QString deckSlug() const;
     QString buildWebBundle();
     void restoreSessionPosition();
@@ -264,6 +276,12 @@ private:
     int m_slideIndex = 0;
     qreal m_scrollFraction = 0.0;
     bool m_hasRendererState = false;
+    // The preview follows the editing cursor rather than retaining a slide
+    // from an earlier edit. -1 means no caret-directed preview exists yet.
+    int m_editorCursorPosition = 0;
+    int m_editorSlideIndex = 0;
+    int m_previewCaretSlideIndex = -1;
+    bool m_hasEditorCaret = false;
     // Held for the length of an upload: the provider reads the bundle back off
     // disk while it works (spec §9).
     std::unique_ptr<QTemporaryDir> m_bundle;

@@ -557,6 +557,13 @@ void Backend::loadDocumentText(const QString &text) {
         return;
     }
 
+    // A new document has no meaningful relationship to the old editor caret
+    // or preview target. QML reports its new caret as soon as it owns this text.
+    m_editorCursorPosition = 0;
+    m_editorSlideIndex = 0;
+    m_previewCaretSlideIndex = -1;
+    m_hasEditorCaret = false;
+
     m_loading = true;
     m_document->setPlainText(text);
     m_lastDocumentText = text;
@@ -928,8 +935,18 @@ void Backend::rebuildDeck() {
 
     const QJsonObject document = deckDocument(QStringLiteral("preview"));
     // update(), never render(): the contract says update() is the one that
-    // keeps the slide and scroll position across an edit.
-    emit previewUpdate(RenderHost::callScript(QStringLiteral("update"), document));
+    // keeps the slide and scroll position across an edit. When an edit changes
+    // which slide holds the caret, append a goto() after update() so the old
+    // preview state cannot survive in a different slide.
+    QString script = RenderHost::callScript(QStringLiteral("update"), document);
+    if (m_hasEditorCaret) {
+        m_editorSlideIndex = slideIndexForCursor(m_editorCursorPosition);
+        if (m_editorSlideIndex != m_previewCaretSlideIndex) {
+            script += previewGotoScript(m_editorSlideIndex);
+            m_previewCaretSlideIndex = m_editorSlideIndex;
+        }
+    }
+    emit previewUpdate(script);
     m_presentation.setDeck(document);
 }
 
@@ -974,14 +991,23 @@ QString Backend::previewRenderScript() {
 
     QString script = RenderHost::callScript(QStringLiteral("render"),
                                             deckDocument(QStringLiteral("preview")));
-    // Spec §10: a deck reopens where it was left.
-    if (m_slideIndex > 0) {
-        script += QStringLiteral("window.omapresent && window.omapresent.goto(%1);")
-                      .arg(m_slideIndex);
-    }
-    if (m_scrollFraction > 0.0) {
-        script += QStringLiteral("window.omapresent && window.omapresent.setScroll(%1);")
-                      .arg(m_scrollFraction, 0, 'f', 4);
+    if (m_hasEditorCaret) {
+        // The editor is the authority for an editor preview. Do not restore a
+        // saved scroll from a prior slide after choosing the caret's slide.
+        m_editorSlideIndex = slideIndexForCursor(m_editorCursorPosition);
+        script += previewGotoScript(m_editorSlideIndex);
+        m_previewCaretSlideIndex = m_editorSlideIndex;
+    } else {
+        // Spec §10: a deck reopens where it was left until an editor caret is
+        // available to direct the preview.
+        if (m_slideIndex > 0) {
+            script += previewGotoScript(m_slideIndex);
+        }
+        m_previewCaretSlideIndex = m_slideIndex;
+        if (m_scrollFraction > 0.0) {
+            script += QStringLiteral("window.omapresent && window.omapresent.setScroll(%1);")
+                          .arg(m_scrollFraction, 0, 'f', 4);
+        }
     }
     return script;
 }
@@ -991,6 +1017,29 @@ int Backend::slideIndexForCursor(int cursorPosition) const {
     const int position = qBound(0, cursorPosition, int(text.size()));
     const int line = text.left(position).count(QLatin1Char('\n'));
     return qMax(0, m_deck.slideIndexForLine(line));
+}
+
+QString Backend::previewGotoScript(int slideIndex) {
+    return QStringLiteral("window.omapresent && window.omapresent.goto(%1);")
+        .arg(qMax(0, slideIndex));
+}
+
+void Backend::followEditorCaret(int cursorPosition) {
+    const int position = qBound(0, cursorPosition, int(currentDocumentText().size()));
+    m_editorCursorPosition = position;
+    m_hasEditorCaret = true;
+
+    // A typing burst has not been parsed yet. Let its existing 150 ms timer
+    // calculate against fresh slides, then update() and goto() together.
+    if (m_deckTimer.isActive())
+        return;
+
+    m_editorSlideIndex = slideIndexForCursor(position);
+    if (m_editorSlideIndex == m_previewCaretSlideIndex)
+        return;
+
+    m_previewCaretSlideIndex = m_editorSlideIndex;
+    emit previewUpdate(previewGotoScript(m_editorSlideIndex));
 }
 
 QStringList Backend::pathsFromUriList(const QString &uriListText) {
@@ -1024,8 +1073,20 @@ void Backend::presentFrom(int slideIndex) {
     if (m_deckTimer.isActive())
         rebuildDeck();
 
+    startPresentation(qMax(0, slideIndex));
+}
+
+void Backend::presentFromCaret(int cursorPosition) {
+    // The separator that creates a new slide may still be in the 150 ms editor
+    // debounce. Rebuild unconditionally, then derive the caret slide from
+    // that exact parse before presentation starts.
+    rebuildDeck();
+    startPresentation(slideIndexForCursor(cursorPosition));
+}
+
+void Backend::startPresentation(int slideIndex) {
     m_presentation.setDeck(deckDocument(QStringLiteral("present")));
-    m_presentation.start(qMax(0, slideIndex));
+    m_presentation.start(slideIndex);
 }
 
 void Backend::exportPdfDialog() {

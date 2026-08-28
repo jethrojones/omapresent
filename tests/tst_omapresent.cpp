@@ -13,6 +13,16 @@
 #include "markdownhighlighter.h"
 #include "renderhost.h"
 
+class PresentCaptureBackend final : public Backend {
+public:
+    int launchedSlideIndex = -1;
+
+protected:
+    void startPresentation(int slideIndex) override {
+        launchedSlideIndex = slideIndex;
+    }
+};
+
 class OmapresentTest : public QObject {
     Q_OBJECT
 
@@ -192,8 +202,16 @@ private slots:
 
         QObject *saveButton = window->findChild<QObject *>(QStringLiteral("saveButton"));
         QObject *openButton = window->findChild<QObject *>(QStringLiteral("openButton"));
+        QObject *presentButton =
+            window->findChild<QObject *>(QStringLiteral("presentFromCaretButton"));
         QVERIFY(saveButton);
         QVERIFY(openButton);
+        QVERIFY(presentButton);
+        QCOMPARE(presentButton->property("text").toString(), QStringLiteral("Present"));
+        QCOMPARE(presentButton->property("accessibleLabel").toString(),
+                 QStringLiteral("Present from current slide"));
+        QVERIFY(presentButton->property("toolTipText").toString()
+                    .contains(QStringLiteral("Ctrl+Return")));
 
         QSignalSpy saveDialogSpy(&backend, &Backend::saveDialogRequested);
         QVERIFY(QMetaObject::invokeMethod(saveButton, "clicked"));
@@ -202,6 +220,89 @@ private slots:
         QSignalSpy openDialogSpy(&backend, &Backend::openDialogRequested);
         QVERIFY(QMetaObject::invokeMethod(openButton, "clicked"));
         QCOMPARE(openDialogSpy.count(), 1);
+    }
+
+    void followsTheEditorCaretInTheLivePreview() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *editor = window->findChild<QObject *>(QStringLiteral("sourceEditor"));
+        QVERIFY(editor);
+
+        const QString deck = QStringLiteral("# One\n\n---\n\n# Two\n");
+        QSignalSpy previewSpy(&backend, &Backend::previewUpdate);
+        editor->setProperty("text", deck);
+        const int secondSlide = deck.indexOf(QStringLiteral("# Two"));
+        QVERIFY(secondSlide > 0);
+        editor->setProperty("cursorPosition", secondSlide);
+
+        // The normal debounce remains in force, but its one emitted script
+        // updates the deck and then moves to the freshly parsed caret slide.
+        QTRY_VERIFY(previewSpy.count() > 0);
+        const QString editedScript = previewSpy.constLast().constFirst().toString();
+        QVERIFY(editedScript.contains(QStringLiteral("window.omapresent.update(")));
+        QVERIFY(!editedScript.contains(QStringLiteral("window.omapresent.render(")));
+        QVERIFY(editedScript.contains(QStringLiteral("window.omapresent.goto(1);")));
+
+        // A caret-only move follows immediately and does not wait for a second
+        // document render. This is the focused non-WebEngine seam for preview
+        // following; PreviewPane runs the emitted script when it exists.
+        const int beforeMove = previewSpy.count();
+        editor->setProperty("cursorPosition", 0);
+        QTRY_COMPARE(previewSpy.count(), beforeMove + 1);
+        const QString moveScript = previewSpy.constLast().constFirst().toString();
+        QVERIFY(moveScript.contains(QStringLiteral("window.omapresent.goto(0);")));
+        QVERIFY(!moveScript.contains(QStringLiteral("window.omapresent.update(")));
+    }
+
+    void presentsFromTheFreshCaretSlideAfterASeparatorEdit() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        PresentCaptureBackend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *editor = window->findChild<QObject *>(QStringLiteral("sourceEditor"));
+        QObject *presentButton =
+            window->findChild<QObject *>(QStringLiteral("presentFromCaretButton"));
+        QVERIFY(editor);
+        QVERIFY(presentButton);
+
+        const QString beforeEdit = QStringLiteral("# One\n\n# Two\n");
+        QSignalSpy previewSpy(&backend, &Backend::previewUpdate);
+        editor->setProperty("text", beforeEdit);
+        QTRY_VERIFY(previewSpy.count() > 0);
+        const int oldSecondSlide = beforeEdit.indexOf(QStringLiteral("# Two"));
+        QCOMPARE(backend.slideIndexForCursor(oldSecondSlide), 0);
+
+        // Do not wait for the debounce after inserting this separator. The
+        // old DeckModel has one slide, while the current editor text has two.
+        const QString afterEdit = QStringLiteral("# One\n\n---\n\n# Two\n");
+        const int newSecondSlide = afterEdit.indexOf(QStringLiteral("# Two"));
+        previewSpy.clear();
+        editor->setProperty("text", afterEdit);
+        editor->setProperty("cursorPosition", newSecondSlide);
+        QVERIFY(QMetaObject::invokeMethod(presentButton, "clicked"));
+
+        QCOMPARE(backend.launchedSlideIndex, 1);
+        QCOMPARE(backend.slideIndexForCursor(newSecondSlide), 1);
+        QCOMPARE(previewSpy.count(), 1);
+        const QString script = previewSpy.constFirst().constFirst().toString();
+        QVERIFY(script.contains(QStringLiteral("window.omapresent.update(")));
+        QVERIFY(script.contains(QStringLiteral("window.omapresent.goto(1);")));
     }
 
     void scalesTextWithDesktopTextSize() {

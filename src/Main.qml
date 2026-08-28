@@ -91,6 +91,14 @@ ApplicationWindow {
             : Window.FullScreen;
     }
 
+    function presentFromBeginning() {
+        backend.presentFrom(0);
+    }
+
+    function presentFromCaret() {
+        backend.presentFromCaret(editor.cursorPosition);
+    }
+
     function updateSearch() {
         var matches = [];
         var query = searchField.text;
@@ -217,13 +225,13 @@ ApplicationWindow {
     Shortcut {
         sequence: "F5"
         context: Qt.ApplicationShortcut
-        onActivated: backend.presentFrom(0)
+        onActivated: win.presentFromBeginning()
     }
 
     Shortcut {
         sequences: ["Ctrl+Return", "Ctrl+Enter"]
         context: Qt.ApplicationShortcut
-        onActivated: backend.presentFrom(backend.slideIndexForCursor(editor.cursorPosition))
+        onActivated: win.presentFromCaret()
     }
 
     Shortcut {
@@ -394,8 +402,9 @@ ApplicationWindow {
                 + "Ctrl+P  Print\nCtrl+E  Export PDF\nCtrl+Shift+P  Publish\n"
                 + "Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y  Undo, Redo\nCtrl+F  Find\nCtrl+H  Replace\n"
                 + "Ctrl+B / Ctrl+I / Ctrl+K  Bold, Italic, Link\n"
-                + "F11 / Super+F  Fullscreen\nF5  Present from the start\n"
-                + "Ctrl+Return  Present from this slide\nCtrl+?  Shortcuts\n\n"
+                + "F11 / Super+F  Fullscreen\nCtrl+?  Shortcuts\n\n"
+                + "Start presenting\nF5  Start from the beginning\n"
+                + "Ctrl+Return  Start from the slide at the editor caret\n\n"
                 + "Present\n"
                 + "Right / Space  Next\nLeft  Back\nUp / Down  Scroll this slide\n"
                 + "Home / End  First, last slide\ndigits then Enter  Jump to a slide\n"
@@ -638,6 +647,7 @@ ApplicationWindow {
                         color: win.strongTextColor
                     }
                     onCursorRectangleChanged: editorFlick.ensureCursorVisible()
+                    onCursorPositionChanged: backend.followEditorCaret(cursorPosition)
 
                     function replaceSelectionWith(replacement) {
                         var start = Math.min(selectionStart, selectionEnd);
@@ -859,6 +869,7 @@ ApplicationWindow {
                         if (win.searchUpdating)
                             return;
                         var contentChanged = backend.editorTextChanged();
+                        backend.followEditorCaret(cursorPosition);
                         if (win.searchOpen && contentChanged)
                             win.updateSearch();
                     }
@@ -876,6 +887,7 @@ ApplicationWindow {
 
                     Component.onCompleted: {
                         backend.attachDocument(textDocument);
+                        backend.followEditorCaret(cursorPosition);
                         forceActiveFocus();
                     }
                 }
@@ -938,6 +950,24 @@ ApplicationWindow {
                 iconColor: win.mutedColor
                 tooltip: "Open"
                 onClicked: backend.openDialog()
+            }
+
+            ToolButton {
+                id: presentFromCaretButton
+                objectName: "presentFromCaretButton"
+                text: "Present"
+                property string accessibleLabel: "Present from current slide"
+                property string toolTipText: "Start from the slide at the editor caret (Ctrl+Return)"
+                Accessible.name: accessibleLabel
+                Accessible.description: "Starts presenting at the editor caret"
+                ToolTip.visible: hovered
+                ToolTip.text: toolTipText
+                flat: true
+                padding: 0
+                font.family: "iA Writer Mono S"
+                font.pixelSize: win.scaledSize(11)
+                font.weight: Font.DemiBold
+                onClicked: win.presentFromCaret()
             }
 
             Label {
