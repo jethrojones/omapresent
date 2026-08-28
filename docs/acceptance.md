@@ -199,3 +199,14 @@ Things the orchestrator checked directly, rather than taking an agent's word:
 - **2026-08-27 — theme contrast fix verified.** Re-ran the probe:
   `ensureContrast("#767676","#808080")` now returns `#171717` at ratio 4.54,
   clearing the floor by darkening. All 29 themes still parse.
+- **2026-08-27 — present mode, code review.** Read `src/presentation.cpp`'s
+  environment handling (§5.3), which is the part that damages the user's desktop
+  if it is wrong. `IdleInhibit` and `DoNotDisturbHold` are RAII holders with
+  copying deleted, so the inhibit cannot leak on an exception path. DND is
+  handled correctly for the case that actually matters: prior state is **read,
+  not assumed**, `m_held` is set only when the class actually changed something,
+  and the destructor undoes only that — so a presenter who already lives in DND
+  does not come out of a talk with notifications switched back on. Covers
+  mako, swaync, dunst and Omarchy's toggle-only helper, the last by reading the
+  state it prints when flipped. Visual verification of the two windows is still
+  outstanding and is assigned to `app-shell`.
