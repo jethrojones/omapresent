@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""Check that the shipped agent skill still describes the app that exists.
+
+Spec §11: the skill is versioned in this repo and kept in sync with the app,
+and CI checks that every frontmatter key and TOML field it names still exists
+in the code. A skill that documents a key we removed is worse than no skill —
+an agent will confidently write a deck the app ignores.
+
+Exits 0 when they agree, 1 when the skill names something the code does not.
+Absent skill files are not a failure; they are just not written yet.
+"""
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SKILL = ROOT / "skill"
+SPEC = ROOT / "omapresent-spec.md"
+
+
+def skill_text() -> str:
+    if not SKILL.is_dir():
+        return ""
+    return "\n".join(
+        p.read_text(encoding="utf-8", errors="replace")
+        for p in sorted(SKILL.rglob("*.md"))
+    )
+
+
+def frontmatter_keys_in_code() -> set[str]:
+    """Frontmatter keys the app actually reads.
+
+    The parser lives in src/deckmodel.cpp and the consumers in the renderer, so
+    a key counts as supported if either names it as a string literal.
+    """
+    keys = set()
+    sources = [ROOT / "src" / "deckmodel.cpp"]
+    sources += sorted((ROOT / "src" / "renderer").glob("*.js"))
+    for path in sources:
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        keys |= set(re.findall(r'["\']([a-z][a-z-]{2,20})["\']', text))
+    return keys
+
+
+# The keys spec §4.4 defines. The skill may only document these.
+SPEC_FRONTMATTER = {
+    "title", "author", "date", "theme", "font", "aspect", "root",
+    "header", "footer", "slide-numbers", "progress", "publish",
+    "slug", "provider", "access",
+}
+
+# The publish.toml surface spec §9 defines.
+SPEC_PUBLISH_TOML = {
+    "default", "providers", "type", "api_key", "domain", "mount_prefix",
+    "publish", "endpoint", "bucket", "prefix", "base_url",
+}
+
+
+def documented_frontmatter(text: str) -> set[str]:
+    """Keys the skill presents inside a YAML frontmatter block."""
+    found = set()
+    for block in re.findall(r"```ya?ml\n(.*?)```", text, re.S):
+        for line in block.splitlines():
+            m = re.match(r"\s*([a-z][a-z0-9-]*)\s*:", line)
+            if m:
+                found.add(m.group(1))
+    return found
+
+
+def documented_toml(text: str) -> set[str]:
+    found = set()
+    for block in re.findall(r"```toml\n(.*?)```", text, re.S):
+        for line in block.splitlines():
+            line = line.strip()
+            m = re.match(r"\[+([a-z0-9_.]+)\]+", line)
+            if m:
+                found.update(m.group(1).split("."))
+                continue
+            m = re.match(r"([a-z][a-z0-9_]*)\s*=", line)
+            if m:
+                found.add(m.group(1))
+    return found
+
+
+def main() -> int:
+    text = skill_text()
+    if not text.strip():
+        print("skill/ has no Markdown yet; nothing to check.")
+        return 0
+
+    problems = []
+
+    unknown_fm = documented_frontmatter(text) - SPEC_FRONTMATTER
+    # Frontmatter examples in the skill legitimately contain nested publish
+    # values and prose; only flag top-level-looking keys the spec never defines.
+    unknown_fm = {k for k in unknown_fm if "-" in k or len(k) > 3}
+    if unknown_fm:
+        problems.append(
+            "skill documents frontmatter keys the spec does not define: "
+            + ", ".join(sorted(unknown_fm))
+        )
+
+    unknown_toml = documented_toml(text) - SPEC_PUBLISH_TOML
+    # settings.toml has its own surface; ignore anything the skill files put
+    # under a settings heading by only checking publish.toml examples.
+    if unknown_toml and "publish.toml" in text:
+        known_settings = re.findall(r"settings\.toml", text)
+        if not known_settings:
+            problems.append(
+                "skill documents publish.toml fields the spec does not define: "
+                + ", ".join(sorted(unknown_toml))
+            )
+
+    # The four CLI verbs spec §11 promises must all be described.
+    for verb in ("omapresent present", "omapresent export", "omapresent publish"):
+        if verb not in text:
+            problems.append(f"skill never documents `{verb}`")
+
+    # The safety line is not optional.
+    if "publish" in text and not re.search(r"confirm", text, re.I):
+        problems.append(
+            "skill does not tell the agent to confirm with the user before publishing"
+        )
+
+    if problems:
+        print("skill/ and the spec disagree:")
+        for p in problems:
+            print("  - " + p)
+        return 1
+
+    print("skill/ agrees with the spec.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

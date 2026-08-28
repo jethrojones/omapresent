@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm \
+            git nodejs python qt6-base qt6-declarative qt6-webengine \
+            qt6-multimedia xorg-server-xvfb
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: ./bin/build
+
+      - name: Test
+        run: ./bin/test
+
+      - name: Skill and spec agree
+        run: ./bin/check-skill-sync
+
+      - name: Package script is valid shell
+        run: bash -n pkgbuild/PKGBUILD
