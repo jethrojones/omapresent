@@ -24,6 +24,10 @@ function urlFromLine(value) {
     const source = String(value ?? "").trim();
     if (!source || /\s/.test(source))
         return null;
+    // A bare video filename is a local path. Do this before schemeless-domain
+    // detection because .webm and .mov also happen to look like valid TLDs.
+    if (!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(source) && DIRECT_VIDEO_EXTENSIONS.test(source))
+        return null;
     try {
         if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(source))
             return new URL(source);

@@ -51,6 +51,15 @@ test("local video paths can contain spaces", () => {
     assert.equal(videoHostFor("./media/keynote clip.mov"), "local");
 });
 
+test("bare video filenames are local before schemeless-domain detection", () => {
+    for (const filename of ["clip.mp4", "clip.webm", "clip.mov"]) {
+        assert.equal(isBareUrlLine(filename), false, filename);
+        assert.equal(isLocalVideoLine(filename), true, filename);
+        assert.equal(videoHostFor(filename), "local", filename);
+        assert.equal(mediaDecision(filename).kind, "video", filename);
+    }
+});
+
 test("known share URLs get standalone embed fallbacks", () => {
     assert.equal(embedUrlFor("https://youtu.be/abc"), "https://www.youtube.com/embed/abc");
     assert.equal(embedUrlFor("https://www.youtube.com/watch?v=abc"), "https://www.youtube.com/embed/abc");
