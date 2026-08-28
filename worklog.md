@@ -214,3 +214,10 @@ tree is invoking Qt 5's `moc`/`qmake` rather than `qmake6`.
 separators bind the same key, `DeckModel` keeps both slides and both keys — the
 spec does not say which wins, so the key handler needs a rule (first match is
 the obvious one).
+
+### 2026-08-27 18:09 PT — theme (Grok 4.6)
+**Task:** T3 Qt 6 getHslF compile fix
+**Did:** `ensureContrast` no longer calls `QColor::getHslF` with `qreal*` pointers. It now reads `hslHueF()` / `hslSaturationF()` / `lightnessF()` (float) and writes lightness with `setHslF`. Same walk, same hue preservation.
+**Tests:** `./bin/build && ./bin/test` pass. OmarchyThemeTest 21/21.
+**Next:** T3 remains done.
+**NEEDS:** nothing

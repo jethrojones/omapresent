@@ -550,18 +550,21 @@ QString OmarchyTheme::ensureContrast(const QString &foreground, const QString &b
         return foreground;
 
     QColor fg(fgHex);
-    // Qt 6's getHslF takes float*, not qreal*.
-    float h = 0, s = 0, l = 0, a = 1;
-    fg.getHslF(&h, &s, &l, &a);
+    // Qt 6's getHslF takes float*, not qreal*. The F-suffixed getters return
+    // float directly and avoid the pointer conversion entirely.
+    float h = fg.hslHueF();
+    const float s = fg.hslSaturationF();
+    const float l = fg.lightnessF();
+    const float a = fg.alphaF();
     if (h < 0)
         h = 0;
 
     // Walk lightness toward the end of the axis farther from the background
     // so contrast is monotonic once we pick a direction.
-    const qreal dir = (relativeLuminance(bgHex) < 0.5) ? 1.0 : -1.0;
+    const float dir = (relativeLuminance(bgHex) < 0.5) ? 1.0f : -1.0f;
     QString best = fgHex;
     for (int i = 1; i <= 255; ++i) {
-        const float newL = qBound(0.0f, l + static_cast<float>(dir) * (i / 255.0f), 1.0f);
+        const float newL = qBound(0.0f, l + dir * (i / 255.0f), 1.0f);
         QColor candidate;
         candidate.setHslF(h, s, newL, a);
         const QString hex = colorToHex(candidate);

@@ -440,10 +440,10 @@ void OmarchyThemeTest::ensureContrastRaisesFailingPairKeepsHue()
     QVERIFY(isRrggbb(raised));
     QVERIFY(OmarchyTheme::contrastRatio(raised, bg) >= 4.5);
 
-    float h0 = 0, s0 = 0, l0 = 0, a0 = 1;
-    float h1 = 0, s1 = 0, l1 = 0, a1 = 1;
-    QColor(fg).getHslF(&h0, &s0, &l0, &a0);
-    QColor(raised).getHslF(&h1, &s1, &l1, &a1);
+    const float h0 = QColor(fg).hslHueF();
+    const float h1 = QColor(raised).hslHueF();
+    const float l0 = QColor(fg).lightnessF();
+    const float l1 = QColor(raised).lightnessF();
     QVERIFY2(qAbs(h0 - h1) < 0.02f, "hue must be preserved while lightness is nudged");
     QVERIFY(l1 < l0);
 }
