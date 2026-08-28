@@ -294,55 +294,67 @@ private slots:
         }
     }
 
-    void assetIndexReadsProseAsImagePaths()
+    void assetIndexTellsProseFromImagePaths_data()
     {
-        // Known disagreement, recorded in the worklog under T12 NEEDS.
-        // AssetIndex::looksLikeImageReference() returns true for *any* line
-        // containing '/' or '\\', so ordinary prose, table rows and display
-        // math in the manual become image references the renderer would never
-        // draw. AssetIndex::extractReferences() also matches ![[...]] and
-        // ![](...) inside inline code spans, and does not skip the `qr:`
-        // prefix that the renderer's parseObsidianImage excludes.
+        QTest::addColumn<QString>("line");
+        QTest::addColumn<bool>("isImage");
+
+        // Prose. Spec §4.5 only promises a *path* on its own line; a sentence
+        // that happens to contain a slash is not one.
+        QTest::newRow("and/or") << "and/or" << false;
+        QTest::newRow("slash in a sentence")
+            << "Recognises YouTube, Vimeo, TikTok, X/Twitter and Facebook." << false;
+        QTest::newRow("display math") << "$$e^{i\\pi} + 1 = 0$$" << false;
+        QTest::newRow("tilde path in a sentence")
+            << "The file lives in ~/Documents/aibrain somewhere." << false;
+        QTest::newRow("comment marker in a sentence")
+            << "Omapresent supports line comments with `//` and HTML comments." << false;
+        QTest::newRow("table row")
+            << "| `B` / `W` | Black out / White out audience display |" << false;
+        QTest::newRow("aspect ratio") << "The ratio is 16:9 and it scales." << false;
+        QTest::newRow("bare word") << "budget" << false;
+        QTest::newRow("heading") << "# A heading" << false;
+        QTest::newRow("prose") << "Just some prose." << false;
+
+        // Paths. Every accepted form of spec §4.5, including the one with
+        // spaces in it.
+        QTest::newRow("bare filename") << "budget.png" << true;
+        QTest::newRow("svg") << "logo.svg" << true;
+        QTest::newRow("home relative") << "~/Pictures/budget.png" << true;
+        QTest::newRow("absolute") << "/abs/path/photo.jpeg" << true;
+        QTest::newRow("relative with spaces") << "./img/chart with spaces.png" << true;
+        QTest::newRow("parent relative") << "../img/budget.png" << true;
+
+        // Contract §3a: a local video is classified as video, never also as an
+        // image, or `./clip.webm` would be both.
+        QTest::newRow("local video") << "./clip.webm" << false;
+        QTest::newRow("local video, bare") << "clip.mp4" << false;
+    }
+
+    void assetIndexTellsProseFromImagePaths()
+    {
+        QFETCH(QString, line);
+        QFETCH(bool, isImage);
+
+        QCOMPARE(AssetIndex::looksLikeImageReference(line), isImage);
+        QCOMPARE(!AssetIndex::extractReferences(line).isEmpty(), isImage);
+    }
+
+    void assetIndexAndTheRendererAgreeOnTheManualsImages()
+    {
+        // The whole point of the seam: both sides must pull the same images out
+        // of the shipping manual, which is dense with syntax examples written
+        // as prose, inline code and fenced blocks.
         DeckModel deck;
         deck.setSource(m_welcomeSource);
-
-        AssetIndex index;
-        index.setDeckDir(QFileInfo(m_welcomePath).absolutePath());
-        index.waitForIndex();
 
         QString why;
         const QStringList drawn = imagesTheRendererDraws(deck, &why);
         if (!why.isEmpty())
             QSKIP(qPrintable(why));
 
-        QStringList extras = sortedUnique(allReferences(deck));
-        for (const QString &reference : sortedUnique(drawn))
-            extras.removeAll(reference);
-
-        const QStringList inlineCodePhantoms = {
-            QStringLiteral("diagram.png"),
-            QStringLiteral("figure.png"),
-            QStringLiteral("qr:https://..."),
-        };
-
-        // Each extra is explained by one of the two mechanisms above.
-        for (const QString &extra : extras) {
-            QVERIFY2(extra.contains(QLatin1Char('/')) || extra.contains(QLatin1Char('\\'))
-                         || inlineCodePhantoms.contains(extra),
-                     qPrintable(QStringLiteral("unexplained extra reference: %1").arg(extra)));
-        }
-
-        // Two representatives, so the mechanism is pinned and not just counted.
-        QVERIFY(AssetIndex::looksLikeImageReference(
-            QStringLiteral("Recognises YouTube, Vimeo, TikTok, X/Twitter and Facebook.")));
-        QCOMPARE(AssetIndex::extractReferences(QStringLiteral("![[qr:https://example.com]]")),
-                 QStringList({QStringLiteral("qr:https://example.com")}));
-
-        // Pinned so a fix on the AssetIndex side fails here and has to be
-        // acknowledged rather than silently changing what the manual resolves.
-        // This counts references extracted, not references resolved, so it does
-        // not depend on what happens to exist on the machine running the test.
-        QCOMPARE(extras.size(), 15);
+        QCOMPARE(sortedUnique(allReferences(deck)).join(QStringLiteral(", ")),
+                 sortedUnique(drawn).join(QStringLiteral(", ")));
     }
 
     void welcomeBareUrlsAreVideoOrQr()
@@ -459,24 +471,21 @@ private slots:
         QCOMPARE(disagreements.join(QLatin1Char('\n')), QString());
     }
 
-    void rendererReadsBareVideoFilenamesAsWebUrls()
+    void videoFilenamesBehaveIdenticallyOnBothSides()
     {
-        // Known disagreement, recorded in the worklog under T12 NEEDS. The
-        // renderer's urlFromLine() accepts a schemeless domain, and `.webm` /
-        // `.mov` / `.txt` look like TLDs, so a bare local filename alone on a
-        // line is read as https://clip.webm and drawn as a QR code. C++ calls
-        // the same line a LocalFile. `clip.mp4` escapes only because a digit
-        // in "mp4" fails the TLD pattern — the two extensions behave
-        // differently, which is the tell.
-        const QStringList lines = {
-            QStringLiteral("clip.webm"),
-            QStringLiteral("clip.mov"),
-            QStringLiteral("notes.txt"),
+        // Spec §4.8 lists .mp4, .webm and .mov together, so all three have to
+        // be read the same way. They are file extensions, not TLDs: a bare
+        // `clip.webm` is a local video to play, never a URL to draw as a QR.
+        const QStringList filenames = {
+            QStringLiteral("clip.mp4"), QStringLiteral("clip.webm"), QStringLiteral("clip.mov"),
+            QStringLiteral("./clip.webm"), QStringLiteral("videos/clip.mov"),
+            QStringLiteral("/home/jethro/Videos/clip.mp4"),
+            QStringLiteral("my holiday clip.webm"),
         };
 
         QJsonArray request;
-        for (const QString &line : lines)
-            request.append(line);
+        for (const QString &name : filenames)
+            request.append(name);
 
         QString why;
         const QJsonObject answer = askRenderer({{QStringLiteral("urls"), request}}, &why);
@@ -484,23 +493,26 @@ private slots:
             QSKIP(qPrintable(why));
 
         const QJsonArray theirs = answer.value(QStringLiteral("urls")).toArray();
-        for (int i = 0; i < lines.size(); ++i) {
-            // The renderer: a bare web URL with no video host, i.e. a QR code.
-            QVERIFY2(theirs.at(i).toObject().value(QStringLiteral("bare")).toBool(),
-                     qPrintable(lines.at(i)));
-            QCOMPARE(theirs.at(i).toObject().value(QStringLiteral("host")).toString(), QString());
-            // C++: not a URL at all.
-            QVERIFY2(!VideoCache::isBareUrlLine(lines.at(i)), qPrintable(lines.at(i)));
+        QStringList disagreements;
+        for (int i = 0; i < filenames.size(); ++i) {
+            const QString name = filenames.at(i);
+            const QJsonObject their = theirs.at(i).toObject();
+
+            if (their.value(QStringLiteral("bare")).toBool())
+                disagreements.append(QStringLiteral("%1: the renderer reads it as a URL").arg(name));
+            if (VideoCache::isBareUrlLine(name))
+                disagreements.append(QStringLiteral("%1: C++ reads it as a URL").arg(name));
+            if (their.value(QStringLiteral("host")).toString() != QStringLiteral("local")) {
+                disagreements.append(QStringLiteral("%1: renderer host=\"%2\", wanted \"local\"")
+                                         .arg(name, their.value(QStringLiteral("host")).toString()));
+            }
+            if (VideoCache::hostFor(name) != VideoCache::LocalFile) {
+                disagreements.append(QStringLiteral("%1: C++ host=\"%2\", wanted LocalFile")
+                                         .arg(name, hostName(VideoCache::hostFor(name))));
+            }
         }
 
-        QCOMPARE(VideoCache::hostFor(QStringLiteral("clip.webm")), VideoCache::LocalFile);
-        QCOMPARE(VideoCache::hostFor(QStringLiteral("clip.mov")), VideoCache::LocalFile);
-        QCOMPARE(VideoCache::hostFor(QStringLiteral("notes.txt")), VideoCache::NotAVideo);
-
-        // The same filename with a leading `./` is read the same way by both,
-        // which is what makes the bare form a trap rather than a policy.
-        QVERIFY(!VideoCache::isBareUrlLine(QStringLiteral("./clip.webm")));
-        QCOMPARE(VideoCache::hostFor(QStringLiteral("./clip.webm")), VideoCache::LocalFile);
+        QCOMPARE(disagreements.join(QLatin1Char('\n')), QString());
     }
 
     void rendererAgreesOnImageReferences()
@@ -522,6 +534,13 @@ private slots:
             QStringLiteral("not-an-image.txt"),
             QStringLiteral("Just some prose."),
             QString(),
+            // Syntax written *about* images, which neither side should read as
+            // one: inline code spans, and the `qr:` prefix that means a QR
+            // code rather than a file.
+            QStringLiteral("A table cell holding `![[figure.png]]` as example syntax"),
+            QStringLiteral("- Obsidian embeds: `![[diagram.png]]` or `![[diagram.png|600]]`"),
+            QStringLiteral("![[qr:https://example.com]]"),
+            QStringLiteral("```qr\nhttps://example.com\n```"),
         };
 
         QJsonArray request;
@@ -552,42 +571,37 @@ private slots:
         QCOMPARE(disagreements.join(QLatin1Char('\n')), QString());
     }
 
-    void rendererAgreesOnInlineCodeAndQrReferences()
+    void inlineImagesInProseAreResolvedButNotDrawnAsBlocks()
     {
-        // The three shapes the two sides genuinely read differently. Pinned
-        // here with both answers so a fix on either side breaks this test and
-        // has to be acknowledged. See the worklog NEEDS entry for T12.
-        const QStringList lines = {
-            QStringLiteral("A table cell holding `![[figure.png]]` as example syntax"),
-            QStringLiteral("- Obsidian embeds: `![[diagram.png]]` or `![[diagram.png|600]]`"),
-            QStringLiteral("![[qr:https://example.com]]"),
-            QStringLiteral("Prose with an ![alt](inline.png) image in the middle"),
-        };
+        // The one place the two sides legitimately differ, so it is asserted
+        // rather than left to look like a defect. A paragraph containing an
+        // inline `![alt](x)` is prose, so the renderer's block classifier says
+        // it is not an image block — but contract §3 renders notes as formatted
+        // Markdown in the presenter and web roles, so that inline image really
+        // is drawn there and its file still has to be resolved. AssetIndex
+        // therefore collects it, exactly as src/assetindex.h documents.
+        const QString line = QStringLiteral("Prose with an ![alt](inline.png) image in it");
 
-        QJsonArray request;
-        for (const QString &line : lines)
-            request.append(line);
+        QCOMPARE(AssetIndex::extractReferences(line),
+                 QStringList({QStringLiteral("inline.png")}));
 
         QString why;
-        const QJsonObject answer = askRenderer({{QStringLiteral("imageLines"), request}}, &why);
+        const QJsonObject answer = askRenderer(
+            {{QStringLiteral("imageLines"), QJsonArray({line})}}, &why);
         if (answer.isEmpty())
             QSKIP(qPrintable(why));
+        QVERIFY(answer.value(QStringLiteral("imageLines")).toArray().at(0).isNull());
 
-        const QJsonArray rendererAnswers = answer.value(QStringLiteral("imageLines")).toArray();
-
-        // The renderer draws none of these as images.
-        for (int i = 0; i < lines.size(); ++i)
-            QVERIFY2(rendererAnswers.at(i).isNull(), qPrintable(lines.at(i)));
-
-        // C++ extracts a reference from every one of them.
-        QCOMPARE(AssetIndex::extractReferences(lines.at(0)),
-                 QStringList({QStringLiteral("figure.png")}));
-        QCOMPARE(AssetIndex::extractReferences(lines.at(1)),
-                 QStringList({QStringLiteral("diagram.png"), QStringLiteral("diagram.png")}));
-        QCOMPARE(AssetIndex::extractReferences(lines.at(2)),
-                 QStringList({QStringLiteral("qr:https://example.com")}));
-        QCOMPARE(AssetIndex::extractReferences(lines.at(3)),
+        // The same reference alone on a line is an image block on both sides.
+        QCOMPARE(AssetIndex::extractReferences(QStringLiteral("![alt](inline.png)")),
                  QStringList({QStringLiteral("inline.png")}));
+        const QJsonObject alone = askRenderer(
+            {{QStringLiteral("imageLines"), QJsonArray({QStringLiteral("![alt](inline.png)")})}},
+            &why);
+        if (alone.isEmpty())
+            QSKIP(qPrintable(why));
+        QCOMPARE(alone.value(QStringLiteral("imageLines")).toArray().at(0).toString(),
+                 QStringLiteral("inline.png"));
     }
 
     // --- 2. Fixture decks for the seams -----------------------------------

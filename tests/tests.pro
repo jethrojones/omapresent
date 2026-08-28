@@ -18,6 +18,7 @@ SOURCES += \
     tst_settings.cpp \
     tst_webbundle.cpp \
     tst_integration.cpp \
+    tst_livesync.cpp \
     ../src/backend.cpp \
     ../src/deckmodel.cpp \
     ../src/assetindex.cpp \

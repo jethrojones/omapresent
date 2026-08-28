@@ -641,3 +641,10 @@ embeds. `./bin/build && ./bin/test` both pass, whole tree green — integration 
 were pinning the old AssetIndex behaviour.
 **Next:** done. Waiting for the next task.
 **NEEDS:** nothing
+
+### 2026-08-27 21:22 PT — media (Grok 4.6)
+**Task:** T5 follow-up — offline video path end to end
+**Did:** Added three cases in `tests/tst_videocache.cpp` that walk the real sequence with no network: a deck dir named `Deck café テスト` with a tiny local `clip.webm` as a bare line (ffmpeg if present, else an `ftyp` box), prefetch into `.omapresent-cache/`, `describe()` `file://` round-trip after deleting the original, `index.json` parsed by a second `VideoCache`, a stale index entry whose file is gone falling to `embed`/`qr` (not `cached`), prefetch of `http://127.0.0.1:<closed-port>/clip.mp4` finishing in `failed` within 5s, and every written file staying under the cache dir.
+**Tests:** VideoCacheTest 113 cases. `./bin/build && ./bin/test` pass (full tree green).
+**Next:** done. Waiting for the next task.
+**NEEDS:** nothing

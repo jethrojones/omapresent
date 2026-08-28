@@ -1,9 +1,16 @@
 #include <QtTest>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
+#include <QFileInfo>
+#include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
+#include <QProcess>
 #include <QSignalSpy>
+#include <QStandardPaths>
+#include <QTcpServer>
 #include <QTemporaryDir>
 #include <QUrl>
 
@@ -34,6 +41,9 @@ private slots:
     void prefetchSkipsAlreadyCachedRemote();
     void prefetchNotAVideoIsNotAFailure();
     void prefetchMissingLocalFileFails();
+    void offlineLocalVideoEndToEnd();
+    void staleIndexEntryIsNotCached();
+    void prefetchUnreachableHostCompletes();
 };
 
 static bool writeBytes(const QString &path, const QByteArray &bytes)
@@ -42,6 +52,52 @@ static bool writeBytes(const QString &path, const QByteArray &bytes)
     if (!f.open(QIODevice::WriteOnly))
         return false;
     return f.write(bytes) == bytes.size() && f.flush();
+}
+
+static bool writeTinyVideo(const QString &path)
+{
+    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    if (!ffmpeg.isEmpty()) {
+        QProcess proc;
+        proc.start(ffmpeg, {
+            QStringLiteral("-hide_banner"),
+            QStringLiteral("-loglevel"), QStringLiteral("error"),
+            QStringLiteral("-f"), QStringLiteral("lavfi"),
+            QStringLiteral("-i"), QStringLiteral("color=c=black:s=16x16:d=0.04"),
+            QStringLiteral("-an"),
+            QStringLiteral("-y"),
+            path,
+        });
+        if (proc.waitForFinished(8000) && proc.exitCode() == 0
+            && QFileInfo::exists(path) && QFileInfo(path).size() > 0) {
+            return true;
+        }
+        QFile::remove(path);
+    }
+    // ISO BMFF `ftyp` box — enough for "this is a video file", nothing decodes it.
+    return writeBytes(path, QByteArray::fromHex("000000186674797069736f6d0000000169736f6d"));
+}
+
+static QStringList filesUnder(const QString &root)
+{
+    QStringList out;
+    QDirIterator it(root, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext())
+        out.append(QDir::cleanPath(it.next()));
+    out.sort();
+    return out;
+}
+
+static quint16 closedLocalPort()
+{
+    QTcpServer server;
+    if (server.listen(QHostAddress::LocalHost, 0)) {
+        const quint16 port = server.serverPort();
+        server.close();
+        if (port != 0)
+            return port;
+    }
+    return 1;
 }
 
 void VideoCacheTest::hostFor_data()
@@ -590,6 +646,132 @@ void VideoCacheTest::prefetchMissingLocalFileFails()
     cache.prefetch(QStringList{url});
     QCOMPARE(finished.count(), 1);
     QCOMPARE(finished.at(0).at(0).toStringList(), QStringList{url});
+}
+
+void VideoCacheTest::offlineLocalVideoEndToEnd()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString deck = tmp.filePath(QString::fromUtf8("Deck café テスト"));
+    QVERIFY(QDir().mkpath(deck));
+
+    const QString sourceName = QStringLiteral("clip.webm");
+    const QString sourcePath = QDir(deck).filePath(sourceName);
+    QVERIFY(writeTinyVideo(sourcePath));
+
+    const QString slide = QStringLiteral("# Talk\n\nclip.webm\n");
+    QCOMPARE(VideoCache::extractUrls(slide), QStringList{sourceName});
+
+    VideoCache cache;
+    cache.setDeckDir(deck);
+    QCOMPARE(cache.describe(sourceName).value(QStringLiteral("status")).toString(),
+             QStringLiteral("cached"));
+
+    QSignalSpy finished(&cache, &VideoCache::prefetchFinished);
+    cache.prefetch(QStringList{sourceName});
+    QCOMPARE(finished.count(), 1);
+    QCOMPARE(finished.at(0).at(0).toStringList(), QStringList());
+
+    const QJsonObject described = cache.describe(sourceName);
+    QCOMPARE(described.value(QStringLiteral("status")).toString(), QStringLiteral("cached"));
+    QCOMPARE(described.value(QStringLiteral("host")).toString(), QStringLiteral("local"));
+    const QString cachedUrl = described.value(QStringLiteral("cachedFile")).toString();
+    QVERIFY(cachedUrl.startsWith(QStringLiteral("file://")));
+    const QUrl parsed(cachedUrl);
+    QVERIFY(parsed.isLocalFile());
+    const QString cachedPath = parsed.toLocalFile();
+    QVERIFY(QFileInfo::exists(cachedPath));
+    QVERIFY(QFileInfo(cachedPath).size() > 0);
+    QVERIFY(QDir::cleanPath(cachedPath).startsWith(QDir::cleanPath(cache.cacheDir())));
+    // Spaces and unicode survive the file:// round-trip.
+    QVERIFY(cachedPath.contains(QString::fromUtf8("café")));
+    QVERIFY(cachedPath.contains(QString::fromUtf8("テスト")));
+    QFile playable(cachedPath);
+    QVERIFY(playable.open(QIODevice::ReadOnly));
+    QVERIFY(playable.size() > 0);
+
+    const QString indexPath = QDir(cache.cacheDir()).filePath(QStringLiteral("index.json"));
+    QVERIFY(QFileInfo::exists(indexPath));
+    QFile indexFile(indexPath);
+    QVERIFY(indexFile.open(QIODevice::ReadOnly));
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(indexFile.readAll(), &err);
+    QCOMPARE(err.error, QJsonParseError::NoError);
+    QVERIFY(doc.isObject());
+    QVERIFY(doc.object().contains(sourceName));
+    QVERIFY(!doc.object().value(sourceName).toObject().value(QStringLiteral("file")).toString().isEmpty());
+
+    QVERIFY(QFile::remove(sourcePath));
+    VideoCache reread;
+    reread.setDeckDir(deck);
+    const QJsonObject again = reread.describe(sourceName);
+    QCOMPARE(again.value(QStringLiteral("status")).toString(), QStringLiteral("cached"));
+    QCOMPARE(again.value(QStringLiteral("cachedFile")).toString(), cachedUrl);
+
+    const QString cacheDir = QDir::cleanPath(cache.cacheDir());
+    for (const QString &path : filesUnder(deck)) {
+        QVERIFY2(QDir::cleanPath(path).startsWith(cacheDir + QLatin1Char('/')),
+                 qPrintable(path));
+    }
+    for (const QString &path : filesUnder(tmp.path())) {
+        const QString clean = QDir::cleanPath(path);
+        QVERIFY2(clean.startsWith(QDir::cleanPath(deck) + QLatin1Char('/'))
+                     || clean.startsWith(cacheDir + QLatin1Char('/')),
+                 qPrintable(clean));
+    }
+}
+
+void VideoCacheTest::staleIndexEntryIsNotCached()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString cachePath = dir.filePath(QStringLiteral(".omapresent-cache"));
+    QVERIFY(QDir().mkpath(cachePath));
+
+    const QString youtube = QStringLiteral("https://youtu.be/dQw4w9wgxcQ");
+    const QString unknown = QStringLiteral("https://example.com/not-a-video");
+    QJsonObject index;
+    QJsonObject yt;
+    yt.insert(QStringLiteral("file"), QStringLiteral("gone.mp4"));
+    yt.insert(QStringLiteral("embedUrl"), QStringLiteral("https://www.youtube.com/embed/dQw4w9wgxcQ"));
+    yt.insert(QStringLiteral("fetchedAt"), QStringLiteral("2026-08-27T00:00:00Z"));
+    index.insert(youtube, yt);
+    QJsonObject qr;
+    qr.insert(QStringLiteral("file"), QStringLiteral("also-gone.mp4"));
+    qr.insert(QStringLiteral("fetchedAt"), QStringLiteral("2026-08-27T00:00:00Z"));
+    index.insert(unknown, qr);
+    QVERIFY(writeBytes(QDir(cachePath).filePath(QStringLiteral("index.json")),
+                       QJsonDocument(index).toJson()));
+
+    VideoCache cache;
+    cache.setDeckDir(dir.path());
+
+    const QJsonObject ytDesc = cache.describe(youtube);
+    QVERIFY(ytDesc.value(QStringLiteral("cachedFile")).toString().isEmpty());
+    QCOMPARE(ytDesc.value(QStringLiteral("status")).toString(), QStringLiteral("embed"));
+
+    const QJsonObject qrDesc = cache.describe(unknown);
+    QVERIFY(qrDesc.value(QStringLiteral("cachedFile")).toString().isEmpty());
+    QCOMPARE(qrDesc.value(QStringLiteral("status")).toString(), QStringLiteral("qr"));
+}
+
+void VideoCacheTest::prefetchUnreachableHostCompletes()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dead = QStringLiteral("http://127.0.0.1:%1/clip.mp4")
+                             .arg(closedLocalPort());
+
+    VideoCache cache;
+    cache.setDeckDir(dir.path());
+    QSignalSpy finished(&cache, &VideoCache::prefetchFinished);
+    cache.prefetch(QStringList{dead});
+    if (finished.count() == 0)
+        QVERIFY2(finished.wait(5000), "prefetch hung on an unreachable local port");
+    QCOMPARE(finished.count(), 1);
+    QCOMPARE(finished.at(0).at(0).toStringList(), QStringList{dead});
+    QCOMPARE(cache.describe(dead).value(QStringLiteral("status")).toString(),
+             QStringLiteral("embed"));
 }
 
 OMAPRESENT_TEST_SUITE(VideoCacheTest)
