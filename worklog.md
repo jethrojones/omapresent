@@ -1117,3 +1117,10 @@ when agents returned so they would not collide with their stand-ins.
 release `src/main.cpp` / `src/backend.cpp` back to app-shell once the reviewer
 is clear of them.
 **NEEDS:** nothing
+
+### 2026-08-28 07:07 PT — reviewer (Codex GPT-5.6 Sol)
+**Task:** Close SEC-006 through SEC-008 and finalize the review report
+**Did:** Committed the three fixes as `3e54048`. Released `src/main.cpp` and `src/backend.cpp` back to app-shell. Recast all eight findings as fixed historical results with commit status, original reproductions, and live regression coverage. Kept both passed-check sections.
+**Tests:** SecurityTest 15/15 and renderer 41/41 pass. Autoreview accepted one present-mode recovery fix, then finished clean. A later shared run was red only in an active, unrelated presentation/export change.
+**Next:** App-shell can edit its files. The review report is complete.
+**NEEDS:** The active presentation/export owner must return the shared full suite to green.
