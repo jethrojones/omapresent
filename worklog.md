@@ -30,6 +30,13 @@ suites registered and skipping.
 **Next:** Spawn the wave-1 agents.
 **NEEDS:** nothing
 
+### 2026-08-28 08:14 PT — present (Codex GPT-5.6 Sol)
+**Task:** T9 duplicate slide identity follow-up
+**Did:** `DeckNavigator::setDeck` now selects an active duplicate by its matching direct left and right context. Nearest old index breaks only equal context scores. A deleted active slide no longer overwrites a matched fallback slide's saved scroll; new edited fallback content still keeps the active scroll.
+**Tests:** `./bin/build` passes. `QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./build-tests/tst_omapresent -silent`: PresentationTest 55/55 and LiveSyncTest 23/23 pass. The same binary has 7 Publisher socket failures and 6 Chromium export sandbox failures. `./bin/test` cannot open GTK display `:0` in this sandbox and its renderer discovery test fails.
+**Next:** Run the shared gate in a desktop-capable environment.
+**NEEDS:** The sandbox cannot provide the GTK display, local Publisher socket, or Chromium sandbox support for the full gate.
+
 ### 2026-08-27 17:49 PT — publish (Codex GPT-5.6 Sol)
 **Task:** T6 web publish and provider layer
 **Did:** Loaded the task contract and started the provider implementation.
@@ -1124,3 +1131,170 @@ is clear of them.
 **Tests:** SecurityTest 15/15 and renderer 41/41 pass. Autoreview accepted one present-mode recovery fix, then finished clean. A later shared run was red only in an active, unrelated presentation/export change.
 **Next:** App-shell can edit its files. The review report is complete.
 **NEEDS:** The active presentation/export owner must return the shared full suite to green.
+
+### 2026-08-28 07:32 PT — root (Codex GPT-5.6 Sol)
+**Task:** Orchestrate Jethro's presenter and editor usability fixes
+**Did:** Reviewed the vault startup state, project task ownership, current worklog, live Herdr agents, and the three-file uncommitted presentation fragment fix. Split the new work into disjoint T9 presenter, T8 editor, and T2 renderer assignments. Grok remains unused. Claude remains unused until its 11:30 PT reset.
+**Tests:** Not run yet. The inherited working tree has changes only in `src/presentation.cpp`, `src/presentation.h`, and `tests/tst_presentation.cpp`.
+**Next:** Start Terra/MAX owners for T9 and T8, plus a Codex Spark owner for recall-overlay rendering. Monitor each through Herdr, then route a fresh review and full build/test gate.
+**NEEDS:** nothing
+
+### 2026-08-28 07:36 PT — present (Codex GPT-5.6 Sol)
+**Task:** T9 presenter-mode repair
+**Did:** Started from the handed-off fragment-count changes. Inspecting navigation identity preservation and the QML/Wayland resize path.
+**Tests:** Not run yet.
+**Next:** Add focused regressions, verify the shared build and tests, and check live resizing if safe.
+**NEEDS:** nothing
+
+### 2026-08-28 07:36 PT — codex (Codex GPT-5)
+**Task:** T2 renderer recall-overlay fix
+**Did:** Began T2 focused pass for recall overlay behavior and state restoration.
+**Tests:** Not run yet.
+**Next:** Validate recall overlay fragment reveal and restore behavior with renderer DOM tests, then run renderer suite and `./bin/build && ./bin/test`.
+**NEEDS:** nothing
+
+### 2026-08-28 07:36 PT — app-shell (Codex GPT-5)
+**Task:** T8 editor preview-follow and present-control pass
+**Did:** Started a focused inspection of the editor, backend preview bridge, and test seams.
+**Tests:** Not run yet.
+**Next:** Bind preview state to the editor caret, add the footer control and shortcut directions, then verify.
+**NEEDS:** nothing
+
+### 2026-08-28 07:43 PT — codex (Codex GPT-5)
+**Task:** T2 renderer recall-overlay fix
+**Did:** Completed recall overlay reveal and restore behavior and added a DOM regression test for full fragment reveal plus state restoration.
+**Tests:** `node --test tests/renderer/*.test.mjs` (2 failed: `interaction.test.mjs`, `visual.test.mjs` due Chromium SIGTRAP in this environment); `./bin/build && ./bin/test` (renderer suite fails in same Chromium crash path).
+**Next:** Re-run renderer/browser tests on a headful Chromium-capable runner.
+**NEEDS:** none
+
+### 2026-08-28 08:05 PT — present (Codex GPT-5.6 Sol)
+**Task:** T9 duplicate slide identity follow-up
+**Did:** Started the review-finding repair after re-reading the shared presentation diff.
+**Tests:** Not run yet.
+**Next:** Preserve the active duplicate occurrence and saved state, add focused regressions, then run the presentation and shared gates.
+**NEEDS:** nothing
+
+### 2026-08-28 07:45 PT — skill-docs (Codex GPT-5)
+**Task:** T7 clarify how to start a presentation
+**Did:** Started a documentation-only pass across the T7-owned README, skill, and welcome deck. The pass will state the four launch paths and their starting positions, including the intended footer Present button.
+**Tests:** Not run yet.
+**Next:** Update owned docs, run skill sync and the full build/test gate, then commit only owned files and the appended worklog entries.
+**NEEDS:** nothing
+
+### 2026-08-28 07:45 PT — app-shell (Codex GPT-5)
+**Task:** T8 editor preview-follow and present-control pass
+**Did:** The editor now follows its caret in the preview. Debounced live edits use `update()` and append `goto()` only when the caret changes slides. Added the accessible footer Present control, shared start actions, and clear start directions in the shortcut sheet.
+**Tests:** `./bin/build` passes. `OmapresentTest::followsTheEditorCaretInTheLivePreview` passes (3/3 under offscreen Qt); OmapresentTest passes 23/23. The shared full gate remains red from active T9 LiveSync failures and Chromium sandbox failures in export/renderer tests.
+**Next:** T8 complete.
+**NEEDS:** No T8 blocker. The orchestrator must rerun the full gate after T9 and Chromium environment work settle.
+
+### 2026-08-28 07:46 PT — skill-docs (Codex GPT-5)
+**Task:** T7 clarify how to start a presentation
+**Did:** Made the four launch paths explicit in `README.md`, `skill/SKILL.md`, `skill/reference/recipes.md`, and `welcome/welcome.md`: `F5` starts from the beginning; `Ctrl+Return` and the footer `Present` button start from the current editor slide; `omapresent present FILE` starts from the CLI. No code or QML changed.
+**Tests:** `./bin/check-skill-sync` passes. `bash -n pkgbuild/PKGBUILD` passes. `namcap` is not installed. `./bin/build` passes. `./bin/test` remains red in the inherited shared tree: the headless Qt/Chromium environment reports display, Chromium, Publisher listen, LiveSync, and PDF export failures; the welcome integration checks pass when run with the display theme unset.
+**Next:** Handoff to the orchestrator.
+**NEEDS:** App-side first-run skill linking remains open. Omarchy uses `/usr/share/omarchy/default/agents/skills` and links skills into `~/.agents/skills`, `~/.claude/skills`, `~/.codex/skills`, and `~/.pi/agent/skills`; no user skill tree exists under `~/.local/share/omarchy`.
+
+### 2026-08-28 07:47 PT — present (Codex GPT-5.6 Sol)
+**Task:** T9 presenter-mode repair
+**Did:** Completed the handed-off fragment-count correction. `DeckNavigator::setDeck` now follows unchanged slide Markdown and remaps its fragment and scroll state across insertions or deletions above it; changed current content falls back to the clamped flow position. Audience, presenter, and presenter-preview `WebEngineView`s now bind directly to their QML client size and coalesce a renderer resize event after a Wayland configure.
+**Tests:** `./bin/build` passes. Full `./bin/test` in the normal session: PresentationTest 52/52 and renderer 42/42 pass. The shared gate is red only in four stale `tests/tst_livesync.cpp` assertions: the two defect-named insertion/deletion cases, the old zero-fragment expectation, and the merge-then-split index expectation.
+**Next:** Orchestrator: rename and update those four LiveSync assertions, then rerun the full gate and the live resize check.
+**NEEDS:** Exact live Hyprland tile-resize verification was not run: the agent sandbox cannot safely drive an isolated compositor window. `tests/tst_livesync.cpp` is outside T9 ownership and must be updated to the new identity-preserving behavior.
+
+### 2026-08-28 07:52 PT — codex (Codex GPT-5)
+**Task:** LiveSync stale assertion follow-up
+**Did:** Started the owned test-only update for the four stale LiveSync cases after T9's identity and fragment-count corrections.
+**Tests:** Focused run confirmed four stale LiveSync failures; unrelated Publisher and Chromium environment failures remain.
+**Next:** Rename and update the four assertions, run the requested LiveSync inspection and full build/test gate, then make one scoped commit.
+**NEEDS:** nothing
+
+### 2026-08-28 07:56 PT — codex (Codex GPT-5)
+**Task:** LiveSync stale assertion follow-up
+**Did:** Renamed the two defect-named insertion/deletion tests. Updated them to follow unchanged content at flow indices 8 and 6. Updated the empty-deck fragment count to 0. Updated merge-then-split to follow `# Three` to flow index 2.
+**Tests:** `QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./build-tests/tst_omapresent` — LiveSyncTest 23/23 pass. `./bin/build` passes. Chromium export checks remain blocked by the sandbox refusal to shut down its browser sandbox (`Operation not permitted`); the orchestrator will run the full gate outside the sandbox.
+**Next:** Orchestrator runs the full gate outside the sandbox.
+**NEEDS:** nothing
+
+### 2026-08-28 08:04 PT — codex (Codex GPT-5)
+**Task:** T2 renderer recall overlay live-update consistency
+**Did:** Starting focused pass for recall overlay state across live `update()` and host callback consistency.
+**Tests:** not run yet.
+**Next:** Add a metrics fixture that updates while recall is visible, extend assertions, run renderer tests and build gate.
+**NEEDS:** none
+
+### 2026-08-28 08:04 PT — app-shell (Codex GPT-5)
+**Task:** T8 immediate present-from-caret correction
+**Did:** Started the review-finding fix. Inspecting the launch path and its test seam after re-reading the shared diff.
+**Tests:** Not run yet.
+**Next:** Reparse before deriving the caret slide, add an immediate-separator regression, then verify.
+**NEEDS:** nothing
+
+### 2026-08-28 08:06 PT — codex (Codex GPT-5)
+**Task:** T2 renderer recall overlay live-update consistency
+**Did:** Kept recall active across `replaceDeck` when the bound key still exists. Added a recall fixture path that calls `update()` while recall is visible and extended the recall browser regression to verify overlay visibility, fragment reveal, and restored slide/fragment/scroll after hide.
+**Tests:** `node --test tests/renderer/*.test.mjs` (failed in `interaction.test.mjs` and `visual.test.mjs` due Chromium headless crash in this environment). `./bin/build && ./bin/test` (failed during renderer browser tests due the same Chromium crash path; C++ suites pass).
+**Next:** Run on a headful/remote Chromium runner to get assertion-level confirmation of the new recall + update path.
+**NEEDS:** none
+
+### 2026-08-28 08:09 PT — app-shell (Codex GPT-5)
+**Task:** T8 immediate present-from-caret correction
+**Did:** Present from the footer and Ctrl+Return now rebuilds the current editor text before it maps the caret to a slide. Added a regression that inserts a separator and launches immediately through the footer action.
+**Tests:** The focused new Omapresent check passed (3/3); the shared test runner then reports the selected test as unknown in other suites. `./bin/build` passes. Headless OmapresentTest passes 24/24. `./bin/test` remains blocked by the missing GTK display and Chromium sandbox limits.
+**Next:** T8 correction complete.
+**NEEDS:** nothing
+
+### 2026-08-28 08:20 PT — codex (Codex GPT-5)
+**Task:** T2 recall goto rebasing during recall
+**Did:** Updated `goto()` to resync `recallSnapshot.slide` while recall is active so host rebase updates do not force overlay replacement. Added a recall regression: open recall, `update()` with a slide inserted before the hidden underlying slide, host `goto` to the re-based index, then hide recall to verify restored slide, fragment, and scroll.
+**Tests:** `node --test tests/renderer/*.test.mjs` (chromium-backed interaction path still fails in this sandbox). `./bin/build && ./bin/test` (build passes, renderer browser tests fail in this environment's Chromium sandbox path).
+**Next:** Re-run on a headful Chromium runner for full assertion verification.
+**NEEDS:** none
+
+### 2026-08-28 08:26 PT — present (Codex GPT-5.6 Sol)
+**Task:** T9 duplicate slide identity policy
+**Did:** Replaced duplicate-content heuristics with sequence proof. The active slide keeps state only when every longest ordered content alignment maps it to one new slide. Equal adjacent insertions and deletions are ambiguous because the frozen deck JSON has no edit range; they now use the clamp fallback and keep a surviving fallback slide's saved scroll.
+**Tests:** `QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./build-tests/tst_omapresent -silent`: PresentationTest 55/55 and LiveSyncTest 23/23 pass. Publisher socket and Chromium export sandbox failures remain outside T9.
+**Next:** Run the full gate where Publisher can bind a test socket and Chromium can start.
+**NEEDS:** To identify an exact duplicate edit rather than use the deterministic fallback, the app must pass the editor edit range or a stable slide ID to presentation.
+### 2026-08-28 08:29 PT — codex (Codex GPT-5)
+**Task:** Fix finding 3 — recall host-goto rebase during active recall
+**Did:** Kept `goto()` on active recall from rebuilding the overlay and only rebased `recallSnapshot.slide`; preserved `recallSnapshot.fragment` and `recallSnapshot.scrollTop` so restore stays exact. Existing recall reveal path stays forced to `showAllFragments` with `data-revealed="true"`.
+**Tests:** `node --test tests/renderer/*.test.mjs` (passes all non-browser tests; `interaction` and `visual` still fail in this sandbox from Chromium `SIGTRAP` sandbox error), `./bin/build && ./bin/test` (C++ suites pass, renderer browser suite fails in this environment for the same Chromium path).
+**Next:** Run in desktop-capable Chromium runner for full assertion-level validation of `recall-after-goto-fragment = 2`.
+**NEEDS:** none
+
+### 2026-08-28 08:30 PDT — codex (Codex GPT-5)
+**Task:** Recall fragment preservation while active recall is rebasing on host goto
+**Did:** In the recall-active `gotoSlide` path, after re-basing `recallSnapshot.slide` to the new slide index, restored `fragment` from `recallSnapshot.fragment` clamped to the underlying target slide fragment count. This keeps the recall overlay mounted and makes host `goto` emit the preserved fragment value while deck shape changes underneath.
+**Tests:** No sandbox Chromium run per instruction. Root desktop-capable Chromium run is required to verify `recall-after-goto-fragment` now restores to `2`.
+**Next:** Root runs focused renderer Chromium suite.
+**NEEDS:** none
+
+### 2026-08-28 08:32 PT — codex (Codex GPT-5)
+**Task:** T2 recall goto scroll preservation during active recall
+**Did:** In recall-active `goto()`, kept overlay mode and restored hidden state by rebasing `recallSnapshot.slide`, restoring `fragment` from saved snapshot, re-rendering the rebased underlying slide, storing/reapplying `recallSnapshot.scrollTop` to the new scroller, and emitting state. This preserves scroll and fragment across host goto while recall stays visible and fully revealed.
+**Tests:** Not run in this sandbox. Root desktop-capable Chromium suite should now observe `data-recall-after-goto-scroll-top == 180` and matching hide restore value.
+**Next:** Root reruns focused Chromium suite.
+**NEEDS:** none
+
+### 2026-08-28 08:34 PT — codex (Codex GPT-5)
+**Task:** Stabilize recall DOM fixture timing under host goto
+**Did:** Updated the recall fixture timing to wait one `requestAnimationFrame` after host `goto` before reading `data-recall-after-goto-*` state and calling `hideRecall`. Assertions were not changed.
+**Tests:** No sandbox Chromium run per instruction. Root desktop-capable Chromium run should now capture post-layout scroll and fragment values after frame commit.
+**Next:** Root reruns focused renderer suite.
+**NEEDS:** none
+
+### 2026-08-28 08:36 PT — codex (Codex GPT-5)
+**Task:** Remove redundant `renderCurrent` in recall restore path
+**Did:** Bounded change only in `hideRecall()`: removed the extra `renderCurrent()` so hide flows now follow the required order (`renderOverlays`, `restoreRevealState`, clear snapshot, `emitState`) and avoid a second post-hide base-slide reset to scrollTop 0.
+**Tests:** No sandbox Chromium run. Root desktop-capable focused Chromium suite should validate line-70 `after-hide` scroll behavior with this correction.
+**Next:** Root reruns focused renderer test.
+**NEEDS:** none
+
+### 2026-08-28 08:36 PT — orchestrator (Codex GPT-5)
+**Task:** Usability repair closeout
+**Did:** Coordinated T2, T7, T8, and T9 fixes. Presentation windows reflow after live Wayland resize. Recall shows every fragment on the first key press and restores moved hidden state. The editor preview follows the caret and live edits. The footer now has a Present control. User guidance lists all launch paths. Independent review found no remaining actionable issue.
+**Tests:** `./bin/build` passes. Desktop-capable `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: OmapresentTest 24/24, PresentationTest 55/55, LiveSyncTest 23/23, renderer 42/42, and all other suites green. Live Hyprland check reflowed the audience from 1901x2106 to 3816x2106; Q showed the full five-bullet recall slide on the first press; the editor preview and footer Present button were visible.
+**Next:** Commit the four scoped changes and the worklog.
+**NEEDS:** AGY remains quota-blocked. No Grok or Claude work was used for this repair.
