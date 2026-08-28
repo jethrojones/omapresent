@@ -261,3 +261,9 @@ If any of those should change, say so and I will match.
 **Tests:** `bash -n` PKGBUILD and `.install`; `desktop-file-validate` clean; `makepkg --printsrcinfo` ok; package listing as above.
 **Next:** done. Waiting for the next task.
 **NEEDS:** nothing
+
+### 2026-08-27 19:39 PT — publish (Codex GPT-5.6 Sol)
+**Task:** T6 web publish and provider layer
+**Did:** Implemented byte-preserving publish config, slugging, here.now create/update/history/revert/auth/claim/domain flows, safe private publishing, command publishing, and S3 Signature V4 uploads. Publishing now owns a bundle snapshot and fails closed for invalid access, unreadable config, and private modes that a provider cannot enforce. Final Autoreview is clean.
+**Tests:** `tests/tst_publisher.cpp` — 12 cases pass with no network. An isolated T6 checkout passes `./bin/build && ./bin/test`. The shared `./bin/build` passes. The shared `./bin/test` cannot compile uncommitted `tests/tst_integration.cpp` because `Slide` has no `operator==`.
+**Next:** T6 is complete. Retry the shared test gate after the integration owner repairs its compile error.
