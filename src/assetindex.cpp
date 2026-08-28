@@ -1,19 +1,114 @@
 #include "assetindex.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QPointer>
 #include <QRegularExpression>
+#include <QRunnable>
+#include <QThreadPool>
 #include <QTimer>
 #include <QUrl>
 
 #include <algorithm>
 
+static constexpr int kMaxWatchedDirectories = 2048;
+
 struct AssetIndex::Private {
     QFileSystemWatcher *watcher = nullptr;
     QTimer *debounceTimer = nullptr;
     QStringList watchedDirs;
+    quint64 generation = 0;
+    bool scanInProgress = false;
+    bool limitWarned = false;
+};
+
+class AssetIndexScanWorker : public QRunnable {
+public:
+    AssetIndexScanWorker(AssetIndex *receiver, quint64 generation, const QString &rootPath)
+        : m_receiver(receiver), m_generation(generation), m_rootPath(rootPath)
+    {
+        setAutoDelete(true);
+    }
+
+    void run() override
+    {
+        QHash<QString, QStringList> newByName;
+        QStringList allDirs;
+
+        if (!m_rootPath.isEmpty()) {
+            QDir rootDir(m_rootPath);
+            if (rootDir.exists()) {
+                const QString rootClean = QDir::cleanPath(rootDir.absolutePath());
+                allDirs.append(rootClean);
+
+                QDirIterator it(m_rootPath,
+                                QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable,
+                                QDirIterator::Subdirectories);
+
+                while (it.hasNext()) {
+                    it.next();
+                    QFileInfo fi = it.fileInfo();
+                    if (fi.isDir()) {
+                        if (fi.isReadable()) {
+                            allDirs.append(QDir::cleanPath(fi.absoluteFilePath()));
+                        }
+                    } else if (fi.isFile() && fi.exists() && fi.isReadable()) {
+                        const QString absPath = QDir::cleanPath(fi.absoluteFilePath());
+                        const QString lowerName = fi.fileName().toLower();
+                        newByName[lowerName].append(absPath);
+                    }
+                }
+
+                // Sort candidates in shortest-path-first order
+                for (auto itMap = newByName.begin(); itMap != newByName.end(); ++itMap) {
+                    QStringList &paths = itMap.value();
+                    std::sort(paths.begin(), paths.end(), [&rootClean](const QString &a, const QString &b) {
+                        QString relA = QDir(rootClean).relativeFilePath(a);
+                        QString relB = QDir(rootClean).relativeFilePath(b);
+                        int depthA = relA.count('/') + relA.count('\\');
+                        int depthB = relB.count('/') + relB.count('\\');
+                        if (depthA != depthB)
+                            return depthA < depthB;
+                        if (relA.length() != relB.length())
+                            return relA.length() < relB.length();
+                        return a < b;
+                    });
+                }
+
+                // Sort directories by depth (closest to root first)
+                allDirs.removeDuplicates();
+                std::sort(allDirs.begin(), allDirs.end(), [&rootClean](const QString &a, const QString &b) {
+                    QString relA = QDir(rootClean).relativeFilePath(a);
+                    QString relB = QDir(rootClean).relativeFilePath(b);
+                    int depthA = relA.count('/') + relA.count('\\');
+                    int depthB = relB.count('/') + relB.count('\\');
+                    if (depthA != depthB)
+                        return depthA < depthB;
+                    return relA.length() < relB.length();
+                });
+            }
+        }
+
+        if (m_receiver) {
+            QMetaObject::invokeMethod(m_receiver, [receiver = m_receiver,
+                                                  gen = m_generation,
+                                                  map = std::move(newByName),
+                                                  dirs = std::move(allDirs)]() mutable {
+                if (receiver) {
+                    receiver->applyScanResult(gen, std::move(map), std::move(dirs));
+                }
+            }, Qt::QueuedConnection);
+        }
+    }
+
+private:
+    QPointer<AssetIndex> m_receiver;
+    quint64 m_generation;
+    QString m_rootPath;
 };
 
 static QString expandEnvironmentAndTilde(const QString &input)
@@ -85,7 +180,6 @@ AssetIndex::AssetIndex(QObject *parent)
     });
     connect(d->debounceTimer, &QTimer::timeout, this, [this]() {
         rebuild();
-        emit indexChanged();
     });
 }
 
@@ -124,71 +218,92 @@ QString AssetIndex::root() const
 
 void AssetIndex::rebuild()
 {
-    m_byName.clear();
+    if (!d)
+        return;
 
-    if (d && d->watcher) {
+    d->generation++;
+    d->scanInProgress = true;
+
+    const QString rootPath = root();
+    if (rootPath.isEmpty()) {
+        m_byName.clear();
+        d->scanInProgress = false;
+        if (d->watcher) {
+            const QStringList currentWatched = d->watcher->directories();
+            if (!currentWatched.isEmpty()) {
+                d->watcher->removePaths(currentWatched);
+            }
+            d->watchedDirs.clear();
+        }
+        return;
+    }
+
+    QDir rootDir(rootPath);
+    if (!rootDir.exists()) {
+        m_byName.clear();
+        d->scanInProgress = false;
+        if (d->watcher) {
+            const QStringList currentWatched = d->watcher->directories();
+            if (!currentWatched.isEmpty()) {
+                d->watcher->removePaths(currentWatched);
+            }
+            d->watchedDirs.clear();
+        }
+        return;
+    }
+
+    QThreadPool::globalInstance()->start(new AssetIndexScanWorker(this, d->generation, rootPath));
+}
+
+void AssetIndex::applyScanResult(quint64 generation,
+                                 QHash<QString, QStringList> newByName,
+                                 QStringList allDirs)
+{
+    if (!d || d->generation != generation) {
+        return;
+    }
+
+    m_byName = std::move(newByName);
+    d->scanInProgress = false;
+
+    if (d->watcher) {
         const QStringList currentWatched = d->watcher->directories();
         if (!currentWatched.isEmpty()) {
             d->watcher->removePaths(currentWatched);
         }
         d->watchedDirs.clear();
-    }
 
-    const QString rootPath = root();
-    if (rootPath.isEmpty())
-        return;
-
-    QDir rootDir(rootPath);
-    if (!rootDir.exists())
-        return;
-
-    QStringList dirsToWatch;
-    dirsToWatch.append(rootDir.absolutePath());
-
-    // Recursively iterate over files and subdirectories.
-    // We do NOT follow directory symlinks to avoid cycles.
-    QDirIterator it(rootPath,
-                    QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable,
-                    QDirIterator::Subdirectories);
-
-    while (it.hasNext()) {
-        it.next();
-        QFileInfo fi = it.fileInfo();
-        if (fi.isDir()) {
-            if (fi.isReadable()) {
-                dirsToWatch.append(fi.absoluteFilePath());
+        if (allDirs.size() > kMaxWatchedDirectories) {
+            if (!d->limitWarned) {
+                d->limitWarned = true;
+                qWarning("AssetIndex: watched directory limit (%d) reached for root '%s'; deeper directories will not be actively watched",
+                         kMaxWatchedDirectories, qPrintable(root()));
             }
-        } else if (fi.isFile() && fi.exists() && fi.isReadable()) {
-            const QString absPath = QDir::cleanPath(fi.absoluteFilePath());
-            const QString lowerName = fi.fileName().toLower();
-            m_byName[lowerName].append(absPath);
+            allDirs = allDirs.mid(0, kMaxWatchedDirectories);
+        }
+
+        if (!allDirs.isEmpty()) {
+            const QStringList failed = d->watcher->addPaths(allDirs);
+            if (!failed.isEmpty()) {
+                qWarning("AssetIndex: could not watch %lld directories (inotify limit reached)",
+                         static_cast<long long>(failed.size()));
+            }
+            d->watchedDirs = allDirs;
         }
     }
 
-    // Sort candidates in shortest-path-first order:
-    // 1. Shorter depth (fewer directory separators relative to root)
-    // 2. Shorter relative path length
-    // 3. Alphabetical tie-breaker
-    const QString rootClean = QDir::cleanPath(rootDir.absolutePath());
-    for (auto itMap = m_byName.begin(); itMap != m_byName.end(); ++itMap) {
-        QStringList &paths = itMap.value();
-        std::sort(paths.begin(), paths.end(), [&rootClean](const QString &a, const QString &b) {
-            QString relA = QDir(rootClean).relativeFilePath(a);
-            QString relB = QDir(rootClean).relativeFilePath(b);
-            int depthA = relA.count('/') + relA.count('\\');
-            int depthB = relB.count('/') + relB.count('\\');
-            if (depthA != depthB)
-                return depthA < depthB;
-            if (relA.length() != relB.length())
-                return relA.length() < relB.length();
-            return a < b;
-        });
-    }
+    emit indexChanged();
+}
 
-    if (d && d->watcher && !dirsToWatch.isEmpty()) {
-        dirsToWatch.removeDuplicates();
-        d->watcher->addPaths(dirsToWatch);
-        d->watchedDirs = dirsToWatch;
+void AssetIndex::waitForIndex(int timeoutMs) const
+{
+    if (!d || !d->scanInProgress)
+        return;
+
+    QElapsedTimer timer;
+    timer.start();
+    while (d && d->scanInProgress && timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
     }
 }
 

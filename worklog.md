@@ -89,3 +89,14 @@ suites registered and skipping.
 **Next:** Done with Review 1.
 **NEEDS:** nothing
 
+### 2026-08-27 17:56 PT — assets (Gemini 3.7 Flash)
+**Task:** Review 1 (T4 assets)
+**Did:**
+- Moved recursive directory walk off-thread via `QThreadPool` worker (`AssetIndexScanWorker`), keeping `resolve()` non-blocking and continuously responsive from the previous index until new results land.
+- Added `AssetIndex::waitForIndex()` helper for deterministic synchronization in unit tests.
+- Added 2,048 directory limit cap to `QFileSystemWatcher` with depth-sorted priority (nearer root first) and single warning log on cap or inotify exhaustion.
+- Added unit tests in `tests/tst_assetindex.cpp` verifying continuous old-index resolution during background rebuilds (`resolveMaintainsOldIndexDuringRebuild`) and directory watch capping (`directoryWatchingCapsAtLimit`).
+**Tests:** `tests/tst_assetindex.cpp` — 23 test cases, all green. `./bin/build && ./bin/test` pass clean (35 passed, 4 skipped stubs).
+**Next:** Done with Review 1.
+**NEEDS:** nothing
+

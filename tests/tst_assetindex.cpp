@@ -32,6 +32,8 @@ private slots:
     void deckDirFallbackWhenRootEmpty();
     void subfolderRelativePathMatching();
     void multipleInlineImagesInOrder();
+    void resolveMaintainsOldIndexDuringRebuild();
+    void directoryWatchingCapsAtLimit();
 };
 
 void AssetIndexTest::looksLikeImageReference()
@@ -202,6 +204,7 @@ void AssetIndexTest::resolveRelativePathDeckDir()
 
     AssetIndex index;
     index.setDeckDir(tempDeck.path());
+    index.waitForIndex();
 
     // Exact relative path
     QString resolved = index.resolve("img/budget.png");
@@ -257,6 +260,7 @@ void AssetIndexTest::resolveShortestWinsAtDifferentDepths()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     // Searching "photo.png" should resolve to the shallowest/shortest match
     QString resolved = index.resolve("photo.png");
@@ -277,6 +281,7 @@ void AssetIndexTest::resolveCaseInsensitiveRetry()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     // Resolve with all-lowercase reference
     QString resolved = index.resolve("budget_report.png");
@@ -301,6 +306,7 @@ void AssetIndexTest::resolveSpacesInPaths()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     // Search by filename with spaces
     QString resolved = index.resolve("My Chart 2026.png");
@@ -318,6 +324,7 @@ void AssetIndexTest::resolveBrokenSymlink()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     // Broken symlink must not resolve and must not crash
     QString resolved = index.resolve("broken_link.png");
@@ -331,6 +338,7 @@ void AssetIndexTest::resolveMissingReturnsEmpty()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     // Nonexistent reference returns empty string (for Step 5 placeholder)
     QVERIFY(index.resolve("nonexistent_image.png").isEmpty());
@@ -363,6 +371,7 @@ void AssetIndexTest::resolveAllBuildsJsonObject()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     QStringList refs = {
         "budget.png",
@@ -407,6 +416,7 @@ void AssetIndexTest::shortestUniqueReference()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     // 1. Unique file -> returns filename alone
     QString shortUnique = index.shortestUniqueReference(tempRoot.path() + "/unique.png");
@@ -422,8 +432,6 @@ void AssetIndexTest::shortestUniqueReference()
     // 3. File in home directory outside root -> ~/...
     QString homePath = QDir::homePath();
     QString fakeHomeFile = homePath + "/test_image_12345.png";
-    // shortestUniqueReference expands ~ so resolve will return the file if it matches
-    // Even if the file doesn't exist on disk, home path prefix can shorten
     QString shortHome = index.shortestUniqueReference(fakeHomeFile);
     QVERIFY(shortHome.startsWith("~") || shortHome == fakeHomeFile);
 }
@@ -435,6 +443,7 @@ void AssetIndexTest::directoryWatchingEmitsIndexChanged()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     QSignalSpy spy(&index, &AssetIndex::indexChanged);
 
@@ -444,15 +453,9 @@ void AssetIndexTest::directoryWatchingEmitsIndexChanged()
     newFile.write("NEW ASSET");
     newFile.close();
 
-    // Wait for the debounced watcher signal (max 1000ms)
-    // Note: QFileSystemWatcher on inotify emits directoryChanged
-    spy.wait(1000);
-
-    // Even if inotify is fast or slow, check that resolving works once rebuilt
-    if (spy.count() == 0) {
-        // If system event loop needs a tick
-        QTest::qWait(250);
-    }
+    // Wait for the debounced watcher signal (max 2000ms)
+    spy.wait(2000);
+    index.waitForIndex();
 
     // Now resolving the new asset should succeed
     QString resolved = index.resolve("new_asset.png");
@@ -479,6 +482,8 @@ void AssetIndexTest::deckDirFallbackWhenRootEmpty()
 
     AssetIndex index;
     index.setDeckDir(tempDeck.path());
+    index.waitForIndex();
+
     // root() should default to deckDir() when m_root is empty
     QCOMPARE(index.root(), tempDeck.path());
 
@@ -506,6 +511,7 @@ void AssetIndexTest::subfolderRelativePathMatching()
 
     AssetIndex index;
     index.setRoot(tempRoot.path());
+    index.waitForIndex();
 
     // Disambiguate by subpath
     QString resolved1 = index.resolve("sub1/deep/diagram.svg");
@@ -521,6 +527,69 @@ void AssetIndexTest::multipleInlineImagesInOrder()
     QStringList refs = AssetIndex::extractReferences(line);
     QStringList expected = { "first.png", "second.jpg", "third.svg" };
     QCOMPARE(refs, expected);
+}
+
+void AssetIndexTest::resolveMaintainsOldIndexDuringRebuild()
+{
+    QTemporaryDir tempRoot1;
+    QVERIFY(tempRoot1.isValid());
+    QFile file1(tempRoot1.path() + "/old_file.png");
+    QVERIFY(file1.open(QIODevice::WriteOnly));
+    file1.write("OLD");
+    file1.close();
+
+    AssetIndex index;
+    index.setRoot(tempRoot1.path());
+    index.waitForIndex();
+
+    // Initial resolution works
+    QCOMPARE(index.resolve("old_file.png"), QDir::cleanPath(tempRoot1.path() + "/old_file.png"));
+
+    QTemporaryDir tempRoot2;
+    QVERIFY(tempRoot2.isValid());
+    QFile file2(tempRoot2.path() + "/new_file.png");
+    QVERIFY(file2.open(QIODevice::WriteOnly));
+    file2.write("NEW");
+    file2.close();
+
+    // Trigger rebuild by setting new root
+    index.setRoot(tempRoot2.path());
+
+    // Immediately before the new scan lands, resolve() must still answer from the previous index
+    // rather than returning empty mid-rebuild
+    QString midRebuildResolved = index.resolve("old_file.png");
+    QCOMPARE(midRebuildResolved, QDir::cleanPath(tempRoot1.path() + "/old_file.png"));
+
+    // Now wait for the new scan to finish
+    index.waitForIndex();
+
+    // After new scan lands, old file is gone and new file is resolved
+    QVERIFY(index.resolve("old_file.png").isEmpty());
+    QCOMPARE(index.resolve("new_file.png"), QDir::cleanPath(tempRoot2.path() + "/new_file.png"));
+}
+
+void AssetIndexTest::directoryWatchingCapsAtLimit()
+{
+    QTemporaryDir tempRoot;
+    QVERIFY(tempRoot.isValid());
+
+    // Create a hierarchy of folders
+    for (int i = 0; i < 20; ++i) {
+        QDir(tempRoot.path()).mkpath(QString("dir_%1/sub").arg(i));
+        QFile file(QString("%1/dir_%2/sub/pic_%2.png").arg(tempRoot.path()).arg(i));
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write("DATA");
+            file.close();
+        }
+    }
+
+    AssetIndex index;
+    index.setRoot(tempRoot.path());
+    index.waitForIndex();
+
+    // Check that assets resolve correctly
+    QCOMPARE(index.resolve("pic_0.png"), QDir::cleanPath(QString("%1/dir_0/sub/pic_0.png").arg(tempRoot.path())));
+    QCOMPARE(index.resolve("pic_19.png"), QDir::cleanPath(QString("%1/dir_19/sub/pic_19.png").arg(tempRoot.path())));
 }
 
 OMAPRESENT_TEST_SUITE(AssetIndexTest)

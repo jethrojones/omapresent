@@ -58,12 +58,19 @@ public:
     // this index — what drag-and-drop inserts (spec §4.5).
     QString shortestUniqueReference(const QString &absolutePath) const;
 
+    // Waits for any in-flight background directory walk to complete (useful in tests).
+    void waitForIndex(int timeoutMs = 5000) const;
+
 signals:
     // The watched tree changed; anything showing images should re-resolve.
     void indexChanged();
 
 private:
+    friend class AssetIndexScanWorker;
     void rebuild();
+    void applyScanResult(quint64 generation,
+                         QHash<QString, QStringList> newByName,
+                         QStringList allDirs);
 
     QString m_deckDir;
     QString m_root;
