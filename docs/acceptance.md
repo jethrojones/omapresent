@@ -279,3 +279,37 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   and with uncommitted work. Recovered it: verified the working tree built and
   the full suite passed, then committed on their behalf. Remaining work
   redistributed to the live Codex and Grok agents.
+
+## 2026-08-28, later
+
+- **Present mode: three defects on one path, all found by running it.**
+  1. It never opened. `AudienceWindow.qml` / `PresenterWindow.qml` were written,
+     reviewed and unit-tested and never registered in `resources.qrc`, so
+     `qrc:/AudienceWindow.qml` failed to resolve and `omapresent present`
+     silently left you with the editor. The T9 brief gave the windows to one
+     agent and their registration to another; the second hit its quota first.
+  2. Every Esc exit **aborted with a core dump**. `closeWindows()` deleted the
+     windows synchronously from inside `handleKey`, which QML invokes on those
+     very windows — Qt calls that fatal. `deleteLater` now, pointers cleared
+     first. Esc consequently leaves the editor open, as §5.2 and §10 intend.
+  3. Do-Not-Disturb was set and never given back. Two causes: Omarchy 4.x has
+     no mako/swaync/dunst and `omarchy-toggle-notification-silencing` prints
+     nothing, so the old toggle-and-read logic always backed out (fixed by the
+     theme agent using `omarchy-shell notifications isDnd`); and `stop()`
+     released the holds *after* `closeWindows()`, so on the crashing path they
+     were never released at all. Verified live: DND off → on for the talk → off
+     after Esc, and no new core dump.
+- **SEC-001 verified independently.** Built an asset root containing a symlink
+  to a file outside it and resolved through the real `AssetIndex`: the escaping
+  symlink is refused, a real file in a subdirectory still resolves, and a
+  symlink *inside* the root still resolves — which is the right policy, since
+  that is a normal way to organise assets.
+- **`bin/test` never built the app**, so three CLI security suites skipped
+  themselves everywhere, CI included. Fixed. Running them surfaced **SEC-006**:
+  `omapresent publish` on a directory or an unreadable file uploads an **empty
+  deck** rather than failing — the only finding so far that ends in an
+  unintended external upload.
+- **Provider attrition is now the limiting factor.** agy out of quota for a
+  week; all four Claude agents out until 01:30; Grok hit its weekly limit and
+  offered to upgrade or buy credits, which is the user's decision, so it was
+  dismissed unselected. Three Codex agents remain and hold the open work.
