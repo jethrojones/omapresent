@@ -23,6 +23,24 @@ jobs:
             qt6-base qt6-declarative qt6-webengine qt6-multimedia qt6-webchannel \
             chromium xorg-server-xvfb poppler ttf-ia-writer
 
+      - name: Install Omarchy contract fixture
+        run: |
+          set -euo pipefail
+          # Pinned Omarchy v4.0.1 contract fixture.
+          curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/basecamp/omarchy/v4.0.1/bin/omarchy \
+            --output /usr/local/bin/omarchy
+          curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/basecamp/omarchy/v4.0.1/bin/omarchy-hook-install \
+            --output /usr/local/bin/omarchy-hook-install
+          printf '%s  %s\n' \
+            b846c7cc6cb2fd6ff63f02c54c2d55a8e3f5b382becf19860c3fcb17f5525e58 \
+            /usr/local/bin/omarchy | sha256sum --check -
+          printf '%s  %s\n' \
+            f17144bbf34e1ba9905f4cd1889a9eb63f374cd184a526b537f08a2fc0cf0f87 \
+            /usr/local/bin/omarchy-hook-install | sha256sum --check -
+          chmod 755 /usr/local/bin/omarchy /usr/local/bin/omarchy-hook-install
+
       - uses: actions/checkout@v4
 
       - name: Build
