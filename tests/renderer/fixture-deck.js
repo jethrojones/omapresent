@@ -61,6 +61,15 @@ globalThis.omapresentFixture = {
 };
 
 const fixtureParams = new URLSearchParams(globalThis.location.search);
+const fixtureHostPayloads = [];
+if (fixtureParams.get("metrics") === "interaction") {
+    globalThis.omapresentHost = {
+        state(payload) {
+            fixtureHostPayloads.push(JSON.parse(payload));
+            document.body.dataset.hostStateSerialized = String(typeof payload === "string");
+        },
+    };
+}
 if (fixtureParams.get("view") === "read")
     document.documentElement.dataset.opView = "read";
 if (fixtureParams.get("mode") === "pdf")
@@ -76,5 +85,22 @@ globalThis.addEventListener("load", () => setTimeout(() => {
             if (content && list)
                 document.body.dataset.listWidthRatio = String(list.getBoundingClientRect().width / content.getBoundingClientRect().width);
         }, 100);
+    }
+    if (fixtureParams.get("metrics") === "interaction") {
+        globalThis.omapresent.onState = state => globalThis.omapresentHost.state(JSON.stringify(state));
+        globalThis.omapresent.goto(1);
+        const visibility = () => [...document.querySelectorAll(".op-fragment")]
+            .map(item => getComputedStyle(item).visibility === "visible" ? "1" : "0").join("");
+        const steps = [visibility()];
+        for (let index = 0; index < 4; index += 1) {
+            globalThis.omapresent.next();
+            steps.push(visibility());
+        }
+        globalThis.omapresent.next();
+        const lastState = fixtureHostPayloads.at(-1) ?? {};
+        document.body.dataset.fragmentSteps = steps.join(",");
+        document.body.dataset.hostStateCount = String(fixtureHostPayloads.length);
+        document.body.dataset.hostLastSlide = String(lastState.slideIndex);
+        document.body.dataset.hostLastFragment = String(lastState.fragment);
     }
 }, 0));
