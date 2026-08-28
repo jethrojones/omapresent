@@ -201,23 +201,62 @@ public:
             return;
         }
 
+        if (haveCommand(QStringLiteral("omarchy-shell"))) {
+            // Omarchy 4.x: mako/swaync/dunst are not installed. The shell
+            // plugin exposes a real query (`isDnd` prints on/off) and
+            // `setDnd("on"|"off"|true|false|1|0|yes)` — see Service.qml.
+            // `omarchy-toggle-notification-silencing` only toggles and prints
+            // nothing, so using it here used to enable DND and immediately
+            // undo it.
+            bool ok = false;
+            const QString state =
+                runCommand(QStringLiteral("omarchy-shell"),
+                           {QStringLiteral("notifications"), QStringLiteral("isDnd")},
+                           &ok);
+            const QString trimmed = state.trimmed().toLower();
+            if (!ok || (trimmed != QStringLiteral("on") && trimmed != QStringLiteral("off"))) {
+                // Shell is present but the notifications plugin is not
+                // answering. Stay out of the way rather than toggling blindly.
+                return;
+            }
+            m_tool = OmarchyShell;
+            m_wasEnabled = trimmed == QStringLiteral("on");
+            if (!m_wasEnabled) {
+                bool setOk = false;
+                const QString after =
+                    runCommand(QStringLiteral("omarchy-shell"),
+                               {QStringLiteral("notifications"), QStringLiteral("setDnd"),
+                                QStringLiteral("on")},
+                               &setOk);
+                if (setOk && after.trimmed().toLower() == QStringLiteral("on")) {
+                    runCommand(QStringLiteral("omarchy-shell"),
+                               {QStringLiteral("-q"), QStringLiteral("omarchy.indicators"),
+                                QStringLiteral("refresh")});
+                    m_held = true;
+                } else {
+                    m_tool = None;
+                }
+            }
+            return;
+        }
+
         if (haveCommand(QStringLiteral("omarchy-toggle-notification-silencing"))) {
-            // The Omarchy shell only offers a toggle, but it prints the state it
-            // toggled to, so one flip tells us where we started. If we find DND
-            // was already on we flip straight back and leave it alone.
-            m_tool = Omarchy;
+            // Last resort when omarchy-shell itself is missing. The wrapper
+            // still prints nothing, so if stdout is unreadable we undo.
+            m_tool = OmarchyToggle;
             bool ok = false;
             const QString state =
                 runCommand(QStringLiteral("omarchy-toggle-notification-silencing"), {}, &ok);
             const QString lowered = state.trimmed().toLower();
             const bool nowEnabled = lowered.contains(QStringLiteral("true"))
                 || lowered.contains(QStringLiteral("enabled"))
+                || lowered.contains(QStringLiteral("on"))
                 || lowered.contains(QStringLiteral("\"dnd\":1"));
             const bool readable = ok
                 && (nowEnabled || lowered.contains(QStringLiteral("false"))
-                    || lowered.contains(QStringLiteral("disabled")));
+                    || lowered.contains(QStringLiteral("disabled"))
+                    || lowered.contains(QStringLiteral("off")));
             if (!readable) {
-                // We cannot tell what we did, so undo it and stay out of the way.
                 if (ok)
                     runCommand(QStringLiteral("omarchy-toggle-notification-silencing"), {});
                 m_tool = None;
@@ -247,7 +286,15 @@ public:
             runCommand(QStringLiteral("dunstctl"),
                        {QStringLiteral("set-paused"), QStringLiteral("false")});
             break;
-        case Omarchy:
+        case OmarchyShell:
+            runCommand(QStringLiteral("omarchy-shell"),
+                       {QStringLiteral("notifications"), QStringLiteral("setDnd"),
+                        QStringLiteral("off")});
+            runCommand(QStringLiteral("omarchy-shell"),
+                       {QStringLiteral("-q"), QStringLiteral("omarchy.indicators"),
+                        QStringLiteral("refresh")});
+            break;
+        case OmarchyToggle:
             runCommand(QStringLiteral("omarchy-toggle-notification-silencing"), {});
             break;
         case None:
@@ -259,7 +306,7 @@ public:
     DoNotDisturbHold &operator=(const DoNotDisturbHold &) = delete;
 
 private:
-    enum Tool { None, Mako, Swaync, Dunst, Omarchy };
+    enum Tool { None, Mako, Swaync, Dunst, OmarchyShell, OmarchyToggle };
 
     Tool m_tool = None;
     bool m_wasEnabled = false;
@@ -603,6 +650,17 @@ void Presentation::stop() {
 
     d->active = false;
     d->clock.stop();
+
+    // Give the desktop back BEFORE tearing down the windows. The editor can
+    // stay open after Esc, so these have to be dropped here rather than in
+    // ~Presentation or they would last until quit — and they have to be
+    // dropped first, because closing the last window can start application
+    // teardown, and a half-run stop() that has already closed the windows but
+    // not yet released these leaves the user's notifications switched off with
+    // nothing left running to switch them back on.
+    d->doNotDisturb.reset();
+    d->idle.reset();
+
     closeWindows();
     emit activeChanged();
 }
@@ -1148,14 +1206,23 @@ void Presentation::placeWindow(QQuickWindow *window, QScreen *screen) {
 
 void Presentation::closeWindows() {
     d->views.clear();
-    if (d->audienceWindow) {
-        d->audienceWindow->close();
-        delete d->audienceWindow;
+
+    // deleteLater, never delete. This is reached from handleKey, which QML
+    // invokes on these very windows, so destroying them here would tear down
+    // an object the QML engine is still executing a method on — Qt calls that
+    // fatal and aborts. Clearing the pointers first means anything that runs
+    // between now and the deletion sees no windows rather than dangling ones.
+    if (QObject *audience = d->audienceWindow) {
+        d->audienceWindow = nullptr;
+        QMetaObject::invokeMethod(audience, "close");
+        audience->deleteLater();
     }
-    if (d->presenterWindow) {
-        d->presenterWindow->close();
-        delete d->presenterWindow;
+    if (QObject *presenter = d->presenterWindow) {
+        d->presenterWindow = nullptr;
+        QMetaObject::invokeMethod(presenter, "close");
+        presenter->deleteLater();
     }
+
     d->idle.reset();
     d->doNotDisturb.reset();
 }

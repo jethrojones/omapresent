@@ -4,6 +4,7 @@
 #include <QtTest>
 
 #include "testrunner.h"
+#include "omarchytheme.h"
 #include "presentation.h"
 
 // Suite for src/presentation.h. Windows, DBus and the web engine are not
@@ -516,6 +517,74 @@ private slots:
             keys.insert(parts.at(0));
         }
         QCOMPARE(keys.size(), rows.size());
+    }
+
+    // --- The projector legibility floor (spec §6) -------------------------
+
+    void onlyTheAudienceGetsTheContrastFloor() {
+        // Mid grey on near-black: legible a foot from a laptop, not legible on
+        // a projector across a room.
+        const QJsonObject exact{{QStringLiteral("background"), QStringLiteral("#101010")},
+                                {QStringLiteral("foreground"), QStringLiteral("#3a3a3a")},
+                                {QStringLiteral("muted"), QStringLiteral("#2b2b2b")},
+                                {QStringLiteral("accent"), QStringLiteral("#243056")}};
+        QJsonObject deckJson = plainDeck(2);
+        deckJson.insert(QStringLiteral("palette"), exact);
+
+        Presentation presentation;
+        presentation.setDeck(deckJson);
+
+        // The presenter, the preview and anything else keep the theme exactly
+        // as it was chosen.
+        QCOMPARE(presentation.deckForRole(QStringLiteral("presenter"))
+                     .value(QStringLiteral("palette")).toObject(), exact);
+        QCOMPARE(presentation.deckForRole(QStringLiteral("preview"))
+                     .value(QStringLiteral("palette")).toObject(), exact);
+        QCOMPARE(QJsonObject::fromVariantMap(presentation.palette()), exact);
+
+        // The audience does not.
+        const QJsonObject audience = presentation.deckForRole(QStringLiteral("audience"))
+                                         .value(QStringLiteral("palette")).toObject();
+        QVERIFY(audience != exact);
+        QCOMPARE(audience, OmarchyTheme::paletteForRole(exact, QStringLiteral("audience")));
+        // The background is what everything is measured against, so it stays.
+        QCOMPARE(audience.value(QStringLiteral("background")).toString(),
+                 QStringLiteral("#101010"));
+        QVERIFY(OmarchyTheme::contrastRatio(
+                    audience.value(QStringLiteral("foreground")).toString(),
+                    QStringLiteral("#101010")) >= 4.5);
+        // ...and the window chrome reads the same floored palette.
+        QCOMPARE(QJsonObject::fromVariantMap(presentation.audiencePalette()), audience);
+
+        // Only the palette differs; the slides both windows draw are identical.
+        QCOMPARE(presentation.deckForRole(QStringLiteral("audience"))
+                     .value(QStringLiteral("slides")).toArray(),
+                 presentation.deckForRole(QStringLiteral("presenter"))
+                     .value(QStringLiteral("slides")).toArray());
+    }
+
+    void aPaletteThatAlreadyClearsTheFloorIsLeftAlone() {
+        const QJsonObject exact{{QStringLiteral("background"), QStringLiteral("#101010")},
+                                {QStringLiteral("foreground"), QStringLiteral("#ffffff")},
+                                {QStringLiteral("muted"), QStringLiteral("#cccccc")},
+                                {QStringLiteral("accent"), QStringLiteral("#eeeeee")}};
+        QJsonObject deckJson = plainDeck(2);
+        deckJson.insert(QStringLiteral("palette"), exact);
+
+        Presentation presentation;
+        presentation.setDeck(deckJson);
+        QCOMPARE(presentation.deckForRole(QStringLiteral("audience"))
+                     .value(QStringLiteral("palette")).toObject(), exact);
+    }
+
+    void aDeckWithNoPaletteStillRenders() {
+        // A deck opened before the theme has loaded (renderer contract §1).
+        Presentation presentation;
+        presentation.setDeck(plainDeck(2));
+
+        QVERIFY(presentation.audiencePalette().isEmpty());
+        QCOMPARE(presentation.deckForRole(QStringLiteral("audience"))
+                     .value(QStringLiteral("slides")).toArray().size(), 2);
     }
 
     void theTimerResets() {
