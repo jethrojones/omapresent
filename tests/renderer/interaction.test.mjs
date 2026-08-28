@@ -76,9 +76,12 @@ test("read view uses article type and flows speaker notes into the body", {
     skip: !(await hasChromium()),
 }, async () => {
     const html = await fixtureDom("?view=read&metrics=read");
-    assert.equal(attribute(html, "data-read-heading-size"), "44px");
+    assert.equal(attribute(html, "data-read-heading-size"), "33.6px");
+    assert.equal(attribute(html, "data-read-second-heading-size"), "26.4px");
     assert.equal(attribute(html, "data-read-heading-align"), "left");
     assert.equal(attribute(html, "data-read-slide-min-height"), "0px");
+    assert.equal(attribute(html, "data-read-section-margin"), "32px");
+    assert.equal(attribute(html, "data-read-section-padding"), "32px");
     assert.equal(attribute(html, "data-read-stack-display"), "block");
     assert.equal(attribute(html, "data-read-note-display"), "block");
     assert.equal(attribute(html, "data-read-note-text"), "This paragraph is a speaker note.");

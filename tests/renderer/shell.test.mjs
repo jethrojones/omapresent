@@ -42,7 +42,9 @@ test("read mode has an article layout branch", async () => {
     const css = await source("deck.css");
     assert.match(css, /html\[data-op-view="read"\] #deck\.op-all-slides \{[\s\S]*?max-width: 38rem;[\s\S]*?line-height: 1\.65;/);
     assert.match(css, /html\[data-op-view="read"\] #deck\.op-all-slides > \.op-slide \{[\s\S]*?min-height: 0;[\s\S]*?overflow: visible;/);
-    assert.match(css, /html\[data-op-view="read"\] #deck h1,[\s\S]*?font-size: 2\.75rem;[\s\S]*?text-align: left;/);
+    assert.match(css, /html\[data-op-view="read"\] #deck h1,[\s\S]*?font-size: 2\.1rem;[\s\S]*?text-align: left;/);
+    assert.match(css, /html\[data-op-view="read"\] #deck h2 \{[\s\S]*?font-size: 1\.65rem;/);
+    assert.match(css, /html\[data-op-view="read"\] #deck h3 \{[\s\S]*?font-size: 1\.3rem;/);
     assert.match(css, /html\[data-op-view="read"\] #deck \.op-notes\.is-flow-note \{[\s\S]*?display: block;[\s\S]*?background: transparent;/);
     assert.doesNotMatch(css, /html\[data-op-view="read"\] (?:h[1-6]|p|ul|ol|table|blockquote)\b/);
 });

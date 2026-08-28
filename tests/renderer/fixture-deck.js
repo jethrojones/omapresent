@@ -153,10 +153,14 @@ globalThis.addEventListener("load", () => setTimeout(() => {
     if (fixtureParams.get("metrics") === "read") {
         const heading = document.querySelector(".op-slide h1");
         const slide = document.querySelector(".op-slide");
+        const nextSlide = document.querySelector(".op-slide:nth-child(2)");
         const note = document.querySelector(".op-notes.is-flow-note");
         document.body.dataset.readHeadingSize = getComputedStyle(heading).fontSize;
+        document.body.dataset.readSecondHeadingSize = getComputedStyle(nextSlide.querySelector("h2")).fontSize;
         document.body.dataset.readHeadingAlign = getComputedStyle(heading).textAlign;
         document.body.dataset.readSlideMinHeight = getComputedStyle(slide).minHeight;
+        document.body.dataset.readSectionMargin = getComputedStyle(slide).marginBottom;
+        document.body.dataset.readSectionPadding = getComputedStyle(nextSlide).paddingTop;
         document.body.dataset.readStackDisplay = getComputedStyle(document.querySelector(".op-stack")).display;
         document.body.dataset.readNoteDisplay = getComputedStyle(note).display;
         document.body.dataset.readNoteText = note?.textContent.trim() ?? "";
