@@ -1560,3 +1560,31 @@ live run when those checks can be made without changing the user's baseline.
 **Tests:** Repository rules, T17 scope, release workflow, release notes, and checksum procedure inspected. No external mutation performed yet.
 **Next:** Verify GitHub auth and repository state, then publish the approved release sequence.
 **NEEDS:** nothing
+
+### 2026-08-28 13:47 PT — publish (Codex GPT-5.6 Sol)
+**Task:** Submit the Omapresent package to the Omarchy package repository
+**Did:** Read the working agreement and prepared PR brief. Confirmed valid GitHub CLI auth and the live upstream repository at `omacom/omarchy-pkgs`, with `master` and `pkgbuilds/<package>/` layout.
+**Tests:** Release and checksum readiness not yet confirmed.
+**Next:** Inspect upstream contribution rules and package examples, then monitor v0.1.0 and both local checksums every 30 seconds.
+**NEEDS:** nothing
+
+### 2026-08-28 14:03 PT — publish (Codex GPT-5.6 Sol)
+**Task:** Submit the Omapresent package to the Omarchy package repository
+**Did:** Waited for public v0.1.0 and matching final checksums. Forked `omacom/omarchy-pkgs` to `jethrojones/omarchy-pkgs`, pushed branch `add-omapresent-package` at `86d5dd3`, and opened PR 235 with only `pkgbuilds/omapresent/`.
+**Tests:** Tag source checksum `b8cc096a21612ef65a2ffd75dd70d3b80f002e0d9466007b379fd49ff664c648` passed `makepkg --verifysource`. Metadata, source URL, desktop file, 1024px icon, executable theme hook, nine packaged icon sizes, release artifact paths, three upstream self-test suites, and scoped Autoreview passed. PR URL returns HTTP 200 and is open and mergeable. Upstream Tests run `33210750360` is `action_required` with no jobs or check runs.
+**Next:** An upstream maintainer must approve the first-time fork workflow, then review and merge https://github.com/omacom/omarchy-pkgs/pull/235.
+**NEEDS:** Upstream workflow approval is required before automated checks can run.
+
+### 2026-08-28 14:10 PT — release (Codex GPT-5)
+**Task:** T17 GitHub release publication
+**Did:** Published `jethrojones/omapresent` and immutable tag `v0.1.0` at `10df02f`. Recorded source checksum `b8cc096a21612ef65a2ffd75dd70d3b80f002e0d9466007b379fd49ff664c648` in both package PKGBUILDs. Committed and pushed the narrow Poppler CI dependency fix as `1a40c8c`; `release.yml` remains unchanged.
+**Tests:** Tag-push Release run `33209972382` passed. The default tag-source package built at `pkgbuild/omapresent-0.1.0-1-x86_64.pkg.tar.zst`; SHA-256 is `fa15275af78de93bdcdb407858c839d5cd483c98f072db1472a80640dac618f8`, matching the published asset. Package path, binary, desktop file, icons, welcome deck, licenses, skill, and executable Omarchy theme hook checks passed. Temporary Namcap checks exited `0`; package warnings were implicit `glibc`, `bash`, `libgcc`, `libstdc++`, possibly unnecessary `qt6-multimedia`, `xdg-desktop-portal`, and `ttf-ia-writer`. New master CI run `33211212092` passed dependency installation and build but failed the hook test because stock Arch lacks `/usr/bin/omarchy`. Historical release-event run `33210256561` failed before the Poppler fix because the pre-fix workflow could not find `ttf-ia-writer`.
+**Next:** No further release mutation. Await an Omarchy runtime fixture for the CI hook test.
+**NEEDS:** CI must provide `/usr/bin/omarchy` for `packagedThemeHookUsesOmarchyConvention`.
+
+### 2026-08-28 14:25 PDT — release-closeout (Codex GPT-5)
+**Task:** Final v0.1.0 release closeout
+**Did:** Verified public repo https://github.com/jethrojones/omapresent and immutable `v0.1.0` at `10df02f`. Release: https://github.com/jethrojones/omapresent/releases/tag/v0.1.0. The published package SHA-256 is `fa15275af78de93bdcdb407858c839d5cd483c98f072db1472a80640dac618f8`.
+**Tests:** CI run https://github.com/jethrojones/omapresent/actions/runs/33211971954 succeeded. Omarchy PR https://github.com/omacom/omarchy-pkgs/pull/235 is open and mergeable.
+**Next:** Upstream maintainer review and merge.
+**NEEDS:** The upstream `Tests` workflow remains `action_required`; an Omarchy maintainer must approve the first-time fork workflow.
