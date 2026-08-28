@@ -7,6 +7,8 @@
         <file alias="UnsavedChangesDialog.qml">UnsavedChangesDialog.qml</file>
         <file alias="ExternalChangeDialog.qml">ExternalChangeDialog.qml</file>
         <file alias="PreviewPane.qml">PreviewPane.qml</file>
+        <file alias="AudienceWindow.qml">AudienceWindow.qml</file>
+        <file alias="PresenterWindow.qml">PresenterWindow.qml</file>
         <file alias="EditorMutations.js">EditorMutations.js</file>
     </qresource>
 </RCC>
