@@ -14,12 +14,14 @@ SOURCES += \
     tst_omarchytheme.cpp \
     tst_videocache.cpp \
     tst_publisher.cpp \
+    tst_settings.cpp \
     ../src/backend.cpp \
     ../src/deckmodel.cpp \
     ../src/assetindex.cpp \
     ../src/omarchytheme.cpp \
     ../src/videocache.cpp \
     ../src/publisher.cpp \
+    ../src/settings.cpp \
     ../src/markdownhighlighter.cpp
 
 HEADERS += \
@@ -30,4 +32,5 @@ HEADERS += \
     ../src/omarchytheme.h \
     ../src/videocache.h \
     ../src/publisher.h \
+    ../src/settings.h \
     ../src/markdownhighlighter.h

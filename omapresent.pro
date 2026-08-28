@@ -12,6 +12,7 @@ HEADERS += \
     src/omarchytheme.h \
     src/videocache.h \
     src/publisher.h \
+    src/settings.h \
     src/presentation.h \
     src/markdownhighlighter.h \
     src/systemtheme.h
@@ -24,6 +25,7 @@ SOURCES += \
     src/omarchytheme.cpp \
     src/videocache.cpp \
     src/publisher.cpp \
+    src/settings.cpp \
     src/presentation.cpp \
     src/markdownhighlighter.cpp \
     src/systemtheme.cpp
