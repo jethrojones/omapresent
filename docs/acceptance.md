@@ -127,7 +127,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | `bin/build`, `bin/install`, `bin/test` all work | run |
 | x | CI builds, tests, and checks skill/spec agreement | `.github/workflows` |
 | x | Fonts not bundled; system iA Writer S with a fallback stack | package inspection, grep |
-| ~ | No network at runtime outside prefetch and publish | empirical zero-request run before T16; final T16 image path needs a gate |
+| ~ | No network at runtime outside prefetch and publish | final gate confirms zero remote-image requests before explicit reader activation and one request after activation; broader requirement remains partial |
 | ~ | Everything green end to end on a real deck | approved standard gate is green; no new live desktop run was permitted |
 
 ## T19 reconciliation and remaining verification
