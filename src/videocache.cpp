@@ -632,7 +632,9 @@ QStringList VideoCache::extractUrls(const QString &slideMarkdown)
         }
         if (inFence)
             continue;
-        if (isBareUrlLine(trimmed))
+        // URLs (player or QR) and whole-line local video files. `clip.webm`
+        // is not a URL — isBareUrlLine is false — but it is media.
+        if (isBareUrlLine(trimmed) || hostFor(trimmed) != NotAVideo)
             urls.append(trimmed);
     }
     return urls;

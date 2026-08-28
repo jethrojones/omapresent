@@ -429,3 +429,20 @@ loudly and has to be acknowledged.
    image reference, because `//` matches its explicit-path prefix. Harmless
    today only because `DeckModel` strips `//` lines before the renderer sees
    them — worth knowing if anything ever feeds it raw file text.
+
+### 2026-08-27 21:15 PT — media (Grok 4.6)
+**Task:** T5 follow-up — `clip.webm` C++ vs renderer disagreement
+**Did:** Decided `clip.webm` is a **local video file**, not a URL and not an image. `hostFor` stays `LocalFile`. `isBareUrlLine` stays **false** — a relative filename is not a URL; the renderer was only calling it one because `urlFromLine()` treats `.webm` as a TLD (`https://clip.webm` → QR). `extractUrls` now also returns whole-line local video paths so `describe()`/`prefetch()` (and Backend, which iterates `extractUrls`) see `clip.webm`. `clip.webm` is not an image: `AssetIndex::looksLikeImageReference` requires `/` or an image extension, and `.webm` is neither. `./clip.webm` *is* an image under that slash rule — see NEEDS.
+**Tests:** `tst_videocache` — `clip.webm` isBareUrlLine false, host local, extractUrls includes it. Running `./bin/build && ./bin/test`.
+**Next:** waiting on the renderer `urlFromLine` fix below; then both sides report `isBareUrlLine=false`, `host=local`.
+**NEEDS:**
+
+Contract sentence for `docs/renderer-contract.md` (please land this):
+
+> A whole line that is only a relative or absolute path ending in `.mp4`, `.webm` or `.mov` is a local video (`host: "local"`). It is not a URL (`isBareUrlLine` is false — those suffixes are file extensions, not TLDs, so `clip.webm` is not `https://clip.webm`) and not an image. `VideoCache::extractUrls` still returns these lines so `describe()` / `prefetch()` see them.
+
+Renderer (`src/renderer/media.js`): in `urlFromLine`, return `null` for a schemeless value that matches `DIRECT_VIDEO_EXTENSIONS` *before* the schemeless-domain regex. After that, `isBareUrlLine("clip.webm")` is false and `videoHostFor("clip.webm")` is `"local"`, matching C++. Same for `.mov`. `notes.txt` should also stop parsing as `https://notes.txt` (same TLD trap).
+
+Renderer (`deckparse.js`) / assets: `parseBareImage` and `AssetIndex::looksLikeImageReference` treat any slash path as an image, so `./clip.webm` is currently both a local video and an image. Exclude `.mp4`/`.webm`/`.mov` from image detection.
+
+T12: drop `rendererReadsBareVideoFilenamesAsWebUrls` once the renderer matches; it pins the bug.

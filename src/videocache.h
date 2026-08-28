@@ -47,8 +47,11 @@ public:
     static Host hostFor(const QString &url);
     // True when a whole line, on its own, is a bare URL (spec §4.8): the
     // renderer turns it into a player when hostFor() != NotAVideo, else a QR.
+    // A relative video filename (`clip.webm`) is not a URL — `.webm` is a
+    // file extension, not a TLD. hostFor() still returns LocalFile for it.
     static bool isBareUrlLine(const QString &line);
-    // Every bare-URL line in a slide, in document order.
+    // Every bare-URL line in a slide, in document order, plus whole-line
+    // local video paths so describe()/prefetch() see them.
     static QStringList extractUrls(const QString &slideMarkdown);
     // The host's embed URL for a watch/share URL, e.g. a YouTube watch link to
     // its /embed/<id> form. Empty when the host is not recognised.

@@ -162,6 +162,7 @@ void VideoCacheTest::hostFor_data()
     row("tiktok-profile", QStringLiteral("https://www.tiktok.com/@user"), VideoCache::NotAVideo);
     row("javascript", QStringLiteral("javascript:alert(1)"), VideoCache::NotAVideo);
     row("relative-mp4", QStringLiteral("clip.mp4"), VideoCache::LocalFile);
+    row("relative-webm", QStringLiteral("clip.webm"), VideoCache::LocalFile);
     row("relative-dot-webm", QStringLiteral("./media/movie.webm"), VideoCache::LocalFile);
     row("relative-spaces", QStringLiteral("./media/keynote clip.mov"), VideoCache::LocalFile);
 }
@@ -189,8 +190,12 @@ void VideoCacheTest::isBareUrlLine()
     QVERIFY(!VideoCache::isBareUrlLine(QString()));
     QVERIFY(!VideoCache::isBareUrlLine(QStringLiteral("   ")));
     QVERIFY(!VideoCache::isBareUrlLine(QStringLiteral("clip.mp4")));
+    QVERIFY(!VideoCache::isBareUrlLine(QStringLiteral("clip.webm")));
+    QVERIFY(!VideoCache::isBareUrlLine(QStringLiteral("clip.mov")));
     QVERIFY(!VideoCache::isBareUrlLine(QStringLiteral("./media/movie.webm")));
     QVERIFY(!VideoCache::isBareUrlLine(QStringLiteral("`https://youtu.be/abc`")));
+    // `.webm` looks like a TLD; it is still a filename, not https://clip.webm.
+    QVERIFY(!VideoCache::isBareUrlLine(QStringLiteral("notes.txt")));
 }
 
 void VideoCacheTest::extractUrls()
@@ -215,6 +220,9 @@ void VideoCacheTest::extractUrls()
         "\n"
         "  https://x.com/jack/status/20  \n"
         "\n"
+        "clip.webm\n"
+        "./talk.mp4\n"
+        "\n"
         "// a comment-looking line is still not a URL\n");
 
     const QStringList got = VideoCache::extractUrls(slide);
@@ -222,6 +230,8 @@ void VideoCacheTest::extractUrls()
         QStringLiteral("https://youtu.be/abc"),
         QStringLiteral("https://vimeo.com/123"),
         QStringLiteral("https://x.com/jack/status/20"),
+        QStringLiteral("clip.webm"),
+        QStringLiteral("./talk.mp4"),
     };
     QCOMPARE(got, expected);
     QCOMPARE(VideoCache::extractUrls(QString()), QStringList());
