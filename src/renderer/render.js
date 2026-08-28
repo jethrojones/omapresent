@@ -91,12 +91,27 @@ function resolvedAsset(reference) {
     return assets[reference] ?? assets[decoded] ?? "";
 }
 
+function isRemoteSource(source) {
+    return /^https?:\/\//i.test(String(source ?? "").trim());
+}
+
+function localBackgroundSource() {
+    return isRemoteSource(deck.backgroundImage) ? "" : String(deck.backgroundImage ?? "");
+}
+
+function remoteImageLoaderMarkup(source, alt) {
+    return `<button type="button" class="op-inline-image-loader" data-op-remote-image="true" data-source="${escapeHtml(source)}" data-alt="${escapeHtml(alt)}">Load remote image</button>`;
+}
+
 markdown.renderer.rules.image = (tokens, index) => {
     const token = tokens[index];
     const reference = token.attrGet("src") ?? "";
     const resolved = resolvedAsset(reference);
-    const source = resolved || deck.backgroundImage || "";
-    return `<img class="op-inline-image${resolved ? "" : " is-missing"}" src="${escapeHtml(source)}" alt="${escapeHtml(token.content)}">`;
+    const source = resolved || localBackgroundSource();
+    if (isRemoteSource(source))
+        return remoteImageLoaderMarkup(source, token.content);
+    const sourceAttribute = source ? ` src="${escapeHtml(source)}"` : "";
+    return `<img class="op-inline-image${resolved ? "" : " is-missing"}"${sourceAttribute} alt="${escapeHtml(token.content)}"${source ? "" : " hidden"}>`;
 };
 
 function renderMath(source, displayMode = true) {
@@ -167,6 +182,65 @@ function missingTag(reference) {
     return tag;
 }
 
+function remoteImageLoader(source, alt) {
+    const loader = document.createElement("button");
+    loader.type = "button";
+    loader.className = "op-image-loader";
+    loader.dataset.opRemoteImage = "true";
+    loader.dataset.source = source;
+    loader.dataset.alt = alt;
+    loader.setAttribute("aria-label", `Load remote image: ${alt}`);
+    const mark = document.createElement("span");
+    mark.className = "op-media-loader-mark";
+    mark.textContent = "↗";
+    mark.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.className = "op-media-loader-label";
+    label.textContent = "Load remote image";
+    const detail = document.createElement("span");
+    detail.className = "op-media-loader-detail";
+    detail.textContent = "Connects to its host";
+    loader.append(mark, label, detail);
+    return loader;
+}
+
+function applyImageFallback(element, container, reference) {
+    if (element.dataset.placeholder === "true")
+        return;
+    element.dataset.placeholder = "true";
+    const background = localBackgroundSource();
+    if (background)
+        element.src = background;
+    else
+        element.hidden = true;
+    element.classList.add("is-missing");
+    container?.classList.add("is-missing");
+    if (container && !container.querySelector(".op-missing-tag"))
+        container.append(missingTag(reference));
+}
+
+function activateDeferredImage(loader) {
+    const source = loader.dataset.source ?? "";
+    if (!isRemoteSource(source))
+        return null;
+    const element = document.createElement("img");
+    element.alt = loader.dataset.alt ?? "";
+    element.decoding = "async";
+    if (loader.classList.contains("op-inline-image-loader"))
+        element.className = "op-inline-image";
+    const container = loader.closest(".op-image");
+    element.addEventListener("error", () => applyImageFallback(element, container, element.alt));
+    // A subtitle track is outside #deck. Emitting slide state when its image
+    // loads makes the published chrome replace the track with its original
+    // notesHtml, which recreates the load button. Only slide images need a fit
+    // pass and state event.
+    if (loader.closest("#deck"))
+        element.addEventListener("load", scheduleFitUpdate);
+    loader.replaceWith(element);
+    element.src = source;
+    return element;
+}
+
 function imageFigure(image, tile = null) {
     const figure = document.createElement("figure");
     figure.className = `op-image${tile?.role === "hero" ? " is-hero" : ""}`;
@@ -177,9 +251,14 @@ function imageFigure(image, tile = null) {
     if (image.maxWidth)
         figure.style.maxWidth = `${image.maxWidth}px`;
     const resolved = resolvedAsset(image.reference);
-    const source = resolved || deck.backgroundImage || "";
+    const source = resolved || localBackgroundSource();
+    const alt = image.alt || image.reference;
+    if (isRemoteSource(source)) {
+        figure.append(remoteImageLoader(source, alt));
+        return figure;
+    }
     const element = document.createElement("img");
-    element.alt = image.alt || image.reference;
+    element.alt = alt;
     element.decoding = "async";
     if (source)
         element.src = source;
@@ -189,16 +268,7 @@ function imageFigure(image, tile = null) {
         figure.classList.add("is-missing");
         figure.append(missingTag(image.reference));
     }
-    element.addEventListener("error", () => {
-        if (element.dataset.placeholder === "true")
-            return;
-        element.dataset.placeholder = "true";
-        if (deck.backgroundImage)
-            element.src = deck.backgroundImage;
-        figure.classList.add("is-missing");
-        if (!figure.querySelector(".op-missing-tag"))
-            figure.append(missingTag(image.reference));
-    });
+    element.addEventListener("error", () => applyImageFallback(element, figure, image.reference));
     element.addEventListener("load", scheduleFitUpdate);
     figure.prepend(element);
     return figure;
@@ -245,10 +315,6 @@ function qrElement(value) {
     return container;
 }
 
-function isRemoteMediaSource(source) {
-    return /^https?:\/\//i.test(String(source ?? "").trim());
-}
-
 function sendEmbedPlayback(player, playing) {
     const message = player.dataset.host === "youtube"
         ? JSON.stringify({ event: "command", func: playing ? "playVideo" : "pauseVideo", args: [] })
@@ -268,7 +334,7 @@ function autoplaySource(source) {
 }
 
 function playerElement(decision, allowRemote = false, requestPlayback = false) {
-    const remoteSource = isRemoteMediaSource(decision.source);
+    const remoteSource = isRemoteSource(decision.source);
     let player;
     if (decision.player === "file") {
         player = document.createElement("video");
@@ -277,7 +343,7 @@ function playerElement(decision, allowRemote = false, requestPlayback = false) {
         player.playsInline = true;
         if (!remoteSource || allowRemote)
             player.src = decision.source;
-        if (decision.poster && (!isRemoteMediaSource(decision.poster) || allowRemote))
+        if (decision.poster && (!isRemoteSource(decision.poster) || allowRemote))
             player.poster = decision.poster;
         player.addEventListener("ended", () => {
             player.dataset.ended = "true";
@@ -362,12 +428,18 @@ function mediaElement(block) {
         figure.append(missingTag(value));
         return figure;
     }
-    const player = isRemoteMediaSource(decision.source)
+    const player = isRemoteSource(decision.source)
         ? deferredPlayerElement(decision)
         : playerElement(decision);
     figure.append(player);
     return figure;
 }
+
+document.addEventListener("click", event => {
+    const loader = event.target.closest?.("[data-op-remote-image]");
+    if (loader?.closest("#deck, #op-notes"))
+        activateDeferredImage(loader);
+});
 
 function outlineElement(block) {
     const container = document.createElement("div");
@@ -738,7 +810,12 @@ function replaceDeck(nextDeck) {
     currentSlide = Math.max(0, Math.min(slides.length - 1, oldSlide));
     fragment = Math.max(0, Math.min(parseSlide(slides[currentSlide]?.markdown ?? "").fragmentCount, oldFragment));
     applyTheme();
-    document.title = deck.frontmatter?.title || headingText(slides[0]?.markdown ?? "") || "Omapresent";
+    const firstVisibleHeading = slides.map(slide => headingText(slide.markdown ?? ""))
+        .find(Boolean) ?? "";
+    document.title = deck.frontmatter?.publish?.title
+        || deck.frontmatter?.title
+        || firstVisibleHeading
+        || (deck.mode === "web" ? document.title : "Omapresent");
     renderCurrent();
     emitState();
 }
@@ -898,7 +975,7 @@ document.addEventListener("keydown", event => {
         return;
     if ((event.key === " " || event.key === "Enter")
         && event.target instanceof Element
-        && event.target.closest(".op-media-loader"))
+        && event.target.closest(".op-media-loader, [data-op-remote-image]"))
         return;
     if (event.key === "ArrowRight") api.next();
     else if (event.key === "ArrowLeft") api.previous();

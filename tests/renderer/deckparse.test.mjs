@@ -142,6 +142,7 @@ test("headingText returns the first ATX or Setext heading", () => {
     assert.equal(headingText("A note\n\n## Where we are\n\n# Later"), "Where we are");
     assert.equal(headingText("A note without a blank\n## Attached heading"), "Attached heading");
     assert.equal(headingText("Quarterly review\n===\n\n# Later"), "Quarterly review");
+    assert.equal(headingText("```markdown\n# Example only\n```\n\n## Real heading"), "Real heading");
     assert.equal(headingText("Only prose"), "");
 });
 

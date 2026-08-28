@@ -334,6 +334,51 @@ th {
     border: 1px dashed var(--op-muted);
 }
 
+.op-image-loader {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    width: 100%;
+    min-height: min(40vh, 24rem);
+    gap: 0.55rem;
+    padding: 2rem;
+    border: 1px solid var(--op-selection);
+    border-radius: 0.35rem;
+    background: var(--op-dark-background);
+    color: var(--op-foreground);
+    font: inherit;
+    cursor: pointer;
+}
+
+.op-image-loader:hover,
+.op-image-loader:focus-visible {
+    border-color: var(--op-accent);
+    color: var(--op-accent);
+}
+
+.op-image-loader:focus-visible,
+.op-inline-image-loader:focus-visible {
+    outline: 3px solid var(--op-accent);
+    outline-offset: 0.25rem;
+}
+
+.op-inline-image-loader {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25em 0.55em;
+    border: 1px solid var(--op-selection);
+    border-radius: 0.25rem;
+    background: var(--op-dark-background);
+    color: var(--op-foreground);
+    font: inherit;
+    cursor: pointer;
+}
+
+.op-inline-image-loader:hover {
+    border-color: var(--op-accent);
+    color: var(--op-accent);
+}
+
 .op-missing-tag {
     position: absolute;
     inset-block-end: 0.65rem;

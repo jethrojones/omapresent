@@ -76,6 +76,14 @@ if (fixtureParams.get("metrics") === "remote-media" || fixtureParams.get("deck")
         },
     };
 }
+if (fixtureParams.get("metrics") === "remote-image") {
+    const imagePort = fixtureParams.get("imagePort");
+    const imageUrl = `http://127.0.0.1:${imagePort}/remote.png`;
+    globalThis.omapresentFixture.slides = [
+        { index: 0, markdown: `![Remote diagram](${imageUrl})`, recallKey: "", skip: false },
+    ];
+    globalThis.omapresentFixture.assets = { [imageUrl]: imageUrl };
+}
 if (fixtureParams.get("metrics") === "recall") {
     const baseBullets = Array.from({ length: 48 }, (_, index) => `- Base point ${index + 1}`).join("\n");
     const recallDeck = [
@@ -223,6 +231,22 @@ globalThis.addEventListener("load", () => setTimeout(() => {
         document.body.dataset.cachedPlaceholder = String(Boolean(document.querySelector(".op-media-loader")));
         document.body.dataset.cachedSource = cached?.getAttribute("src") ?? "";
         document.body.dataset.cachedPreload = cached?.preload ?? "";
+    }
+    if (fixtureParams.get("metrics") === "remote-image") {
+        const hasRemoteSource = () => [...document.querySelectorAll("img[src]")]
+            .some(element => /^https?:\/\//i.test(element.getAttribute("src") ?? ""));
+        document.body.dataset.remoteImageBeforeLoad = String(hasRemoteSource());
+        document.body.dataset.remoteImagePlaceholder = String(Boolean(document.querySelector("[data-op-remote-image]")));
+        const loader = document.querySelector("[data-op-remote-image]");
+        loader?.focus();
+        for (const key of [" ", "Enter"]) {
+            const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+            loader?.dispatchEvent(event);
+            document.body.dataset[key === " " ? "remoteImageSpacePrevented" : "remoteImageEnterPrevented"] = String(event.defaultPrevented);
+        }
+        if (fixtureParams.get("load") === "1")
+            loader?.click();
+        document.body.dataset.remoteImageAfterLoad = String(hasRemoteSource());
     }
     if (fixtureParams.get("metrics") === "read") {
         const heading = document.querySelector(".op-slide h1");

@@ -407,6 +407,8 @@ export function parseSlide(markdown) {
 
 export function headingText(markdown) {
     for (const block of classifiedBlocks(markdown)) {
+        if (block.type === "code")
+            continue;
         for (const line of block.lines) {
             const atx = line.match(ATX_HEADING);
             if (atx)

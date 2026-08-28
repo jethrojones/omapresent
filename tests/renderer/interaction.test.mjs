@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { once } from "node:events";
 import { access, mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -91,6 +93,42 @@ test("remote video sources do not enter the DOM until play", {
     assert.equal(attribute(html, "data-cached-placeholder"), "false");
     assert.equal(attribute(html, "data-cached-source"), "file:///tmp/cached-test.mp4");
     assert.equal(attribute(html, "data-cached-preload"), "metadata");
+});
+
+test("remote images make zero requests until the reader loads them", {
+    skip: !(await hasChromium()),
+}, async () => {
+    let imageRequests = 0;
+    const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    const server = createServer((request, response) => {
+        if (request.url === "/remote.png") {
+            imageRequests += 1;
+            response.writeHead(200, { "content-type": "image/png", "content-length": pixel.length });
+            response.end(pixel);
+            return;
+        }
+        response.writeHead(404).end();
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = server.address().port;
+    try {
+        const closed = await fixtureDom(`?metrics=remote-image&imagePort=${port}`);
+        assert.equal(attribute(closed, "data-remote-image-before-load"), "false");
+        assert.equal(attribute(closed, "data-remote-image-placeholder"), "true");
+        assert.equal(attribute(closed, "data-remote-image-after-load"), "false");
+        assert.equal(attribute(closed, "data-remote-image-space-prevented"), "false");
+        assert.equal(attribute(closed, "data-remote-image-enter-prevented"), "false");
+        assert.equal(imageRequests, 0);
+
+        const opened = await fixtureDom(`?metrics=remote-image&imagePort=${port}&load=1`);
+        assert.equal(attribute(opened, "data-remote-image-before-load"), "false");
+        assert.equal(attribute(opened, "data-remote-image-after-load"), "true");
+        assert.equal(imageRequests, 1);
+    } finally {
+        server.close();
+        await once(server, "close");
+    }
 });
 
 test("read view uses article type and flows speaker notes into the body", {
