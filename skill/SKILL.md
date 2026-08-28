@@ -16,12 +16,23 @@ This skill equips agents to create new presentations, convert notes into decks, 
 
 ---
 
+## Start a presentation
+
+Use the editor or the command line:
+
+- Press `F5` to start from the beginning.
+- Press `Ctrl+Return` to start from the current editor slide.
+- Click the footer `Present` button to start from the current editor slide.
+- From a terminal, run `omapresent present FILE` to start the deck.
+
+---
+
 ## Command Line Usage
 
 | Command | Action |
 | :--- | :--- |
 | `omapresent <file.md>` | Open the deck in the Omapresent editor and live preview |
-| `omapresent present <file.md>` | Start presentation mode (dual presenter/audience windows) |
+| `omapresent present <file.md>` | Start presentation mode for the file (dual presenter/audience windows) |
 | `omapresent export --pdf <file.md>` | Export pixel-identical, paginated PDF slides |
 | `omapresent publish <file.md> [--provider <name>]` | Build static bundle and upload to hosting provider (*requires user confirmation*) |
 

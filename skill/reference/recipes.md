@@ -4,6 +4,17 @@ Actionable step-by-step patterns for common Omapresent authoring and configurati
 
 ---
 
+## Start a presentation
+
+Choose the path that matches where you are:
+
+- In the editor, press `F5` to start from the beginning.
+- In the editor, press `Ctrl+Return` to start from the current editor slide.
+- In the editor, click the footer `Present` button to start from the current editor slide.
+- From a terminal, run `omapresent present FILE` to start the deck.
+
+---
+
 ## Recipe 1: Convert a Markdown Document into a Presentation Deck
 
 To convert a raw note, article, or outline into a polished Omapresent presentation:

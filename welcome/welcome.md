@@ -264,6 +264,13 @@ The Presenter window shows the current slide, next slide preview, rendered speak
 
 # Present Mode Keyboard Controls
 
+## Start a presentation
+
+- In the editor, press `F5` to start from the beginning
+- In the editor, press `Ctrl+Return` to start from the current editor slide
+- In the editor, click the footer `Present` button to start from the current editor slide
+- From a terminal, run `omapresent present FILE` to start the deck
+
 | Key | Action |
 | :--- | :--- |
 | `Space` / `→` | Next fragment or advance slide |
@@ -363,4 +370,9 @@ Web publishing produces a static bundle containing both a slide presentation wit
 
 # Start Creating
 
-Open any Markdown file with Omapresent, or press `Ctrl+N` to start a new deck.
+- Press `F5` to start an open deck from the beginning
+- Press `Ctrl+Return` or click the footer `Present` button to start from the current editor slide
+- From a terminal, run `omapresent present FILE`
+- Press `Ctrl+N` to start a new deck
+
+Use `F5` for a full run. Use `Ctrl+Return` or the footer button when the editor is already on the slide you want. The CLI command starts presentation mode for the file.

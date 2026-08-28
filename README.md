@@ -11,6 +11,15 @@ A dead-simple, Markdown-only presentation app for Omarchy. Open any Markdown fil
   <img src="welcome/screenshot.png" alt="Omapresent Presentation and Presenter Displays" width="800" onerror="this.style.display='none'"/>
 </p>
 
+## Start a presentation
+
+Open a deck in Omapresent. Then choose one path:
+
+- Press `F5` to start from the beginning.
+- Press `Ctrl+Return` to start from the current editor slide.
+- Click `Present` in the footer to start from the current editor slide.
+- From a terminal, run `omapresent present FILE` to start the deck.
+
 ---
 
 ## Highlights
@@ -69,8 +78,8 @@ cd omapresent
 | `Ctrl+H` | Find & Replace |
 | `Ctrl+B` / `Ctrl+I` / `Ctrl+K` | Insert bold / italic / link Markdown |
 | `Super+F` | Toggle editor fullscreen |
-| `F5` | Present from start |
-| `Ctrl+Return` | Present from current slide |
+| `F5` | Start from the beginning |
+| `Ctrl+Return` | Start from the current editor slide |
 | `Ctrl+?` | Shortcut reference sheet |
 
 ### Present Mode Shortcuts
