@@ -347,3 +347,85 @@ and load clean.
   "no render.js". That is 1 of the 3 `WebBundleTest` failures currently red in
   the shared tree; the other two are its expectations against the renderer's new
   output. None of them are mine — `tst_presentation` is 44/44.
+
+### 2026-08-27 21:05 PT — doc-model (Claude Opus 5)
+**Task:** T12 end-to-end integration tests
+**Did:** Added `tests/tst_integration.cpp` (21 cases), the fixture decks under
+`tests/integration/`, and a small node bridge
+(`tests/integration/renderer-answers.mjs`) that runs the *real* renderer ES
+modules and hands their answers back to the C++ test, so the two sides are
+compared against shipping code rather than a copy of its rules. One line added
+to `tests/tests.pro`.
+
+The welcome deck is the primary fixture: 25 slides, parses with no warnings,
+frontmatter including the nested `publish:` map, one recall key (`q`) bound
+once, no slide empty of both audience content and notes, and exactly the five
+images it deliberately leaves missing to demonstrate the placeholder. Which
+lines count as images is decided by asking the renderer, since it is the side
+that decides what reaches the screen.
+
+Seam fixtures, each a file someone will really open: CRLF throughout, a UTF-8
+BOM, a final separator with no trailing newline, an unclosed fence, a
+frontmatter-only deck, a deck with no separators, a `root:` that does not
+exist, and the same filename at two depths under one root (shortest wins, and
+`shortestUniqueReference` round-trips back to the deeper file).
+
+Two changes in my own files: `DeckModel` now ignores a leading U+FEFF while
+parsing — `QString::fromUtf8` drops it so the ordinary read path never sees
+one, but a path that keeps it should not silently hide the frontmatter, and
+`source()` still returns the text untouched. `Slide` gained `operator==` and a
+`QDebug` operator so a failed comparison prints the slide rather than an
+address.
+
+**Tests:** `tests/tst_integration.cpp` — 21 cases, all green. `./bin/build`
+passes. `./bin/test`: every suite green except `WebBundleTest` (3 failures,
+`buildsAgainstTheRealRenderer` reports "no render.js in .../src/renderer" while
+that file exists) — the webbundle agent's own source and suite, both being
+edited as I write this, and unrelated to my files.
+
+**Heads-up:** my files were staged and ready to commit when commit `4703b94`
+("Record the first end-to-end run…") swept them into itself, so `src/deckmodel.*`,
+`tests/integration/**`, `tests/tst_integration.cpp` and the `tests/tests.pro`
+line are committed there rather than under a commit of mine. Content is intact;
+I have not touched that commit. Worth a reminder that `git add -A` picks up
+other agents' staged work.
+
+**NEEDS:** three disagreements between components. Each is pinned by a test that
+records *both* answers, so the suite stays green and a fix on either side fails
+loudly and has to be acknowledged.
+
+1. **`AssetIndex::looksLikeImageReference` treats any line containing `/` or
+   `\` as an image path.** So prose, table rows and display math in the welcome
+   deck become image references: `$$e^{i\pi} + 1 = 0$$`, `Omapresent natively
+   recognizes YouTube, Vimeo, … X/Twitter, …`, `| \`B\` / \`W\` | Black out /
+   White out audience display`. Renderer's `parseBareImage` requires no
+   whitespace unless the line starts with `./`, `~/`, `$VAR/` or `file://`. 15
+   phantom references in the manual alone, and some of them resolve against
+   whatever happens to exist on the machine. Already filed by the orchestrator
+   as `tasks/review/assetindex-prose-bug.md` — same bug, found independently.
+   Pinned by `IntegrationTest::assetIndexReadsProseAsImagePaths` (`extras.size()
+   == 15`).
+
+2. **`AssetIndex::extractReferences` matches `![[...]]` and `![](...)` inside
+   inline code spans, and does not skip the `qr:` prefix.** The renderer's
+   `parseObsidianImage` requires the embed to be the whole line and explicitly
+   excludes `qr:`. So the manual's own syntax documentation yields
+   `figure.png`, `diagram.png` (twice) and `qr:https://...` as images to
+   resolve. Pinned by
+   `IntegrationTest::rendererAgreesOnInlineCodeAndQrReferences`.
+
+3. **The renderer reads a bare local video filename as a web URL.**
+   `urlFromLine()` in `src/renderer/media.js` accepts a schemeless domain, and
+   `.webm` / `.mov` / `.txt` look like TLDs — so `clip.webm` alone on a line
+   parses as `https://clip.webm`, gets no video host, and draws a **QR code**
+   instead of playing the file. `VideoCache::hostFor("clip.webm")` says
+   `LocalFile`. The tell is that `clip.mp4` behaves *differently* — the digit in
+   `mp4` fails the TLD pattern, so it plays. `./clip.webm` is read correctly by
+   both, which is what makes the bare form a trap rather than a policy. Spec
+   §4.8 lists `.mp4`/`.webm`/`.mov` together, so the three should behave alike.
+   Pinned by `IntegrationTest::rendererReadsBareVideoFilenamesAsWebUrls`.
+
+   Minor, not pinned: the renderer's `parseBareImage("// a comment")` returns an
+   image reference, because `//` matches its explicit-path prefix. Harmless
+   today only because `DeckModel` strips `//` lines before the renderer sees
+   them — worth knowing if anything ever feeds it raw file text.
