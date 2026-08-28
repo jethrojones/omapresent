@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/renderer">
+        <file>render.html</file>
+        <file>render.js</file>
+        <file>deck.css</file>
+    </qresource>
+</RCC>

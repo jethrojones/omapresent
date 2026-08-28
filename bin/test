@@ -10,8 +10,26 @@ else
   QMAKE=qmake
 fi
 
+status=0
+
+# --- C++ suites (tests/tst_*.cpp, one binary, see tests/testrunner.h) --------
 mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-"$QMAKE" "$ROOT/tests/tests.pro"
-make -j"$(nproc 2>/dev/null || echo 1)"
-QT_QPA_PLATFORM=offscreen ./tst_omawrite
+(
+  cd "$BUILD_DIR"
+  "$QMAKE" "$ROOT/tests/tests.pro"
+  make -j"$(nproc 2>/dev/null || echo 1)"
+)
+echo "== C++ suites =="
+QT_QPA_PLATFORM=offscreen "$BUILD_DIR/tst_omapresent" || status=$?
+
+# --- Renderer suites (tests/renderer/*.test.mjs, pure ES modules) -----------
+if command -v node >/dev/null 2>&1; then
+  if ls "$ROOT"/tests/renderer/*.test.mjs >/dev/null 2>&1; then
+    echo "== renderer suites =="
+    (cd "$ROOT" && node --test tests/renderer/) || status=$?
+  fi
+else
+  echo "node not found; skipping renderer suites" >&2
+fi
+
+exit "$status"

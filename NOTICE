@@ -1,0 +1,11 @@
+Omapresent
+Copyright (c) 2026 Jethro Jones
+
+This product started from Omawrite (https://github.com/omacom/omawrite),
+Copyright (c) 2026 David Heinemeier Hansson, licensed under the MIT License.
+Omapresent inherits Omawrite's structure, build scripts, editor pane,
+Markdown highlighter, system-theme portal bridge, draft recovery, and
+Omarchy packaging conventions. Both are MIT licensed; see LICENSE.
+
+Bundled third-party assets under src/renderer/vendor/ carry their own
+licences, recorded in src/renderer/vendor/LICENSES.md.

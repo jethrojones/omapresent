@@ -1,4 +1,6 @@
 #include <QtTest>
+
+#include "testrunner.h"
 #include <QFont>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -8,7 +10,7 @@
 #include "backend.h"
 #include "markdownhighlighter.h"
 
-class OmawriteTest : public QObject {
+class OmapresentTest : public QObject {
     Q_OBJECT
 
 private slots:
@@ -250,5 +252,5 @@ private:
     QTemporaryDir m_settingsDirectory;
 };
 
-QTEST_MAIN(OmawriteTest)
-#include "tst_omawrite.moc"
+OMAPRESENT_TEST_SUITE(OmapresentTest)
+#include "tst_omapresent.moc"

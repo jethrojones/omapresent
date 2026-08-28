@@ -1,0 +1,3 @@
+/* STUB — see docs/renderer-contract.md */
+:root { --op-background:#111; --op-foreground:#eee; --op-accent:#8ab; }
+body { background: var(--op-background); color: var(--op-foreground); margin:0; }
