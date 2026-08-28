@@ -12,6 +12,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
+#include <QStandardPaths>
 #include <QUrl>
 
 #include <algorithm>
@@ -113,6 +114,70 @@ QString localPathFor(const QString &value, const QString &deckDir)
     return QDir(deckDir).absoluteFilePath(trimmed);
 }
 
+bool isRemoteHttpUrl(const QString &value)
+{
+    const QString trimmed = value.trimmed();
+    return trimmed.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive)
+        || trimmed.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive);
+}
+
+QString firstHeading(const QJsonArray &slides)
+{
+    static const QRegularExpression atx(
+        QStringLiteral(R"(^ {0,3}#{1,6}(?:\s+|$)(.*)$)"));
+    static const QRegularExpression setext(
+        QStringLiteral(R"(^ {0,3}(?:=+|-+)\s*$)"));
+    static const QRegularExpression closingHashes(QStringLiteral(R"(\s+#+\s*$)"));
+    static const QRegularExpression fenceLine(
+        QStringLiteral(R"(^(`{3,}|~{3,})(.*)$)"));
+
+    for (const QJsonValue &value : slides) {
+        const QJsonObject slide = value.toObject();
+        if (slide.value(QStringLiteral("skip")).toBool(false)
+            || slide.value(QStringLiteral("index")).toInt(0) == -1) {
+            continue;
+        }
+
+        const QStringList lines =
+            slide.value(QStringLiteral("markdown")).toString()
+                .replace(QStringLiteral("\r\n"), QStringLiteral("\n"))
+                .replace(u'\r', u'\n').split(u'\n');
+        QChar fence;
+        qsizetype fenceLength = 0;
+        for (qsizetype i = 0; i < lines.size(); ++i) {
+            const QString trimmed = lines.at(i).trimmed();
+            const QRegularExpressionMatch fenceMatch = fenceLine.match(trimmed);
+            if (fenceMatch.hasMatch()) {
+                const QString marker = fenceMatch.captured(1);
+                if (fence.isNull()) {
+                    fence = marker.at(0);
+                    fenceLength = marker.size();
+                } else if (marker.at(0) == fence && marker.size() >= fenceLength
+                           && fenceMatch.captured(2).trimmed().isEmpty()) {
+                    fence = QChar();
+                    fenceLength = 0;
+                }
+                continue;
+            }
+            if (!fence.isNull())
+                continue;
+
+            const QRegularExpressionMatch heading = atx.match(lines.at(i));
+            if (heading.hasMatch()) {
+                QString text = heading.captured(1);
+                text.remove(closingHashes);
+                if (!text.trimmed().isEmpty())
+                    return text.trimmed();
+            }
+            if (i + 1 < lines.size() && !trimmed.isEmpty()
+                && setext.match(lines.at(i + 1)).hasMatch()) {
+                return trimmed;
+            }
+        }
+    }
+    return {};
+}
+
 QString expandedLocalRoot(const QString &value, const QString &deckDir)
 {
     QString path = value.trimmed();
@@ -169,6 +234,51 @@ bool sourceIsInside(const QString &sourcePath, const QStringList &canonicalRoots
             return true;
     }
     return false;
+}
+
+bool isTrustedThemeBackground(const QString &sourcePath)
+{
+    const QString stateRoot =
+        QStandardPaths::writableLocation(QStandardPaths::GenericStateLocation);
+    if (stateRoot.isEmpty())
+        return false;
+    const QFileInfo state(stateRoot);
+    if (!state.isDir() || state.isSymLink())
+        return false;
+    const QString canonicalState = state.canonicalFilePath();
+    const QString currentDir =
+        QDir(stateRoot).absoluteFilePath(QStringLiteral("omarchy/current"));
+    const QFileInfo current(currentDir);
+    if (!current.isDir() || current.isSymLink())
+        return false;
+    const QString canonicalCurrent = current.canonicalFilePath();
+    if (canonicalState.isEmpty() || canonicalCurrent.isEmpty()
+        || !isWithinRoot(canonicalCurrent, canonicalState)) {
+        return false;
+    }
+    const QString expected =
+        QDir::cleanPath(QDir(currentDir).absoluteFilePath(QStringLiteral("background")));
+    const QFileInfo source(sourcePath);
+    if (QDir::cleanPath(source.absoluteFilePath()) != expected
+        || !source.isFile() || !source.isReadable()) {
+        return false;
+    }
+
+    // Omarchy can store the selected background as the file itself.
+    if (!source.isSymLink())
+        return isWithinRoot(source.canonicalFilePath(), canonicalCurrent);
+
+    // Its normal layout uses `current/background` as a symlink into the
+    // current theme. Follow that link only when the theme directory itself is
+    // not a link and the final target remains inside it.
+    const QFileInfo theme(QDir(currentDir).absoluteFilePath(QStringLiteral("theme")));
+    if (!theme.isDir() || theme.isSymLink())
+        return false;
+    const QString canonicalTheme = theme.canonicalFilePath();
+    const QString canonicalTarget = source.canonicalFilePath();
+    return !canonicalTheme.isEmpty() && !canonicalTarget.isEmpty()
+        && isWithinRoot(canonicalTheme, canonicalCurrent)
+        && isWithinRoot(canonicalTarget, canonicalTheme);
 }
 
 QString outputPathFor(const QString &outputRoot, const QString &relativePath)
@@ -336,6 +446,11 @@ a { color: var(--op-accent, #8ab); }
     position: relative;
 }
 
+[data-op-view="deck"] #deck.op-current-slide,
+[data-op-view="deck"] #deck.op-current-slide > .op-slide {
+    height: 100%;
+}
+
 [data-op-view="deck"] .op-chrome {
     position: fixed;
     top: 0;
@@ -350,7 +465,8 @@ a { color: var(--op-accent, #8ab); }
 [data-op-view="deck"] .op-chrome:focus-within { opacity: 1; }
 
 /* Speaker notes as subtitles beneath the slide (spec §9.1). */
-.op-notes {
+#op-notes {
+    display: block;
     flex: 0 0 auto;
     margin: 0;
     padding: 0.85rem 1.5rem 1.05rem;
@@ -363,24 +479,24 @@ a { color: var(--op-accent, #8ab); }
     line-height: 1.5;
 }
 
-.op-notes[hidden] { display: none; }
-.op-notes > :first-child { margin-top: 0; }
-.op-notes > :last-child { margin-bottom: 0; }
+#op-notes[hidden] { display: none; }
+#op-notes > :first-child { margin-top: 0; }
+#op-notes > :last-child { margin-bottom: 0; }
 
 /* The renderer writes formatted Markdown into the track, and deck.css sets
    every p/li/blockquote on the page for a projector — clamp(1.65rem, 3.2vw,
    3.4rem). Subtitles are read at reading size, so they opt out by name; the
    container's own font-size does not reach children that style themselves. */
-.op-notes p,
-.op-notes li,
-.op-notes blockquote {
+#op-notes p,
+#op-notes li,
+#op-notes blockquote {
     font-size: 0.95rem;
     line-height: 1.5;
     margin: 0 0 0.6rem;
 }
 
-.op-notes ul,
-.op-notes ol {
+#op-notes ul,
+#op-notes ol {
     margin: 0 0 0.6rem;
     padding-inline-start: 1.2rem;
 }
@@ -509,6 +625,7 @@ const char *kBundleJs = R"JS(/* Omapresent published deck — page chrome around
         var progressBar = document.getElementById("op-progress-bar");
         var showNotes = stored("notes") !== "off";
         var hasNotes = false;
+        var renderedNotesHtml = null;
 
         if (frontmatter.progress !== true) progress.hidden = true;
         if (frontmatter["slide-numbers"] === false) counter.hidden = true;
@@ -529,8 +646,12 @@ const char *kBundleJs = R"JS(/* Omapresent published deck — page chrome around
             counter.textContent = (state.slideIndex + 1) + " / " + count;
             if (count > 0)
                 progressBar.style.width = ((state.slideIndex + 1) / count * 100) + "%";
-            notesBody.innerHTML = state.notesHtml || "";
-            hasNotes = !!(state.notesHtml && state.notesHtml.trim());
+            var nextNotesHtml = state.notesHtml || "";
+            if (nextNotesHtml !== renderedNotesHtml) {
+                notesBody.innerHTML = nextNotesHtml;
+                renderedNotesHtml = nextNotesHtml;
+            }
+            hasNotes = !!nextNotesHtml.trim();
             applyNotes();
         };
 
@@ -545,6 +666,11 @@ const char *kBundleJs = R"JS(/* Omapresent published deck — page chrome around
         document.addEventListener("keydown", function (event) {
             if (event.metaKey || event.ctrlKey || event.altKey) return;
             var key = event.key;
+            if (event.target && event.target.closest) {
+                if (event.target.closest("video, input, textarea, select")) return;
+                if (event.target.closest("button, a") &&
+                    (key === " " || key === "Enter")) return;
+            }
             if (key === "ArrowRight" || key === "ArrowDown" || key === "PageDown" ||
                 key === " " || key === "Enter") {
                 api.next();
@@ -837,7 +963,8 @@ bool WebBundle::writeFile(const QString &relativePath, const QByteArray &data)
 bool WebBundle::copyFile(const QString &sourcePath, const QString &relativePath)
 {
     if (relativePath.startsWith(QStringLiteral("media/"))
-        && !sourceIsInside(sourcePath, d->mediaRoots)) {
+        && !sourceIsInside(sourcePath, d->mediaRoots)
+        && !isTrustedThemeBackground(sourcePath)) {
         return fail(QStringLiteral(
             "Refused to copy %1 because its target is outside the deck directory and asset root.")
                         .arg(sourcePath));
@@ -1051,14 +1178,15 @@ void WebBundle::collectMedia()
 {
     d->media.clear();
 
-    auto take = [this](const QString &value) {
+    auto take = [this](const QString &value, bool allowThemeBackground = false) {
         const QString path = localPathFor(value, m_deckDir);
         if (path.isEmpty() || d->media.contains(path))
             return;
         const QFileInfo info(path);
         if (!info.isFile() || !info.isReadable())
             return;   // a stale or missing asset: the renderer draws the placeholder
-        if (!sourceIsInside(path, d->mediaRoots))
+        if (!sourceIsInside(path, d->mediaRoots)
+            && !(allowThemeBackground && isTrustedThemeBackground(path)))
             return;   // never hide an outside target behind an innocent asset name
         d->media.insert(path, QStringLiteral("media/") + mediaFileName(path));
     };
@@ -1074,7 +1202,7 @@ void WebBundle::collectMedia()
         take(description.value(QStringLiteral("poster")).toString());
     }
 
-    take(m_deck.value(QStringLiteral("backgroundImage")).toString());
+    take(m_deck.value(QStringLiteral("backgroundImage")).toString(), true);
 }
 
 QJsonObject WebBundle::deckForPage(const QString &prefix, const QString &view) const
@@ -1093,8 +1221,13 @@ QJsonObject WebBundle::deckForPage(const QString &prefix, const QString &view) c
     deck.insert(QStringLiteral("view"), view);
 
     QJsonObject assets = deck.value(QStringLiteral("assets")).toObject();
-    for (const QString &key : assets.keys())
-        assets.insert(key, rewrite(assets.value(key).toString()));
+    for (const QString &key : assets.keys()) {
+        const QString value = assets.value(key).toString();
+        // The shared renderer keeps this URL behind an explicit load button.
+        // Retaining it makes web output match preview, present and PDF without
+        // making a request when the page opens.
+        assets.insert(key, isRemoteHttpUrl(value) ? value : rewrite(value));
+    }
     deck.insert(QStringLiteral("assets"), assets);
 
     QJsonObject media = deck.value(QStringLiteral("media")).toObject();
@@ -1170,6 +1303,8 @@ QString WebBundle::deckTitle() const
     QString title = publish.value(QStringLiteral("title")).toString().trimmed();
     if (title.isEmpty())
         title = frontmatter.value(QStringLiteral("title")).toString().trimmed();
+    if (title.isEmpty())
+        title = firstHeading(m_deck.value(QStringLiteral("slides")).toArray());
     if (title.isEmpty())
         title = publish.value(QStringLiteral("slug")).toString().trimmed();
     if (title.isEmpty())

@@ -153,6 +153,23 @@ with a scroll surface when it does not (spec §4.7).
 
 `render.js` sets them from `deck.palette` on every `render`/`update`.
 
+An unresolved image uses `backgroundImage` as its visual fallback in preview,
+presentation, PDF and both web views. The `missing:` tag is hidden only in
+present mode. A missing or rejected background leaves the themed background
+colour in place and keeps the tag in every other mode.
+
+For a published bundle, ordinary local media must resolve inside the canonical
+deck directory or configured asset `root`. There is one narrow wallpaper
+exception. `backgroundImage` may name exactly
+`$XDG_STATE_HOME/omarchy/current/background` (normally
+`~/.local/state/omarchy/current/background`). The publisher accepts a regular
+file there only when the state root and `current` are real directories and
+their canonical paths remain nested. It accepts a symlink there only when the
+real target remains inside the real, non-symlink `current/theme` directory. It
+rejects every other outside path and rewrites it to empty. This rule keeps the
+theme background without allowing a deck asset, parent link, or replaced
+wallpaper link to package an arbitrary outside file.
+
 ## 6. Testability
 
 `render.js` must keep its pure logic — comment stripping is C++'s job, but
@@ -165,5 +182,15 @@ in `tests/renderer/*.test.mjs` and run via `bin/test`.
 
 No network at runtime. Vendored `markdown-it`, `katex` and a QR library live
 in `src/renderer/vendor/` with their licences in
-`src/renderer/vendor/LICENSES.md`. The only network calls in the whole app are
-the explicit video pre-fetch (spec §4.8) and publish (spec §9), both in C++.
+`src/renderer/vendor/LICENSES.md`. Rendering a deck must make zero requests.
+
+An `http(s)` image in `assets` and an uncached remote video remain inert data.
+The renderer draws a themed load or play button without putting the remote URL
+in an `img`, `video`, or `iframe` source. It assigns that source only after the
+reader activates the matching button. This explicit action is the only page
+runtime network path. PDF output keeps the inert button.
+
+The C++ network paths remain the explicit video pre-fetch (spec §4.8) and
+publish (spec §9). A published bundle retains a remote image URL only so the
+same explicit load action works there. Opening the bundle offline still renders
+the complete deck shell and never attempts that URL.

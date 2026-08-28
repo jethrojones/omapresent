@@ -2,11 +2,15 @@
 
 #include <QDir>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 
 #ifdef Q_OS_UNIX
@@ -24,6 +28,28 @@
 // src/renderer/ to prove the two fit together.
 
 namespace {
+
+class ScopedEnvironment {
+public:
+    ScopedEnvironment(const QByteArray &name, const QByteArray &value)
+        : m_name(name), m_old(qgetenv(name.constData())), m_had(qEnvironmentVariableIsSet(name.constData()))
+    {
+        qputenv(m_name.constData(), value);
+    }
+
+    ~ScopedEnvironment()
+    {
+        if (m_had)
+            qputenv(m_name.constData(), m_old);
+        else
+            qunsetenv(m_name.constData());
+    }
+
+private:
+    QByteArray m_name;
+    QByteArray m_old;
+    bool m_had = false;
+};
 
 void writeText(const QString &path, const QString &text)
 {
@@ -336,6 +362,196 @@ private slots:
         QVERIFY(!html.contains(QStringLiteral("id=\"op-notes\"")));
     }
 
+    void publishedSubtitleIsVisibleAndToggleableInBrowser()
+    {
+        const QString chromium = QStringLiteral("/usr/bin/chromium");
+        if (!QFileInfo::exists(chromium))
+            QSKIP("Chromium is not installed.");
+
+        const QString renderer = QFINDTESTDATA("../src/renderer");
+        if (renderer.isEmpty())
+            QSKIP("src/renderer is not beside the test binary");
+
+        QTcpServer imageServer;
+        QVERIFY(imageServer.listen(QHostAddress::LocalHost, 0));
+
+        QJsonObject deck = sampleDeck();
+        QJsonObject frontmatter = deck.value(QStringLiteral("frontmatter")).toObject();
+        frontmatter.remove(QStringLiteral("title"));
+        deck.insert(QStringLiteral("frontmatter"), frontmatter);
+        const QString remoteNoteImage =
+            QStringLiteral("http://127.0.0.1:%1/note.png")
+                .arg(imageServer.serverPort());
+        QJsonObject assets = deck.value(QStringLiteral("assets")).toObject();
+        assets.insert(remoteNoteImage, remoteNoteImage);
+        deck.insert(QStringLiteral("assets"), assets);
+        deck.insert(QStringLiteral("slides"), QJsonArray{
+            slide(0, QStringLiteral("Visible speaker note with ![Remote note image](%1).\n\n"
+                                    "```markdown\n# Example only\n```")
+                         .arg(remoteNoteImage)),
+            slide(1, QStringLiteral("# Browser fallback title")),
+        });
+
+        WebBundle bundle;
+        bundle.setDeck(deck);
+        bundle.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        bundle.setRendererDir(renderer);
+        QVERIFY2(bundle.build(outputDir()), qPrintable(bundle.lastError()));
+
+        const QString htmlPath = outputDir() + QStringLiteral("/index.html");
+        QString html = readText(htmlPath);
+        const QString probe = QStringLiteral(R"HTML(
+<script>
+setTimeout(function () {
+    var notes = document.getElementById("op-notes");
+    var toggle = document.getElementById("op-notes-toggle");
+    var rect = notes.getBoundingClientRect();
+    var visible = !notes.hidden && getComputedStyle(notes).display !== "none" &&
+        rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight + 1;
+    document.body.dataset.subtitleVisible = String(visible);
+    document.body.dataset.subtitleHasText = String(
+        notes.textContent.includes("Visible speaker note"));
+    document.body.dataset.pageTitle = document.title;
+    var imageLoader = notes.querySelector("[data-op-remote-image]");
+    document.body.dataset.noteImageDeferred = String(
+        !!imageLoader && !notes.querySelector("img[src^='http']"));
+    imageLoader.click();
+    var activatedImage = notes.querySelector("img[src^='http://127.0.0.1:']");
+    document.body.dataset.noteImageActivated = String(!!activatedImage);
+    activatedImage.addEventListener("load", function () {
+        window.omapresent.scrollBy(0);
+        setTimeout(function () {
+            document.body.dataset.noteImagePersisted = String(
+                !!notes.querySelector("img[src^='http://127.0.0.1:']") &&
+                !notes.querySelector("[data-op-remote-image]"));
+            toggle.focus();
+            toggle.dispatchEvent(new KeyboardEvent("keydown", {
+                key: "ArrowRight", bubbles: true, cancelable: true
+            }));
+            setTimeout(function () {
+                document.body.dataset.chromeKeySlide =
+                    document.querySelector(".op-slide").dataset.slideIndex;
+            }, 50);
+        }, 100);
+    });
+    toggle.click();
+    document.body.dataset.subtitleHiddenAfterToggle = String(notes.hidden);
+    toggle.click();
+    rect = notes.getBoundingClientRect();
+    document.body.dataset.subtitleVisibleAfterToggle = String(
+        !notes.hidden && getComputedStyle(notes).display !== "none" &&
+        rect.height > 0 && rect.bottom <= innerHeight + 1);
+}, 700);
+</script>
+)HTML");
+        html.replace(QStringLiteral("</body>"), probe + QStringLiteral("</body>"));
+        writeText(htmlPath, html);
+
+        const QString profile = sandbox(QStringLiteral("chromium-profile"));
+        QDir().mkpath(profile);
+        QProcess browser;
+        browser.start(chromium, {
+            QStringLiteral("--headless"), QStringLiteral("--no-sandbox"),
+            QStringLiteral("--disable-gpu"),
+            QStringLiteral("--allow-file-access-from-files"),
+            QStringLiteral("--user-data-dir=") + profile,
+            QStringLiteral("--virtual-time-budget=2200"),
+            QStringLiteral("--dump-dom"), QUrl::fromLocalFile(htmlPath).toString(),
+        });
+        QVERIFY2(browser.waitForStarted(5000), qPrintable(browser.errorString()));
+        int imageRequests = 0;
+        const QByteArray pixel = QByteArray::fromBase64(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        QElapsedTimer deadline;
+        deadline.start();
+        while (browser.state() != QProcess::NotRunning && deadline.elapsed() < 15000) {
+            if (!imageServer.waitForNewConnection(50)) {
+                QCoreApplication::processEvents();
+                continue;
+            }
+            while (imageServer.hasPendingConnections()) {
+                QTcpSocket *socket = imageServer.nextPendingConnection();
+                socket->waitForReadyRead(1000);
+                const QByteArray request = socket->readAll();
+                if (request.startsWith("GET /note.png ")) {
+                    imageRequests += 1;
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: "
+                                  + QByteArray::number(pixel.size())
+                                  + "\r\nConnection: close\r\n\r\n" + pixel);
+                } else {
+                    socket->write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                }
+                socket->waitForBytesWritten(1000);
+                socket->disconnectFromHost();
+                socket->deleteLater();
+            }
+            QCoreApplication::processEvents();
+        }
+        QVERIFY2(browser.state() == QProcess::NotRunning,
+                 "Chromium did not finish within 15 seconds.");
+        QCOMPARE(browser.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(browser.exitCode(), 0);
+        QCOMPARE(imageRequests, 1);
+
+        const QString rendered = QString::fromUtf8(browser.readAllStandardOutput());
+        QVERIFY(rendered.contains(QStringLiteral("data-subtitle-visible=\"true\"")));
+        QVERIFY(rendered.contains(QStringLiteral("data-subtitle-has-text=\"true\"")));
+        QVERIFY(rendered.contains(QStringLiteral("data-page-title=\"Browser fallback title\"")));
+        QVERIFY(rendered.contains(QStringLiteral("data-note-image-deferred=\"true\"")));
+        QVERIFY(rendered.contains(QStringLiteral("data-note-image-activated=\"true\"")));
+        QVERIFY(rendered.contains(QStringLiteral("data-note-image-persisted=\"true\"")));
+        QVERIFY(rendered.contains(QStringLiteral("data-chrome-key-slide=\"1\"")));
+        QVERIFY(rendered.contains(QStringLiteral("data-subtitle-hidden-after-toggle=\"true\"")));
+        QVERIFY(rendered.contains(QStringLiteral("data-subtitle-visible-after-toggle=\"true\"")));
+    }
+
+    void publishedTitleFallsBackToFirstVisibleHeading()
+    {
+        QJsonObject deck = sampleDeck();
+        QJsonObject frontmatter = deck.value(QStringLiteral("frontmatter")).toObject();
+        frontmatter.remove(QStringLiteral("title"));
+        frontmatter.insert(QStringLiteral("publish"), QJsonObject{
+            {QStringLiteral("slug"), QStringLiteral("slug-must-not-win")}
+        });
+        deck.insert(QStringLiteral("frontmatter"), frontmatter);
+        deck.insert(QStringLiteral("slides"), QJsonArray{
+            QJsonObject{
+                {QStringLiteral("index"), -1},
+                {QStringLiteral("markdown"), QStringLiteral("# Hidden recall heading")},
+                {QStringLiteral("recallKey"), QStringLiteral("q")},
+                {QStringLiteral("skip"), true},
+            },
+            slide(0, QStringLiteral("```markdown\n```not a close\n# Example only\n```\n\n"
+                                    "## First visible heading ###")),
+            slide(1, QStringLiteral("# Later heading")),
+        });
+
+        WebBundle bundle;
+        bundle.setDeck(deck);
+        bundle.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        bundle.setRendererDir(sandbox(QStringLiteral("renderer")));
+        QVERIFY2(bundle.build(outputDir()), qPrintable(bundle.lastError()));
+
+        const QString deckHtml = readText(outputDir() + QStringLiteral("/index.html"));
+        const QString readHtml = readText(outputDir() + QStringLiteral("/read/index.html"));
+        QVERIFY(deckHtml.contains(
+            QStringLiteral("<title>First visible heading</title>")));
+        QVERIFY(readHtml.contains(
+            QStringLiteral("<h1>First visible heading</h1>")));
+
+        deck.insert(QStringLiteral("slides"), QJsonArray{
+            slide(0, QStringLiteral("Setext title\n==="))
+        });
+        WebBundle setextBundle;
+        setextBundle.setDeck(deck);
+        setextBundle.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        setextBundle.setRendererDir(sandbox(QStringLiteral("renderer")));
+        QVERIFY2(setextBundle.build(sandbox(QStringLiteral("out-setext"))),
+                 qPrintable(setextBundle.lastError()));
+        QVERIFY(readText(sandbox(QStringLiteral("out-setext/index.html")))
+                    .contains(QStringLiteral("<title>Setext title</title>")));
+    }
+
     void reportsExactlyWhatItWrote()
     {
         WebBundle bundle;
@@ -423,6 +639,76 @@ private slots:
                 .value(QStringLiteral("backgroundImage")).toString();
         QVERIFY(background.startsWith(QStringLiteral("media/")));
         QVERIFY(QFileInfo::exists(QDir(outputDir()).filePath(background)));
+    }
+
+    void copiesOnlyTheTrustedOmarchyWallpaperOutsideAssetRoots()
+    {
+        const QString stateRoot = sandbox(QStringLiteral("state"));
+        ScopedEnvironment stateHome("XDG_STATE_HOME", stateRoot.toUtf8());
+        const QString current = stateRoot + QStringLiteral("/omarchy/current");
+        const QString wallpaper =
+            current + QStringLiteral("/theme/backgrounds/wallpaper.png");
+        const QString selected = current + QStringLiteral("/background");
+        writeText(wallpaper, QStringLiteral("trusted wallpaper"));
+        if (!makeSymlink(wallpaper, selected))
+            QSKIP("This filesystem cannot create symlinks.");
+
+        QJsonObject deck = sampleDeck();
+        deck.insert(QStringLiteral("backgroundImage"), fileUrl(selected));
+        WebBundle bundle;
+        bundle.setDeck(deck);
+        bundle.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        bundle.setRendererDir(sandbox(QStringLiteral("renderer")));
+        QVERIFY2(bundle.build(outputDir()), qPrintable(bundle.lastError()));
+
+        const QString bundled =
+            inlinedDeck(outputDir() + QStringLiteral("/index.html"))
+                .value(QStringLiteral("backgroundImage")).toString();
+        QVERIFY(bundled.startsWith(QStringLiteral("media/")));
+        QCOMPARE(readText(QDir(outputDir()).filePath(bundled)),
+                 QStringLiteral("trusted wallpaper"));
+
+        const QString secret = sandbox(QStringLiteral("outside/secret.png"));
+        writeText(secret, QStringLiteral("must not publish"));
+        QVERIFY(QFile::remove(selected));
+        QVERIFY(makeSymlink(secret, selected));
+
+        WebBundle rejected;
+        rejected.setDeck(deck);
+        rejected.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        rejected.setRendererDir(sandbox(QStringLiteral("renderer")));
+        const QString rejectedOutput = sandbox(QStringLiteral("out-rejected-wallpaper"));
+        QVERIFY2(rejected.build(rejectedOutput), qPrintable(rejected.lastError()));
+        QCOMPARE(inlinedDeck(rejectedOutput + QStringLiteral("/index.html"))
+                     .value(QStringLiteral("backgroundImage")).toString(),
+                 QString());
+        for (const QString &relative : rejected.files()) {
+            if (relative.startsWith(QStringLiteral("media/")))
+                QVERIFY(readText(QDir(rejectedOutput).filePath(relative))
+                        != QStringLiteral("must not publish"));
+        }
+
+        QVERIFY(QDir(current).removeRecursively());
+        const QString outsideCurrent = sandbox(QStringLiteral("outside/fake-current"));
+        writeText(outsideCurrent + QStringLiteral("/background"),
+                  QStringLiteral("parent link secret"));
+        QVERIFY(makeSymlink(outsideCurrent, current));
+
+        WebBundle parentRejected;
+        parentRejected.setDeck(deck);
+        parentRejected.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        parentRejected.setRendererDir(sandbox(QStringLiteral("renderer")));
+        const QString parentOutput = sandbox(QStringLiteral("out-parent-wallpaper"));
+        QVERIFY2(parentRejected.build(parentOutput),
+                 qPrintable(parentRejected.lastError()));
+        QCOMPARE(inlinedDeck(parentOutput + QStringLiteral("/index.html"))
+                     .value(QStringLiteral("backgroundImage")).toString(),
+                 QString());
+        for (const QString &relative : parentRejected.files()) {
+            if (relative.startsWith(QStringLiteral("media/")))
+                QVERIFY(readText(QDir(parentOutput).filePath(relative))
+                        != QStringLiteral("parent link secret"));
+        }
     }
 
     void streamsLargeMediaWithoutChangingBytes()
@@ -555,7 +841,7 @@ private slots:
         }
     }
 
-    void unresolvedAndRemoteReferencesBecomePlaceholders()
+    void unresolvedReferencesBecomePlaceholdersAndRemoteImagesStayDeferred()
     {
         QJsonObject deck = sampleDeck();
         QJsonObject assets = deck.value(QStringLiteral("assets")).toObject();
@@ -574,11 +860,16 @@ private slots:
         const QJsonObject written =
             inlinedDeck(outputDir() + QStringLiteral("/index.html"))
                 .value(QStringLiteral("assets")).toObject();
-        // An unresolved reference stays unresolved; a remote image we cannot
-        // vendor becomes one, rather than a link off the bundle.
+        // An unresolved local reference stays unresolved. A remote image URL
+        // remains inert deck data for the renderer's explicit load button.
         QCOMPARE(written.value(QStringLiteral("missing.png")).toString(), QString());
-        QCOMPARE(written.value(QStringLiteral("remote.png")).toString(), QString());
+        QCOMPARE(written.value(QStringLiteral("remote.png")).toString(),
+                 QStringLiteral("https://example.com/remote.png"));
         QCOMPARE(written.value(QStringLiteral("stale.png")).toString(), QString());
+
+        const QString bundleJs = readText(outputDir() + QStringLiteral("/assets/bundle.js"));
+        QVERIFY(bundleJs.contains(QStringLiteral("video, input, textarea, select")));
+        QVERIFY(bundleJs.contains(QStringLiteral("button, a")));
     }
 
     void keepsHostedVideoEmbedUrls()
