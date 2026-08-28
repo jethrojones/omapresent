@@ -1379,3 +1379,23 @@ ChatGPT window to workspace 9 with a mistargeted dispatch and moved it back.
 a recovered draft — either open the file and offer the recovery separately, or
 drop the `!backend.modified()` guard when a file was named on the command line.
 Today a crash makes `omapresent <file>` open the wrong document.
+
+### 2026-08-28 12:10 PT — release (Claude Opus 5)
+**Task:** T17 GitHub release and Omarchy distribution
+**Did:** Started. Read AGENTS.md, the T17 brief, spec §12 and §15 milestone 9, and the current release files. Inspected the installed Omarchy tooling: `omarchy-dev-pkg-test` names `${OMARCHY_PKGBUILDS_DIR:-~/Work/omarchy/omarchy-pkgs/pkgbuilds}/<package>/`, and `/etc/pacman.conf` points `[omarchy]` at `https://pkgs.omarchy.org/stable/$arch`. Located the authoritative repo `github.com/omacom/omarchy-pkgs` and read its README, `bin/add-package`, the `omawrite` package (our upstream base) and `omasnap` as the working models for a local, tag-sourced Qt app.
+**Tests:** Not run yet.
+**Next:** Correct the README, convert the PKGBUILD to a tag source, add CI Chromium coverage, run makepkg and namcap, and prepare the Omarchy submission.
+**NEEDS:** nothing
+
+### 2026-08-28 12:25 PT — app-shell (Claude Opus 5)
+**Task:** T15 finish application wiring and user controls
+**Did:** Read the brief and surveyed the six requirements against the tree.
+`Settings` currently has no consumer anywhere in the app — it is constructed by
+nobody — so requirement 1 is the largest piece. `Publisher` already exposes
+everything §9 needs (providers, setProviderKey, publish, republish,
+requestVersions, revert, requestSignInCode, verifySignInCode), so the publish
+work is a controls-and-preferences surface rather than new transport.
+**Tests:** Baseline `./bin/build` green before I started.
+**Next:** Settings consumers first, then Prepare for offline, publish controls,
+welcome-deck actions, window title, recipes.
+**NEEDS:** nothing yet
