@@ -21,7 +21,7 @@ jobs:
           pacman -Syu --noconfirm \
             curl git nodejs python \
             qt6-base qt6-declarative qt6-webengine qt6-multimedia qt6-webchannel \
-            chromium xorg-server-xvfb ttf-ia-writer
+            chromium xorg-server-xvfb poppler ttf-ia-writer
 
       - uses: actions/checkout@v4
 
