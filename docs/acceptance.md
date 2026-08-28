@@ -210,3 +210,14 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   mako, swaync, dunst and Omarchy's toggle-only helper, the last by reading the
   state it prints when flipped. Visual verification of the two windows is still
   outstanding and is assigned to `app-shell`.
+- **2026-08-27 — packaging, actually built.** The `media` agent ran `makepkg`
+  rather than trusting `bash -n`, and I unpacked the result myself:
+  `omapresent-0.1.0-1-x86_64.pkg.tar.zst` contains `/usr/bin/omapresent`,
+  `LICENSE`, `NOTICE`, `/usr/share/omapresent/welcome.md`, the whole
+  `skill/` tree (SKILL.md + four references), the `.desktop` file and the
+  scalable icon. No bundled fonts, no `yt-dlp`.
+  - **Spec deviation, deliberate:** §12 lists `qt6-quickcontrols2` as a
+    dependency. No such Arch package exists — Quick Controls 2 ships inside
+    `qt6-declarative` — so as written the package could never have installed.
+    Dropped, and `qt6-webchannel`, `hicolor-icon-theme` and `ttf-ia-writer`
+    added. The font is a dependency, not a bundle, which still satisfies §14.2.
