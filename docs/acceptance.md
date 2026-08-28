@@ -323,3 +323,23 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   clicking that it will reach the network.
 - **SEC-001 verified fixed, independently.** See above — escaping symlink
   refused, symlink inside the root still resolves.
+- **The regression guard for the present-mode bug was itself verified.** The
+  integration suite gained `everyQmlFileIsRegisteredAsAResource` and
+  `everyQrcPathNamedInCppResolves`. A test that passes is worthless if it would
+  not have caught the bug, so I reintroduced the exact defect — deleted
+  `AudienceWindow.qml` from `resources.qrc` — and confirmed **both** tests fail,
+  then restored it. They genuinely guard the thing that made present mode not
+  exist.
+- **PDF export checked by hand against §8.** `aspect: "4:3"` produces a
+  960 × 720 pt page and `"16:9"` produces 960 × 540 — correct in both cases. A
+  deck with `--- {q, skip}` and `--- {w}` exports 4 pages in document order
+  (Before / SKIPPED / NORMAL / After), so recall slides including skipped ones
+  do appear in the export as §8 requires. The four failures in the new
+  `ExportTest` suite are therefore **test-harness bugs, not product bugs**, and
+  the agent was told so explicitly — the risk otherwise is that it "fixes"
+  correct behaviour to make a red test green.
+- **First run and session state.** `~/.local/state/omapresent/sessions.json` is
+  written as §10 requires. The first-run skill link and welcome deck correctly
+  do nothing from a build tree, because both read from `/usr/share/omapresent/`,
+  which only exists once packaged — and `media` verified the package installs
+  both there. Opening a deck does not mark it modified.
