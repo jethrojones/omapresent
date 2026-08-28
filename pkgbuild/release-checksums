@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Hash a published tag's source tarball and write it into the default-branch
+# PKGBUILD.
+#
+# The PKGBUILD ships with a zero placeholder because a GitHub tag archive
+# contains the PKGBUILD itself. Hashing and embedding that archive before the
+# tag exists would be self-referential. Run this after the tag is pushed and
+# before the release is published. CI checks the tag version on tag push, then
+# checks this checksum on the published release.
+#
+#   pkgbuild/release-checksums            # uses the PKGBUILD's own pkgver
+#   pkgbuild/release-checksums v0.2.0     # and bumps pkgver to match
+set -euo pipefail
+
+if [[ ${1:-} == '-h' || ${1:-} == '--help' ]]; then
+  sed -n '1,14p' "$0"
+  exit 0
+fi
+
+here="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+pkgbuild="$here/PKGBUILD"
+
+url=$(sed -n "s/^url='\(.*\)'$/\1/p" "$pkgbuild")
+[ -n "$url" ] || { echo "no url= in $pkgbuild" >&2; exit 1; }
+
+tag="${1:-}"
+if [ -z "$tag" ]; then
+  tag="v$(sed -n 's/^pkgver=//p' "$pkgbuild")"
+fi
+case "$tag" in
+  v*) ;;
+  *) echo "tag must look like v1.2.3, got: $tag" >&2; exit 1 ;;
+esac
+pkgver="${tag#v}"
+
+tarball="$url/archive/refs/tags/$tag.tar.gz"
+echo "hashing $tarball"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+# --fail so a 404 on an unpushed tag is an error, not an HTML page hashed into
+# the PKGBUILD.
+if ! curl -fsSL -o "$tmp/source.tar.gz" "$tarball"; then
+  echo "could not download $tarball" >&2
+  echo "push the tag first: git tag -a $tag -m ... && git push origin $tag" >&2
+  exit 1
+fi
+
+sum=$(sha256sum "$tmp/source.tar.gz" | cut -d' ' -f1)
+
+# Sanity: the tarball has to unpack to the directory the PKGBUILD builds in.
+tar -tzf "$tmp/source.tar.gz" > "$tmp/entries"
+if ! sed -n '1p' "$tmp/entries" | grep -q "^omapresent-$pkgver/"; then
+  echo "warning: $tag does not unpack to omapresent-$pkgver/" >&2
+fi
+
+sed -i \
+  -e "s/^pkgver=.*/pkgver=$pkgver/" \
+  -e "s/^  sha256sums=('.*')/  sha256sums=('$sum')/" \
+  "$pkgbuild"
+
+# Keep the ready-to-submit Omarchy package tree in lockstep when it exists.
+submission="$here/omarchy-pkgs/omapresent/PKGBUILD"
+if [ -f "$submission" ]; then
+  sed -i \
+    -e "s/^pkgver=.*/pkgver=$pkgver/" \
+    -e "s/^  sha256sums=('.*')/  sha256sums=('$sum')/" \
+    "$submission"
+fi
+
+echo "pkgver=$pkgver"
+echo "sha256sums=('$sum')"
+echo
+echo "Now: git add pkgbuild/PKGBUILD && git commit"

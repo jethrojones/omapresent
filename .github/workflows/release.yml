@@ -1,0 +1,117 @@
+name: Release
+
+permissions:
+  contents: write
+
+# Publishing a release is a deliberate, human act (see pkgbuild/RELEASING.md).
+# Nothing here creates one. Pushing a tag only checks its version, so a mistake
+# is caught while the tag can still be moved;
+# building and attaching the package waits until someone publishes the release.
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+
+jobs:
+  verify-tag:
+    name: Tag version is valid
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm curl git
+
+      - uses: actions/checkout@v4
+        with:
+          # A tag push checks the tag's version only. A published release checks
+          # the checksum committed on the default branch after the tag hash was
+          # calculated. See pkgbuild/RELEASING.md.
+          ref: ${{ github.event_name == 'release' && github.event.repository.default_branch || github.ref }}
+
+      - name: pkgver matches the tag; release event verifies the checksum
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name || github.ref_name }}"
+          case "$tag" in
+            v*) ;;
+            *) echo "::error::Not a version tag: $tag"; exit 1 ;;
+          esac
+
+          pkgver=$(sed -n 's/^pkgver=//p' pkgbuild/PKGBUILD)
+          if [ "v$pkgver" != "$tag" ]; then
+            echo "::error::pkgbuild/PKGBUILD says pkgver=$pkgver, but the tag is $tag."
+            exit 1
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "$tag has the expected pkgver. The checksum is filled after the immutable tag archive exists."
+            exit 0
+          fi
+
+          sum=$(sed -n "s/^  sha256sums=('\\(.*\\)')/\\1/p" pkgbuild/PKGBUILD)
+          if [ -z "$sum" ]; then
+            echo "::error::No sha256sums line found in pkgbuild/PKGBUILD."
+            exit 1
+          fi
+          if [ "$sum" = "0000000000000000000000000000000000000000000000000000000000000000" ]; then
+            echo "::error::pkgbuild/PKGBUILD still carries the placeholder checksum."
+            echo "::error::Run pkgbuild/release-checksums $tag and commit the result."
+            exit 1
+          fi
+
+          # The tarball GitHub serves for this tag is the one users will build,
+          # so hash that rather than anything produced here.
+          curl -fsSL -o release.tar.gz \
+            "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz"
+          actual=$(sha256sum release.tar.gz | cut -d' ' -f1)
+          if [ "$actual" != "$sum" ]; then
+            echo "::error::Checksum mismatch for $tag."
+            echo "::error::  PKGBUILD: $sum"
+            echo "::error::  tarball:  $actual"
+            exit 1
+          fi
+          echo "$tag matches pkgver=$pkgver and sha256=$actual"
+
+  package:
+    name: Build the release package
+    needs: verify-tag
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      # makepkg refuses to run as root, so the build happens as a normal user.
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm curl git github-cli namcap sudo \
+            qt6-base qt6-declarative qt6-webengine qt6-multimedia qt6-webchannel \
+            xdg-desktop-portal ttf-ia-writer imagemagick hicolor-icon-theme
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+
+      - uses: actions/checkout@v4
+        with:
+          # The release tag predates the checksum update by design. Build with
+          # the verified PKGBUILD on the default branch and its tagged source.
+          ref: ${{ github.event.repository.default_branch }}
+
+      # This builds from the tag tarball named in the PKGBUILD, not from the
+      # checkout, so it exercises exactly what a user's `makepkg` will do —
+      # checksum verification included.
+      - name: makepkg from the release tag
+        run: |
+          set -euo pipefail
+          cp -r pkgbuild /tmp/build
+          chown -R builder:builder /tmp/build
+          sudo -u builder bash -c 'cd /tmp/build && makepkg -f --noconfirm'
+
+      - name: namcap the PKGBUILD and the package
+        run: |
+          set -euo pipefail
+          namcap /tmp/build/PKGBUILD
+          namcap /tmp/build/*.pkg.tar.zst
+
+      - name: Attach the package to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" /tmp/build/*.pkg.tar.zst --clobber

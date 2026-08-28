@@ -40,10 +40,10 @@ Open a deck in Omapresent. Then choose one path:
 ## Installation
 
 ### Omarchy Package Repository
-Install using the `omapresent` package:
-```bash
-sudo pacman -S omapresent
-```
+The package submission is prepared, but `omapresent` is not in the Omarchy
+package repository yet. Do not use `pacman -S omapresent` until that changes.
+See [`pkgbuild/RELEASING.md`](pkgbuild/RELEASING.md) for the release and
+submission steps.
 
 ### Build from Source
 ```bash
@@ -54,10 +54,12 @@ cd omapresent
 ```
 
 ### Dependencies
-- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-quickcontrols2`, `qt6-webengine`, `qt6-multimedia`
-- `xdg-desktop-portal`
-- GStreamer plugins: `gst-plugins-base`, `gst-plugins-good`, `gst-plugins-bad`, `gst-plugins-ugly`
-- Fonts: System `iA Writer S` family (`iA Writer Quattro S`, `iA Writer Mono S`)
+- Runtime: `hicolor-icon-theme`, `qt6-base`, `qt6-declarative`,
+  `qt6-webengine`, `qt6-webchannel`, `qt6-multimedia`,
+  `xdg-desktop-portal`, and `ttf-ia-writer`
+- Build only: `imagemagick`
+- The package does not use GStreamer or bundle fonts. QtWebEngine supplies the
+  HTML video path, and the iA Writer S fonts come from the system package.
 
 ---
 

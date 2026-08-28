@@ -10,22 +10,80 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
+      # chromium is not optional. tests/renderer/{interaction,visual}.test.mjs
+      # skip themselves when /usr/bin/chromium is missing, which is exactly how
+      # a browser suite quietly stops running; the guard step below turns that
+      # skip into a failure, and this line is what keeps the guard satisfied.
+      # qt6-multimedia is a makedepend (omapresent.pro's `QT += multimedia`).
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm \
-            git nodejs python qt6-base qt6-declarative qt6-webengine \
-            qt6-multimedia xorg-server-xvfb
+            curl git nodejs python \
+            qt6-base qt6-declarative qt6-webengine qt6-multimedia qt6-webchannel \
+            chromium xorg-server-xvfb ttf-ia-writer
 
       - uses: actions/checkout@v4
 
       - name: Build
         run: ./bin/build
 
+      # QtWebEngine bundles Chromium, and Chromium's sandbox cannot start as
+      # root inside a container. Without this the export and publish suites die
+      # on a SIGTRAP that has nothing to do with the code under test.
       - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QPA_PLATFORMTHEME: ""
+          QTWEBENGINE_DISABLE_SANDBOX: 1
         run: ./bin/test
+
+      # ./bin/test reports a skipped browser suite as success. Run the two
+      # Chromium-backed suites again on their own and read the TAP plan: any
+      # "# SKIP" here means the browser never launched, and a green run that
+      # asserted nothing is worse than a red one.
+      - name: Browser suites must not skip
+        run: |
+          set -euo pipefail
+          test -x /usr/bin/chromium
+          node --test --test-reporter=tap \
+            tests/renderer/interaction.test.mjs \
+            tests/renderer/visual.test.mjs | tee browser-suites.tap
+          if grep -qE '^ok .*# (SKIP|skip)' browser-suites.tap; then
+            echo "::error::A Chromium-backed suite skipped instead of running."
+            exit 1
+          fi
+          if [ "$(grep -cE '^(ok|not ok) ' browser-suites.tap)" -eq 0 ]; then
+            echo "::error::The Chromium-backed suites reported no tests at all."
+            exit 1
+          fi
 
       - name: Skill and spec agree
         run: ./bin/check-skill-sync
 
-      - name: Package script is valid shell
-        run: bash -n pkgbuild/PKGBUILD
+      - name: Package definition is valid
+        run: |
+          set -euo pipefail
+          pacman -S --noconfirm namcap
+          bash -n pkgbuild/PKGBUILD
+          namcap pkgbuild/PKGBUILD
+
+      # A release tarball that is missing a file the PKGBUILD installs fails at
+      # `makepkg` time on a user's machine, long after the tag is immutable.
+      - name: Release tarball carries everything the package installs
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$PWD"
+          git archive --format=tar HEAD | tar -t > tracked-files.txt
+          missing=0
+          while read -r path; do
+            grep -qxF "$path" tracked-files.txt || { echo "missing from the tag: $path"; missing=1; }
+          done <<'PATHS'
+          LICENSE
+          NOTICE
+          welcome/welcome.md
+          skill/SKILL.md
+          pkgbuild/omapresent.png
+          pkgbuild/omapresent.desktop
+          src/renderer/vendor/LICENSES.md
+          PATHS
+          exit "$missing"
