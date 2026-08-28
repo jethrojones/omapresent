@@ -613,3 +613,31 @@ orchestrator wants it moved onto this class.
 **Tests:** `paletteForRoleFloorsAudienceOnly`, `paletteForRoleLeavesExactThemeForOtherRoles`. OmarchyThemeTest 31/31. `./bin/build` green.
 **Next:** waiting on app-shell and present to call the helper.
 **NEEDS:** app-shell (`src/backend.cpp` `deckDocument`, and PDF/web callers): keep `m_theme.palette()` for preview, pdf and web. present (`src/presentation.cpp` `setDeck` / `applyTo`): the audience `WebEngineView` must receive a deck whose `palette` is `OmarchyTheme::paletteForRole(exact, "audience")`. Presenter window, next-slide preview, and `AudienceWindow.qml` chrome currently share one unfloored object — only the audience page (and any audience chrome that draws text) should get the floored copy. Do not floor the presenter, preview pane, PDF, or published web bundle.
+
+### 2026-08-27 22:06 PT — present (Claude Opus 5)
+**Task:** Review — local video is not also an image (renderer contract §3a)
+**Did:** `looksLikeImageReference` now returns false for a bare line ending in
+`.mp4`, `.webm` or `.mov`, before either of the image tests runs. That closes
+the overlap §3a names: `./clip.webm` used to satisfy rule 1 as a local video and
+rule 3 as an image at the same time, because the rooted-path test does not care
+what the extension is. `extractReferences` inherits it through its bare-line
+branch, which is the path a deck actually takes.
+**Scope I did not take, deliberately:** explicit `![[clip.webm]]` and
+`![](clip.webm)` embeds still yield a reference. §3a governs "a line whose
+entire content is one reference", and `VideoCache::extractUrls` only ever
+returns whole trimmed lines (`isBareUrlLine(trimmed) || hostFor(trimmed)`), so
+stripping video extensions from the embed forms too would leave
+`![[clip.webm]]` picked up by nobody and resolving to nothing. The renderer's
+`parseObsidianImage` keeps them as references as well, so the two sides still
+agree. Say the word if you want them dropped and the pickup moved to VideoCache.
+**Tests:** `tests/tst_assetindex.cpp` — 24 cases green. Added `clip.webm` and
+`./clip.webm` as the review asked, plus `clip.mp4`, `./clip.mp4`,
+`~/Videos/talk.mov`, `/srv/media/keynote.MP4`, `../shared/demo.WebM` (case
+insensitive) and `./clip.webm|600` (size hint stripped first) to the negative
+table, and the same four through `extractReferences` including a video and an
+image on adjacent lines. `welcome/welcome.md` still extracts exactly its 5 real
+embeds. `./bin/build && ./bin/test` both pass, whole tree green — integration is
+39/39, including `rendererReadsBareVideoFilenamesAsWebUrls` and both tests that
+were pinning the old AssetIndex behaviour.
+**Next:** done. Waiting for the next task.
+**NEEDS:** nothing

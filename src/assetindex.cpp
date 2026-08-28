@@ -198,6 +198,21 @@ static bool isQrReference(const QString &reference)
     return reference.startsWith(QStringLiteral("qr:"), Qt::CaseInsensitive);
 }
 
+// The three local-video suffixes of the renderer contract §3a. A bare line
+// ending in one of these is a local video and only a video: without this,
+// `./clip.webm` is a video by rule 1 and an image by rule 3 at the same time.
+static bool hasVideoExtension(const QString &str)
+{
+    static const QStringList extensions = {
+        QStringLiteral(".mp4"), QStringLiteral(".webm"), QStringLiteral(".mov")
+    };
+    for (const QString &extension : extensions) {
+        if (str.endsWith(extension, Qt::CaseInsensitive) && str.length() > extension.length())
+            return true;
+    }
+    return false;
+}
+
 // True for a line that is a single token rooted like a path and naming
 // something at the end: "~/photos/holiday", "./img/x", "../up/x", "/mnt/x".
 // A root is what separates a path from a pair of words joined by a slash, and
@@ -494,6 +509,11 @@ bool AssetIndex::looksLikeImageReference(const QString &line)
     parseSizeHint(line.trimmed(), &bare, nullptr, nullptr);
     const QString s = bare.trimmed();
     if (s.isEmpty() || s.contains('\n') || s.contains('\r'))
+        return false;
+
+    // Local video is decided before images (contract §3a), and a line cannot be
+    // both. VideoCache::extractUrls takes these lines instead.
+    if (hasVideoExtension(s))
         return false;
 
     // A known image extension is the strong signal, and the only one that can

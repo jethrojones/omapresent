@@ -102,6 +102,16 @@ void AssetIndexTest::looksLikeImageReference()
         // indistinguishable from "and/or", so it went with it. `sub/photo.png`
         // still works, and so does `./sub/photo`.
         QStringLiteral("sub/photo"),
+        // Local video is classified before images and a line cannot be both
+        // (renderer contract §3a). VideoCache takes these instead.
+        QStringLiteral("clip.webm"),
+        QStringLiteral("./clip.webm"),
+        QStringLiteral("clip.mp4"),
+        QStringLiteral("./clip.mp4"),
+        QStringLiteral("~/Videos/talk.mov"),
+        QStringLiteral("/srv/media/keynote.MP4"),
+        QStringLiteral("../shared/demo.WebM"),
+        QStringLiteral("./clip.webm|600"),
     };
     for (const QString &line : prose)
         QVERIFY2(!AssetIndex::looksLikeImageReference(line), qPrintable(line));
@@ -151,6 +161,18 @@ void AssetIndexTest::extractReferencesIgnoresInlineCodeAndQr()
     // A file that merely starts with the letters is not a QR.
     QCOMPARE(AssetIndex::extractReferences(QStringLiteral("![[qrcode.png]]")),
              QStringList({QStringLiteral("qrcode.png")}));
+
+    // A bare local video is a video and only a video (contract §3a rule 1), so
+    // it never reaches the asset index as an image. VideoCache::extractUrls
+    // picks the same lines up.
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("clip.webm")), QStringList());
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("./clip.webm")), QStringList());
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("~/Videos/talk.mov")), QStringList());
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("/srv/media/keynote.mp4")),
+             QStringList());
+    // An image beside one on the next line still comes through.
+    QCOMPARE(AssetIndex::extractReferences(QStringLiteral("./clip.webm\n\n./poster.png")),
+             QStringList({QStringLiteral("./poster.png")}));
 }
 
 void AssetIndexTest::parseSizeHint()
