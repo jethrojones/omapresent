@@ -963,6 +963,13 @@ open and still pinned by two `LiveSyncTest` cases named after it.
 **Next:** Commit the renderer refinement.
 **NEEDS:** nothing
 
+### 2026-08-28 07:06 PT — root (Codex GPT-5.6 Sol)
+**Task:** Spec §8 CLI PDF export verification
+**Did:** Added a real CLI export suite. It checks default 16:9, 4:3, and 16:10 page boxes; multi-page tall slides with unchanged word geometry; fully expanded fragments; skipped and normal recall slides in document order; and the Ctrl+P QPrintDialog route. No product code changed.
+**Tests:** ExportTest 9/9. A four-page tall-slide PDF also passed visual review. `./bin/build && ./bin/test` passes. Isolated Autoreview is clean.
+**Next:** Keep these as §8 regression guards.
+**NEEDS:** nothing
+
 ### 2026-08-28 07:35 PT — webbundle (Claude Opus 5)
 **Task:** tasks/review/longread-typography.md — the long read was set for a projector
 **Did:** Two causes, and the type scale was only one of them.
@@ -1033,3 +1040,80 @@ Screenshots in `~/Pictures/omapresent/webbundle-verification/`:
   wallpaper to viewers may well be the wrong default, so this may be correct as
   it stands; flagging it only because §4.5 step 5 still describes the old
   behaviour and nobody has decided which one wins for a published deck.
+
+### 2026-08-28 07:10 PT — orchestrator (Claude Opus 5)
+**Task:** Catch-up log. Jethro asked whether everything is going in the worklog;
+it was not. Agents have logged well (62 entries), but I had exactly one entry
+here from setup, and had been putting my own findings in
+`docs/acceptance.md` instead. That file is the right place for the
+requirement-by-requirement record, but it is not this narrative, and the two
+should not have diverged. What follows is the orchestrator's half, backfilled
+from commits and verification runs. Logging here as I go from now on.
+
+**Coordination and infrastructure**
+- Froze the interfaces before any agent started (six headers plus
+  `docs/renderer-contract.md`), each with a compiling stub, so ten agents could
+  work in one tree without waiting on each other.
+- Added `flock` to `bin/build` / `bin/test` after realising eight agents sharing
+  one `build/` would corrupt each other's object files and produce failures
+  belonging to nobody.
+- `bin/test` never built the application, so three CLI security suites skipped
+  themselves everywhere including CI. Fixed; running them immediately surfaced
+  SEC-006.
+- Landed `docs/renderer-contract.md` §3a settling what a bare line is
+  (local video → URL → image → prose) after three components each decided
+  independently and drifted.
+- Vendored markdown-it, KaTeX and qrcode-generator myself when that work was
+  blocking the renderer's critical path; verified all three import and run
+  offline. This collided briefly with the renderer agent's own plan for
+  `vendor/`, which it reconciled — my fault for not announcing it first.
+- Brokered the long-read CSS ownership split between `renderer` (inside `#deck`)
+  and `webbundle` (masthead/chrome/footer outside it) when they could not
+  address each other directly.
+
+**Fixes I made myself, because the owning agent's provider had died**
+- `src/resources.qrc`: registered `AudienceWindow.qml` and
+  `PresenterWindow.qml`. They were written, reviewed and unit-tested and never
+  registered, so `omapresent present` silently opened nothing. Present mode did
+  not exist.
+- `src/presentation.cpp`: `closeWindows()` deleted the windows synchronously
+  from inside `handleKey`, which QML invokes on those very windows — Qt calls
+  that fatal, so every Esc aborted with a core dump. `deleteLater` now.
+- `src/presentation.cpp`: `stop()` released the idle and DND holds *after*
+  `closeWindows()`, so on the crashing path they never ran and a talk left the
+  user's notifications switched off. Released first now.
+- `src/omarchytheme.cpp`: one-line Qt 6 `getHslF` signature fix, after the tree
+  sat red for ~15 minutes blocking every agent's verification.
+- `src/assetindex.h`, `src/renderer/vendor/LICENSES.md`: stale comments.
+- Recovered and committed uncommitted work from four agents that hit their
+  provider session limit mid-task, after verifying it built and passed.
+
+**Verification I did rather than delegated** (detail in `docs/acceptance.md`)
+- Ran the app. Nobody had. Editor, present mode, PDF export, published bundle.
+- Reintroduced the exact `resources.qrc` defect to prove the new regression
+  guard actually catches it. It does.
+- Proved SEC-002 with a listening HTTP server: zero requests on deck open.
+- Proved SEC-001 with a symlink escaping an asset root: refused, while a
+  symlink inside the root still resolves.
+- Proved SEC-006 against the real CLI: directory, unreadable and missing files
+  all exit 1 before the publish path.
+- Checked PDF geometry by hand (`4:3` → 960×720, `16:9` → 960×540) and found
+  four `ExportTest` failures were test-harness bugs, not product bugs — and said
+  so, to stop an agent "fixing" correct behaviour into a red test.
+- Live DND cycle: off → on for the presentation → off after Esc.
+
+**Provider attrition, which became the limiting factor rather than the work**
+- agy (Gemini): individual quota exhausted, ~7 days. Lost `assets` and
+  `skill-docs` mid-task.
+- claude: session limit; lost all four agents at once, recovered ~01:30.
+- grok: weekly limit reached, offered to upgrade or buy credits. That is
+  Jethro's spending decision, not mine, so I dismissed it unselected and treated
+  both grok agents as gone.
+- codex: still running throughout.
+Work was redistributed each time, and file ownership handed back deliberately
+when agents returned so they would not collide with their stand-ins.
+
+**Next:** route the deck-view notes defect the webbundle agent just reported;
+release `src/main.cpp` / `src/backend.cpp` back to app-shell once the reviewer
+is clear of them.
+**NEEDS:** nothing
