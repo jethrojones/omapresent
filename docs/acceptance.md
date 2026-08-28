@@ -241,3 +241,41 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   and looked at the pages: lists now run the full slide width, and the welcome
   deck fell from 61 pages to 49 purely from that fix, exactly the cascade
   predicted. Continuation pages now put the footer on the bottom edge.
+
+## 2026-08-28
+
+- **Adversarial review delivered.** Five findings, one High: an asset symlink can
+  disclose a file from outside the asset root into a published bundle (the
+  fixture uses an `id_rsa`) — the user does confirm publish, but the visible
+  asset name hides what is actually being sent. Two Mediums that matter:
+  **opening a deck makes an unapproved network request**, because the renderer
+  creates eager remote `<iframe>`s and `<video preload="metadata">` elements, so
+  merely opening a file contacts a host the deck author chose — a direct
+  violation of the frozen no-network rule; and a `.omapresent-cache` symlink
+  redirects cache writes outside the deck. Also a bundle-copy memory issue and
+  an output-symlink defect. The review's "checks that passed" list is as useful
+  as its findings: the `command` provider passes deck values through the
+  environment rather than the shell, nothing on the save/watch/first-run path
+  reaches the network, and the publish confirmation is real in both GUI and CLI.
+  All routed. `docs/review-findings.md`.
+- **The app runs.** Launched it on `welcome/welcome.md` on the real display and
+  screenshotted it: the editor renders with Markdown highlighting, word count
+  and status line. Along the way the `app-shell` agent found that
+  `WebEngineScript` is a value type in Qt 6, not a creatable QML element, so
+  declaring one had been failing the whole of `PreviewPane.qml` **silently** —
+  the preview never appeared and nothing said why. Fixed, plus renderer console
+  messages and load failures now reach the app log.
+- **The published bundle is genuinely self-contained.** Built one, copied the
+  whole directory to an unrelated path, and rendered it headless from `file://`
+  with no server. 33 files; **zero** `file:///`, `qrc:` or `/home/jethro`
+  references anywhere in the HTML, CSS or JS. The deck view is right: theme
+  baked in, header, footer tokens resolved, `1 / 25`, prev/next, Notes toggle,
+  "Read as article →" cross-link. §9.1 delivered.
+  - **But the long read is not.** It sets its own header well, then renders the
+    body with slide typography: "Omapresent" at display size inside a ~600px
+    article column, clipped mid-word. §9.2 asks for a well-set article.
+    Reported as `tasks/review/longread-typography.md`.
+- **Four agents lost to session limits at once** (all four Claude ones), mid-task
+  and with uncommitted work. Recovered it: verified the working tree built and
+  the full suite passed, then committed on their behalf. Remaining work
+  redistributed to the live Codex and Grok agents.
