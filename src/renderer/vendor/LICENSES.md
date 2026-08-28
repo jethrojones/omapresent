@@ -1,12 +1,39 @@
-# Vendored renderer libraries
+# Vendored third-party assets
 
-The renderer loads these files from the application resource bundle. It does
-not use a content delivery network.
+Committed here so the renderer works offline: spec §3 allows no network at
+runtime, and rebuilding the app must never require the network either. Each
+file is the upstream distribution build, unmodified.
 
-| Library | Version | Licence | Vendored files | Source |
-| --- | --- | --- | --- | --- |
-| markdown-it | 15.0.1 | MIT | `markdown-it.mjs`, `LICENSE.markdown-it` | <https://github.com/markdown-it/markdown-it> |
-| KaTeX | 0.18.4 | MIT | `katex.mjs`, `katex.css`, `fonts/`, `LICENSE.katex` | <https://github.com/KaTeX/KaTeX> |
-| qrcode-generator | 2.0.4 | MIT | `qrcode.mjs`, `LICENSE.qrcode-generator` | <https://github.com/kazuhikoarase/qrcode-generator> |
+All three are MIT licensed, as is Omapresent.
 
-Created by Codex GPT-5.6 Sol on 2026-08-27 18:32 PT on ombee
+| Library | Version | File(s) | Licence |
+| --- | --- | --- | --- |
+| [markdown-it](https://github.com/markdown-it/markdown-it) | 15.0.1 | `markdown-it.mjs` (browser ESM build) | MIT |
+| [KaTeX](https://katex.org) | 0.18.4 | `katex.mjs`, `katex.min.css`, `fonts/*.woff2` | MIT |
+| [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) | 2.0.4 | `qrcode.mjs` | MIT |
+
+## Notes
+
+- **markdown-it** is the `dist/browser/markdown-it.esm.min.mjs` build, which has
+  its dependencies (mdurl, uc.micro, entities, linkify-it, punycode.js) already
+  bundled in. The plain `dist/markdown-it.mjs` imports those by bare specifier
+  and therefore cannot load in a browser or from this directory.
+- **KaTeX fonts** are the `.woff2` files only — 20 of them, every face
+  `katex.min.css` references. The `.ttf` and `.woff` variants are omitted;
+  QtWebEngine is Chromium and reads woff2.
+- No markdown-it plugins are vendored. Spec §4.2's element list needs none:
+  headings, outlines, lists, code, tables, quotes, math, images and media are
+  either core CommonMark, the renderer's own layout grammar, or KaTeX.
+
+## Refreshing
+
+```sh
+npm install markdown-it katex qrcode-generator
+cp node_modules/markdown-it/dist/browser/markdown-it.esm.min.mjs vendor/markdown-it.mjs
+cp node_modules/katex/dist/katex.mjs vendor/katex.mjs
+cp node_modules/katex/dist/katex.min.css vendor/katex.min.css
+cp node_modules/katex/dist/fonts/*.woff2 vendor/fonts/
+cp node_modules/qrcode-generator/qrcode.mjs vendor/qrcode.mjs
+```
+
+Then re-run `node --test tests/renderer/` and update the versions above.
