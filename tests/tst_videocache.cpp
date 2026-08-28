@@ -44,6 +44,7 @@ private slots:
     void offlineLocalVideoEndToEnd();
     void staleIndexEntryIsNotCached();
     void prefetchUnreachableHostCompletes();
+    void prefetchRefusesSymlinkCacheDir();
 };
 
 static bool writeBytes(const QString &path, const QByteArray &bytes)
@@ -772,6 +773,35 @@ void VideoCacheTest::prefetchUnreachableHostCompletes()
     QCOMPARE(finished.at(0).at(0).toStringList(), QStringList{dead});
     QCOMPARE(cache.describe(dead).value(QStringLiteral("status")).toString(),
              QStringLiteral("embed"));
+}
+
+void VideoCacheTest::prefetchRefusesSymlinkCacheDir()
+{
+    QTemporaryDir sandbox;
+    QVERIFY(sandbox.isValid());
+    const QDir root(sandbox.path());
+    const QString deckDir = root.filePath(QStringLiteral("deck"));
+    const QString outside = root.filePath(QStringLiteral("outside"));
+    QVERIFY(QDir().mkpath(deckDir));
+    QVERIFY(QDir().mkpath(outside));
+    QVERIFY(writeBytes(QDir(deckDir).filePath(QStringLiteral("clip.mp4")),
+                       QByteArrayLiteral("video")));
+    const QString link = QDir(deckDir).filePath(QStringLiteral(".omapresent-cache"));
+    if (!QFile::link(outside, link) || !QFileInfo(link).isSymLink())
+        QSKIP("This filesystem cannot create the symlink needed by SEC-003.");
+
+    VideoCache cache;
+    cache.setDeckDir(deckDir);
+    QVERIFY(cache.cacheDir().isEmpty());
+
+    QSignalSpy finished(&cache, &VideoCache::prefetchFinished);
+    cache.prefetch(QStringList{QStringLiteral("clip.mp4")});
+    QCOMPARE(finished.size(), 1);
+    QVERIFY(!QFileInfo::exists(QDir(outside).filePath(QStringLiteral("index.json"))));
+    QCOMPARE(QDir(outside).entryList(QDir::NoDotAndDotDot | QDir::AllEntries), QStringList());
+    // Local file still describes from the original; we just refuse to write elsewhere.
+    QCOMPARE(cache.describe(QStringLiteral("clip.mp4")).value(QStringLiteral("status")).toString(),
+             QStringLiteral("cached"));
 }
 
 OMAPRESENT_TEST_SUITE(VideoCacheTest)

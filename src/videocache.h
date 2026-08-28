@@ -27,7 +27,9 @@ public:
     ~VideoCache() override;
 
     void setDeckDir(const QString &deckDir);
-    QString cacheDir() const;   // <deckDir>/.omapresent-cache
+    // <deckDir>/.omapresent-cache, or empty when the deck is unset or the
+    // cache path is a symlink / would write outside the deck (SEC-003).
+    QString cacheDir() const;
 
     // What the renderer needs for one URL, resolved from cache when possible:
     //   { "host": "youtube", "embedUrl": "...", "cachedFile": "file:///... or empty",

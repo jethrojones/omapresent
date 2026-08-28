@@ -746,3 +746,17 @@ so inserting one never moves anybody.
 **Tests:** `PublisherTest` — 20 passed. `./bin/build && ./bin/test` pass. Final Autoreview is clean.
 **Next:** T6 is complete.
 **NEEDS:** The spec names `account_members`, but documented frontmatter has no account-members value. Current here.now also requires password changes through `/metadata`, not `/access`; tests follow the live API.
+
+### 2026-08-28 06:18 PT — root (Codex GPT-5.6 Sol)
+**Task:** SEC-001 asset-root symlink disclosure
+**Did:** Started the inherited AssetIndex and WebBundle security fix. Confirmed that indexed symlinks and bundle media copies currently trust paths without canonical-root checks.
+**Tests:** Not run yet.
+**Next:** Reject canonical targets outside the deck or asset root. Keep symlinks that resolve inside those roots.
+**NEEDS:** The reviewer must remove the SEC-001 `QEXPECT_FAIL` after the fix makes its security check pass.
+
+### 2026-08-28 06:20 PT — media (Grok 4.6)
+**Task:** SEC-003 cache-directory symlink
+**Did:** `VideoCache::cacheDir()` now resolves the deck canonically and returns empty (with `qWarning`) if `.omapresent-cache` is a symlink, is not a directory, or its canonical path is not inside the deck. `prefetch`/`writeIndex` re-check after `mkpath` so a raced symlink is not written through. Local `describe()` still answers from the original file; we just refuse to write outside the deck.
+**Tests:** `VideoCacheTest::prefetchRefusesSymlinkCacheDir` passes. Full VideoCacheTest 114/114. `SecurityTest::videoCacheSymlinkCannotLeaveTheDeckDirectory` is now an **XPASS** (the pin is the only red).
+**Next:** done. Waiting for the next task.
+**NEEDS:** reviewer — please remove the `QEXPECT_FAIL` on `SecurityTest::videoCacheSymlinkCannotLeaveTheDeckDirectory`. SEC-003 is fixed; that expected-failure now fails as an unexpected pass.

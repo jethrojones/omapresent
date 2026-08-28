@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QtGlobal>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -403,6 +404,16 @@ QString hostKey(VideoCache::Host host)
     return {};
 }
 
+bool pathIsInside(const QString &parentCanon, const QString &childCanon)
+{
+    if (parentCanon.isEmpty() || childCanon.isEmpty())
+        return false;
+    const QString prefix = parentCanon.endsWith(QLatin1Char('/'))
+        ? parentCanon
+        : parentCanon + QLatin1Char('/');
+    return childCanon == parentCanon || childCanon.startsWith(prefix);
+}
+
 bool isSafeCacheName(const QString &name)
 {
     if (name.isEmpty() || name == QStringLiteral(".") || name == QStringLiteral(".."))
@@ -527,7 +538,33 @@ QString VideoCache::cacheDir() const
 {
     if (m_deckDir.isEmpty())
         return {};
-    return QDir(m_deckDir).filePath(QStringLiteral(".omapresent-cache"));
+
+    const QString deckCanon = QFileInfo(m_deckDir).canonicalFilePath();
+    if (deckCanon.isEmpty())
+        return {};
+
+    const QString joined = QDir(deckCanon).filePath(QStringLiteral(".omapresent-cache"));
+    const QFileInfo cacheInfo(joined);
+    if (cacheInfo.isSymLink()) {
+        qWarning("VideoCache: refusing .omapresent-cache because it is a symlink (%s)",
+                 qUtf8Printable(joined));
+        return {};
+    }
+    if (cacheInfo.exists()) {
+        if (!cacheInfo.isDir()) {
+            qWarning("VideoCache: refusing .omapresent-cache because it is not a directory (%s)",
+                     qUtf8Printable(joined));
+            return {};
+        }
+        const QString cacheCanon = cacheInfo.canonicalFilePath();
+        if (!pathIsInside(deckCanon, cacheCanon)) {
+            qWarning("VideoCache: refusing cache directory outside the deck (%s)",
+                     qUtf8Printable(cacheCanon));
+            return {};
+        }
+        return cacheCanon;
+    }
+    return joined;
 }
 
 QJsonObject VideoCache::readIndex() const
@@ -549,7 +586,11 @@ bool VideoCache::writeIndex(const QJsonObject &index) const
         return false;
     if (!QDir().mkpath(dir))
         return false;
-    QSaveFile file(QDir(dir).filePath(QStringLiteral("index.json")));
+    // Re-check after create: a race could have replaced the path with a symlink.
+    const QString safe = cacheDir();
+    if (safe.isEmpty())
+        return false;
+    QSaveFile file(QDir(safe).filePath(QStringLiteral("index.json")));
     if (!file.open(QIODevice::WriteOnly))
         return false;
     file.write(QJsonDocument(index).toJson(QJsonDocument::Indented));
@@ -846,13 +887,19 @@ void VideoCache::prefetch(const QStringList &urls)
         unique.append(t);
     }
 
-    if (cacheDir().isEmpty()) {
+    const QString dir = cacheDir();
+    if (dir.isEmpty()) {
         emit prefetchProgress(0, unique.size());
         emit prefetchFinished(unique);
         return;
     }
-
-    QDir().mkpath(cacheDir());
+    if (!QDir().mkpath(dir) || cacheDir().isEmpty()) {
+        qWarning("VideoCache: cannot create a safe cache directory under %s",
+                 qUtf8Printable(m_deckDir));
+        emit prefetchProgress(0, unique.size());
+        emit prefetchFinished(unique);
+        return;
+    }
     d->queue = unique;
     d->failed.clear();
     d->done = 0;
