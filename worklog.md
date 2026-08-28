@@ -240,3 +240,24 @@ If any of those should change, say so and I will match.
 **Tests:** Added mid-grey `#767676` on `#808080`, a luminance sweep including mid-tones, an unreachable 7.0 floor that returns the best available, and a preference case on `#767676` where both ends clear 4.5. Then `./bin/build && ./bin/test`.
 **Next:** Done with review 1.
 **NEEDS:** nothing
+
+### 2026-08-27 18:16 PT — media (Grok 4.6)
+**Task:** T13 packaging — make the package actually build and install
+**Did:** Taking over `pkgbuild/` from skill-docs. Starting by correcting `depends` against `pacman -Si` (there is no `qt6-quickcontrols2` package) and the `install -D` glob, then running `makepkg` in a scratch dir.
+**Tests:** not yet
+**Next:** Fix PKGBUILD, run makepkg, inspect the installed tree, namcap if available.
+**NEEDS:** nothing
+
+### 2026-08-27 18:19 PT — media (Grok 4.6)
+**Task:** T13 packaging — make the package actually build and install
+**Did:**
+- Dropped `qt6-quickcontrols2` (not an Arch package; Quick Controls 2 lives in `qt6-declarative`). Spec §12 still names it; logged as a discrepancy. Added `hicolor-icon-theme`, `qt6-webchannel`, `ttf-ia-writer`. No `yt-dlp`, no bundled fonts.
+- Fixed `install -Dm644 skill/reference/*.md dest/` (invalid with several sources) to `install -m644 -t dest files`.
+- Kept local-checkout `source=()` / `cd "$startdir/.."` because there is no tagged release yet and Omarchy local-source packages are consumed as a tree, not a tarball. `build()` now qmake6+make into `$srcdir/build` so it does not share the agents' `build/` directory. Comment in the PKGBUILD says when to switch to `git+#tag=v$pkgver`.
+- `makepkg -f -d` in `/tmp/omapresent-makepkg-*` succeeded (`-d` because `gst-plugins-bad`/`ugly` exist in extra but are not installed here and sudo needs a password; they stay in `depends` so a real pacman install pulls them). Package `omapresent-0.1.0-1-x86_64.pkg.tar.zst`.
+- Installed tree verified: `/usr/bin/omapresent`, `LICENSE`, `NOTICE`, `welcome.md`, whole `skill/` (SKILL.md + four reference files), `.desktop` with `MimeType=text/markdown;`, scalable icon. No fonts, no yt-dlp.
+- `.install` guards gtk-update-icon-cache / update-desktop-database with `command -v` and `|| true`. `post_remove` refreshes those caches (the files are already gone).
+- `namcap` is in extra but not installed; running the unpacked extra package needs `pyalpm`. Manual stand-in: every `depends` name exists via `pacman -Si`; ELF `NEEDED` maps to `qt6-base`, `qt6-declarative`, `qt6-webengine` (plus glibc/gcc). `qt6-multimedia` / gstreamer / `ttf-ia-writer` / portal are runtime, not SONAMEs, kept because spec §12 / appearance DBus / codecs.
+**Tests:** `bash -n` PKGBUILD and `.install`; `desktop-file-validate` clean; `makepkg --printsrcinfo` ok; package listing as above.
+**Next:** done. Waiting for the next task.
+**NEEDS:** nothing

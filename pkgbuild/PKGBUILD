@@ -8,47 +8,55 @@ arch=('x86_64')
 url='https://github.com/jethrojones/omapresent'
 license=('MIT')
 install='omapresent.install'
+# Spec §12 lists qt6-quickcontrols2; that is not a package on Arch — Quick
+# Controls 2 and Quick Dialogs 2 ship inside qt6-declarative. No yt-dlp.
 depends=(
+  'hicolor-icon-theme'
   'qt6-base'
   'qt6-declarative'
-  'qt6-quickcontrols2'
   'qt6-webengine'
   'qt6-multimedia'
+  'qt6-webchannel'
   'xdg-desktop-portal'
   'gst-plugins-base'
   'gst-plugins-good'
   'gst-plugins-bad'
   'gst-plugins-ugly'
+  'ttf-ia-writer'
 )
-makedepends=(
-  'gcc'
-  'make'
-  'qt6-base'
-  'qt6-declarative'
-  'qt6-webengine'
-  'qt6-multimedia'
-)
+# gcc/make come from base-devel, which makepkg already requires.
+makedepends=()
+# Local checkout: this file lives in pkgbuild/ of the git tree. Omarchy
+# consumes local-source packages the same way (the tree is the source).
+# There is no tagged release yet; when one exists, switch to
+#   source=("git+$url.git#tag=v$pkgver")
+# with a real sha256sums entry.
 source=()
 sha256sums=()
 
 build() {
-  cd "$startdir/.."
-  ./bin/build
+  local repo="$startdir/.."
+  mkdir -p "$srcdir/build"
+  cd "$srcdir/build"
+  qmake6 "$repo/omapresent.pro"
+  make -j"$(nproc 2>/dev/null || echo 1)"
 }
 
 package() {
-  cd "$startdir/.."
-  /usr/bin/install -Dm755 build/omapresent "$pkgdir/usr/bin/omapresent"
-  /usr/bin/install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  /usr/bin/install -Dm644 NOTICE "$pkgdir/usr/share/licenses/$pkgname/NOTICE"
-  /usr/bin/install -Dm644 welcome/welcome.md "$pkgdir/usr/share/$pkgname/welcome.md"
+  local repo="$startdir/.."
 
-  # Install bundled agent skill
-  /usr/bin/install -d "$pkgdir/usr/share/$pkgname/skill/reference"
-  /usr/bin/install -Dm644 skill/SKILL.md "$pkgdir/usr/share/$pkgname/skill/SKILL.md"
-  /usr/bin/install -Dm644 skill/reference/*.md "$pkgdir/usr/share/$pkgname/skill/reference/"
+  install -Dm755 "$srcdir/build/omapresent" "$pkgdir/usr/bin/omapresent"
+  install -Dm644 "$repo/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$repo/NOTICE" "$pkgdir/usr/share/licenses/$pkgname/NOTICE"
+  install -Dm644 "$repo/welcome/welcome.md" "$pkgdir/usr/share/$pkgname/welcome.md"
 
-  # Desktop integration
-  /usr/bin/install -Dm644 "$startdir/omapresent.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/omapresent.svg"
-  /usr/bin/install -Dm644 "$startdir/omapresent.desktop" "$pkgdir/usr/share/applications/omapresent.desktop"
+  install -d "$pkgdir/usr/share/$pkgname/skill/reference"
+  install -Dm644 "$repo/skill/SKILL.md" "$pkgdir/usr/share/$pkgname/skill/SKILL.md"
+  install -m644 -t "$pkgdir/usr/share/$pkgname/skill/reference" \
+    "$repo/skill/reference/"*.md
+
+  install -Dm644 "$startdir/omapresent.svg" \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/omapresent.svg"
+  install -Dm644 "$startdir/omapresent.desktop" \
+    "$pkgdir/usr/share/applications/omapresent.desktop"
 }

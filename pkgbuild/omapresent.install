@@ -1,6 +1,10 @@
 post_install() {
-  gtk-update-icon-cache -q -t -f usr/share/icons/hicolor >/dev/null 2>&1 || true
-  update-desktop-database -q >/dev/null 2>&1 || true
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f usr/share/icons/hicolor >/dev/null 2>&1 || true
+  fi
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q >/dev/null 2>&1 || true
+  fi
 }
 
 post_upgrade() {
@@ -8,5 +12,6 @@ post_upgrade() {
 }
 
 post_remove() {
+  # Package files are already gone; refresh the caches they were registered in.
   post_install
 }
