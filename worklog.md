@@ -835,6 +835,13 @@ so inserting one never moves anybody.
 **Next:** Convert SEC-005 when its fix passes. Route SEC-006 through SEC-008 to their owners.
 **NEEDS:** Backend owner — SEC-006 and SEC-007. Settings or publish owner — SEC-008. WebBundle owner — SEC-005 pin remains live.
 
+### 2026-08-28 06:53 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** SEC-002 deferred remote media and long-read renderer typography
+**Did:** Committed SEC-002 as `aa4331a`. Remote video and embed sources now enter the DOM only after play. Cached and local video remain eager. Added an explicit themed play control, keyboard support, hosted autoplay requests, and correct media state for the desktop Space shortcut. Matched publish commit `47f9fa6` with a `#deck`-scoped read branch that uses article type and measure, flows speaker notes as prose, and leaves the slide view unchanged.
+**Tests:** Real Qt open-deck repro made zero HTTP requests. Renderer 41/41. `./bin/build && ./bin/test` passes. Chromium images pass at 1280×900 and 430×900 for the moved `file://` bundle. Both isolated Autoreview gates are clean after their accepted fixes.
+**Next:** Commit the long-read renderer half.
+**NEEDS:** nothing
+
 ### 2026-08-28 06:44 PT — reviewer (Codex GPT-5.6 Sol)
 **Task:** SEC-005 output-root regression pin
 **Did:** Converted `bundleOutputSymlinkCannotLeaveTheOutputRoot` from an expected failure to a normal assertion after the WebBundle fix made it pass. Updated the review report to match.
@@ -848,3 +855,89 @@ so inserting one never moves anybody.
 **Tests:** WebBundleTest 30/30, including a sparse multi-chunk file and both output-symlink forms. SEC-005 passes as a normal security test. `./bin/build && ./bin/test` passes. Final Autoreview is clean.
 **Next:** All inherited WebBundle and AssetIndex review findings are complete.
 **NEEDS:** nothing
+
+### 2026-08-28 06:53 PT — reviewer (Codex GPT-5.6 Sol)
+**Task:** Fix SEC-006, SEC-007, and SEC-008
+**Did:** Started the routed fixes. Confirmed that the CLI ignores `open()` failure, first run accepts a symlinked skills directory, and `patchToml()` returns after the first duplicate key.
+**Tests:** Not run yet.
+**Next:** Add one checked command-file load path, reject escaped skill directories, patch the effective last duplicate key, and convert each security pin.
+**NEEDS:** nothing
+
+### 2026-08-28 06:55 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** Renderer review closeout
+**Did:** Committed the long-read renderer branch as `22624ab`. SEC-002 is `aa4331a`. The publish and renderer halves now agree, and the final images show an article read view with an unchanged deck view.
+**Tests:** `./bin/build && ./bin/test` passes. Renderer 41/41. SEC-002 and long-read Autoreview passes are clean.
+**Next:** Renderer review work is complete.
+**NEEDS:** nothing
+
+### 2026-08-28 06:57 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** Long-read article scale and section rhythm
+**Did:** Accepted the ownership split. Renderer owns only `#deck`. WebBundle owns the masthead, read navigation, and footer. Started a smaller article heading scale and a tighter section separator.
+**Tests:** Not run yet.
+**Next:** Render wide and narrow moved bundles, then run renderer and shared gates.
+**NEEDS:** WebBundle can keep the masthead at 2.6rem. The renderer h1 target is 2.1rem.
+
+### 2026-08-28 06:58 PT — root (Codex GPT-5.6 Sol)
+**Task:** Spec §8 CLI PDF export verification
+**Did:** Started real-PDF checks for canvas geometry, tall-slide pagination and scale, expanded fragments, recall-slide order, and Ctrl+P.
+**Tests:** Not run yet.
+**Next:** Add a CLI-driven export suite that checks Poppler geometry and text output.
+**NEEDS:** nothing
+
+### 2026-08-28 09:30 PT — doc-model (Claude Opus 5)
+**Task:** T14 resource + contrast integration tests, and a spec-deviations note
+**Did:** Six cases added to `tests/tst_integration.cpp` (now 45), one
+`RESOURCES` line added to `tests/tests.pro`, and `docs/spec-deviations.md`
+written. Nothing else touched; I did not go near `src/backend.cpp` or
+`src/main.cpp`.
+
+**The resource seam.** `everyQrcPathNamedInCppResolves` walks `src/*.cpp` for
+`qrc:/...` string literals and asks Qt whether each resolves. The resources are
+now linked into the test binary, so it is the real resource system answering
+rather than a guess about the mapping — that is what the one added line to
+`tests/tests.pro` is for. `everyQrcEntryExistsOnDisk` parses both `.qrc` files
+and checks the reverse, and `everyQmlFileIsRegisteredAsAResource` catches the
+mistake at the moment it is made: a `.qml` written into `src/` and never listed.
+
+Why it matters: present mode never opened at all until today, because
+`AudienceWindow.qml` and `PresenterWindow.qml` were written and unit-tested but
+never added to `src/resources.qrc`. Every suite stayed green, because a unit
+test reads the file from disk and the running app reads it from a resource, and
+until now nothing put those two facts in the same room. All three tests have a
+guard against passing vacuously — the scan asserts it found the paths it expects,
+and the QML check asserts `:/ThisWindowDoesNotExist.qml` really is absent, so a
+resource system that answered yes to everything would be caught.
+
+**The contrast floor.** `onlyTheAudienceGetsTheContrastFloor` uses a gruvbox-ish
+palette whose foreground genuinely fails 4.5:1 against its background, and
+asserts the audience copy clears the floor on all four text keys while the
+background and mode are untouched, and that `preview`, `presenter`, `pdf`,
+`web`, `export` and `editor` come back byte-identical.
+`aThemeThatAlreadyClearsTheFloorIsUntouched` covers the no-op case, and
+`presentationHandsTheAudienceItsOwnPalette` runs it end to end through
+`RenderHost::composeDeck` and `Presentation::setDeck`, checking that the deck
+the audience window is sent carries the nudged palette while everything else
+carries the theme exactly as written, and that only the colours differ.
+
+**`docs/spec-deviations.md`** records three decisions, each with what the spec
+says, what reality is, what the code does and why — deliberately separate from
+`docs/review-findings.md`, which is for bugs:
+- **D-001** §9 names an `account_members` access mode that no §4.4 frontmatter
+  value can reach. The four documented `access:` values collapse to three API
+  modes, with `link` and `public` both meaning `anyone_with_link`; `public` is
+  honoured rather than rejected because §4.4 documents it.
+- **D-002** §9 sets a publish password through `PATCH .../access`; the live API
+  wants `PATCH .../metadata`. The tests follow the live API, because the server
+  is the authority for its own shape.
+- **D-003** §12 requires `qt6-quickcontrols2`, which is not an Arch package —
+  Quick Controls and Quick Dialogs ship inside `qt6-declarative`. The PKGBUILD
+  drops it and adds `qt6-webchannel`, which §12 does not mention but the
+  renderer bridge needs.
+
+**Tests:** `./bin/build` passes. `./bin/test` fully green — every C++ suite
+(IntegrationTest 45, DeckModelTest 84, LiveSyncTest 23) and all 41 renderer
+tests, 0 failures.
+**Next:** nothing assigned.
+**NEEDS:** nothing new. The T13 navigator defect
+(`DeckNavigator::setDeck` follows the slide number, not the slide) is still
+open and still pinned by two `LiveSyncTest` cases named after it.
