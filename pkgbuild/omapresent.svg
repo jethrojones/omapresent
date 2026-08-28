@@ -1,5 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <rect width="128" height="128" rx="24" fill="#101010"/>
-  <path d="M31 30h66v68H31z" fill="#f5f1e8"/>
-  <path d="M43 48h42M43 64h34M43 80h28" fill="none" stroke="#101010" stroke-width="7" stroke-linecap="round"/>
+  <!-- Projector light beam -->
+  <polygon points="98,84 120,68 120,100" fill="#f59e0b" opacity="0.3"/>
+  <!-- Projector base -->
+  <rect x="24" y="74" width="80" height="28" rx="6" fill="#262626" stroke="#404040" stroke-width="2"/>
+  <!-- Projector lens -->
+  <circle cx="88" cy="88" r="8" fill="#f59e0b"/>
+  <circle cx="88" cy="88" r="4" fill="#fbbf24"/>
+  <!-- Projector vents / buttons -->
+  <line x1="34" y1="84" x2="54" y2="84" stroke="#737373" stroke-width="3" stroke-linecap="round"/>
+  <line x1="34" y1="92" x2="48" y2="92" stroke="#737373" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="64" cy="88" r="3" fill="#525252"/>
+  <circle cx="72" cy="88" r="3" fill="#525252"/>
+  <!-- Projector feet -->
+  <rect x="32" y="102" width="12" height="4" rx="2" fill="#171717"/>
+  <rect x="84" y="102" width="12" height="4" rx="2" fill="#171717"/>
+  <!-- Pineapple crown / leaves -->
+  <path d="M54 44 C50 34, 42 30, 36 32 C42 38, 48 42, 50 48" fill="#10b981"/>
+  <path d="M54 44 C54 28, 54 20, 54 18 C56 24, 56 34, 55 46" fill="#059669"/>
+  <path d="M54 44 C58 34, 66 30, 72 32 C66 38, 60 42, 58 48" fill="#10b981"/>
+  <path d="M52 46 C46 38, 38 38, 34 42 C40 46, 46 48, 50 50" fill="#34d399"/>
+  <path d="M56 46 C62 38, 70 38, 74 42 C68 46, 62 48, 58 50" fill="#34d399"/>
+  <!-- Pineapple body -->
+  <ellipse cx="54" cy="58" rx="16" ry="18" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
+  <!-- Pineapple criss-cross texture -->
+  <path d="M42 50 L66 66 M40 58 L64 74 M46 44 L68 60 M66 50 L42 66 M64 58 L40 74 M68 44 L46 60" fill="none" stroke="#b45309" stroke-width="1.5" stroke-linecap="round"/>
 </svg>
