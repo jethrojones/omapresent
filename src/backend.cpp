@@ -261,6 +261,20 @@ Backend::Backend(QObject *parent) : QObject(parent) {
             [this](const QString &claimUrl, const QString &claimToken) {
                 emit publishClaimAvailable(claimUrl, claimToken);
             });
+    connect(&m_publisher, &Publisher::domainSetupFinished, this,
+            [this](const QString &domain, const QString &domainStatus,
+                   const QJsonArray &dnsRecords) {
+                setStatus(QStringLiteral("DNS setup for %1 is %2.")
+                              .arg(domain, domainStatus));
+                emit publishDomainSetup(domain, domainStatus,
+                                        dnsRecords.toVariantList());
+            });
+    connect(&m_publisher, &Publisher::domainSetupFailed, this,
+            [this](const QString &message) {
+                setStatus(QStringLiteral("Could not add the custom domain: %1")
+                              .arg(message));
+                emit publishDomainSetupFailed(message);
+            });
 
     connect(&m_pdfExport, &PdfExport::finished, this,
             [this](bool ok, const QString &path, const QString &message) {
@@ -1743,6 +1757,26 @@ QString Backend::publishDomain() const {
 
 bool Backend::setPublishDomain(const QString &domain) {
     return m_publisher.setProviderKey(publishProvider(), QStringLiteral("domain"), domain);
+}
+
+bool Backend::setupPublishDomain(const QString &domain) {
+    const QString cleanDomain = domain.trimmed();
+    if (cleanDomain.isEmpty()) {
+        const QString message = QStringLiteral("Enter a custom domain first.");
+        setStatus(message);
+        emit publishDomainSetupFailed(message);
+        return false;
+    }
+    if (!setPublishDomain(cleanDomain)) {
+        const QString message = QStringLiteral(
+            "Omapresent could not save the custom domain in publish.toml.");
+        setStatus(message);
+        emit publishDomainSetupFailed(message);
+        return false;
+    }
+    setStatus(QStringLiteral("Adding %1 to %2…")
+                  .arg(cleanDomain, publishProvider()));
+    return m_publisher.setupDomain(cleanDomain, publishProvider());
 }
 
 bool Backend::setPublishPassword(const QString &password) {

@@ -5,8 +5,8 @@
 //
 // Owner: the publish agent. Contract frozen.
 //
-// SAFETY: publishing sends the deck to an external host. Nothing in this class
-// may upload without an explicit user-initiated call to publish().
+// SAFETY: publishing sends the deck to an external host. Network work in this
+// class must start only from an explicit publish, sign-in, or domain action.
 
 #include <QJsonObject>
 #include <QJsonArray>
@@ -56,6 +56,11 @@ public:
     Q_INVOKABLE void requestSignInCode(const QString &email);
     Q_INVOKABLE void verifySignInCode(const QString &email, const QString &code);
 
+    // Add a custom domain without publishing a deck first. This is an explicit
+    // user action because it contacts the selected provider.
+    Q_INVOKABLE bool setupDomain(const QString &domain,
+                                 const QString &providerName = QString());
+
     // --- Pure helpers, directly unit-tested -------------------------------
     // Slug from an explicit publish.slug, else the title, else the filename:
     // lowercased, non-alphanumerics collapsed to single hyphens, trimmed.
@@ -80,6 +85,9 @@ signals:
     void failed(const QString &message);
     void signInCodeSent();
     void signedIn();
+    void domainSetupFinished(const QString &domain, const QString &status,
+                             const QJsonArray &dnsRecords);
+    void domainSetupFailed(const QString &message);
 
 private:
     struct Private;

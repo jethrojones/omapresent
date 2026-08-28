@@ -333,6 +333,18 @@ ApplicationWindow {
             claimDialog.open();
         }
 
+        function onPublishDomainSetup(domain, status, dnsRecords) {
+            publishPreferences.domainSetupStatus = "DNS status for " + domain
+                                                   + ": " + status;
+            publishPreferences.domainSetupRecords =
+                publishPreferences.formatDnsRecords(dnsRecords);
+        }
+
+        function onPublishDomainSetupFailed(message) {
+            publishPreferences.domainSetupStatus = "Could not add domain: " + message;
+            publishPreferences.domainSetupRecords = "";
+        }
+
         function onPdfDialogRequested(suggestedUrl) {
             pdfFileDialog.selectedFile = suggestedUrl;
             pdfFileDialog.open();
@@ -473,11 +485,31 @@ ApplicationWindow {
         anchors.centerIn: parent
         width: Math.min(win.width - 60, win.scaledSize(620))
         contentWidth: availableWidth
-        contentHeight: Math.min(win.height - 160, win.scaledSize(440))
+        contentHeight: Math.min(win.height - 160, win.scaledSize(540))
         standardButtons: Dialog.Close
 
         property var versions: []
         property string signInEmail: ""
+        property string domainSetupStatus: ""
+        property string domainSetupRecords: ""
+
+        function formatDnsRecords(records) {
+            var lines = [];
+            for (var index = 0; index < records.length; ++index) {
+                var record = records[index];
+                var parts = [];
+                if (record.type)
+                    parts.push(record.type);
+                if (record.name || record.host)
+                    parts.push(record.name || record.host);
+                if (record.value || record.target)
+                    parts.push(record.value || record.target);
+                if (record.ttl)
+                    parts.push("TTL " + record.ttl);
+                lines.push(parts.join("  "));
+            }
+            return lines.join("\n");
+        }
 
         function load() {
             var providers = backend.publishProviders();
@@ -491,12 +523,16 @@ ApplicationWindow {
             domainField.text = backend.publishDomain();
             slugLabel.text = backend.publishSlug();
             versions = [];
+            domainSetupStatus = "";
+            domainSetupRecords = "";
         }
 
         function loadSelectedProvider() {
             accessBox.currentIndex = Math.max(0, accessBox.model.indexOf(backend.publishAccess()));
             domainField.text = backend.publishDomain();
             passwordField.text = "";
+            domainSetupStatus = "";
+            domainSetupRecords = "";
         }
 
         contentItem: Item {
@@ -543,12 +579,27 @@ ApplicationWindow {
                 }
 
                 Label { text: "Custom domain"; color: win.mutedColor }
-                TextField {
-                    id: domainField
-                    objectName: "publishDomainField"
+                RowLayout {
                     Layout.fillWidth: true
-                    placeholderText: "decks.example.com"
-                    onEditingFinished: backend.setPublishDomain(text)
+                    spacing: win.scaledSize(6)
+                    TextField {
+                        id: domainField
+                        objectName: "publishDomainField"
+                        Layout.fillWidth: true
+                        placeholderText: "decks.example.com"
+                        onEditingFinished: backend.setPublishDomain(text)
+                    }
+                    Button {
+                        objectName: "domainSetupButton"
+                        text: "Add domain"
+                        enabled: domainField.text.trim() !== "" && !backend.publisher.busy
+                        onClicked: {
+                            publishPreferences.domainSetupStatus =
+                                "Asking the provider for DNS records…";
+                            publishPreferences.domainSetupRecords = "";
+                            backend.setupPublishDomain(domainField.text);
+                        }
+                    }
                 }
 
                 Label { text: "Sign in"; color: win.mutedColor }
@@ -598,6 +649,42 @@ ApplicationWindow {
                     id: slugLabel
                     objectName: "publishSlugLabel"
                     color: win.textColor
+                }
+            }
+
+            Label {
+                id: domainSetupStatusLabel
+                objectName: "domainSetupStatus"
+                Layout.fillWidth: true
+                visible: text !== ""
+                text: publishPreferences.domainSetupStatus
+                color: win.mutedColor
+                wrapMode: Text.WordWrap
+                font.pixelSize: win.scaledSize(12)
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: publishPreferences.domainSetupRecords !== ""
+                spacing: win.scaledSize(8)
+                TextArea {
+                    id: domainRecords
+                    objectName: "domainDnsRecords"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: win.scaledSize(72)
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.WrapAnywhere
+                    text: publishPreferences.domainSetupRecords
+                }
+                Button {
+                    objectName: "domainCopyButton"
+                    text: "Copy records"
+                    onClicked: {
+                        domainRecords.selectAll();
+                        domainRecords.copy();
+                        domainRecords.deselect();
+                    }
                 }
             }
 

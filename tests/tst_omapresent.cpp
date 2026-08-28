@@ -1,17 +1,173 @@
 #include <QtTest>
 
 #include "testrunner.h"
+#include <QClipboard>
 #include <QFont>
+#include <QGuiApplication>
+#include <QHash>
+#include <QHostAddress>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMap>
 #include <QPageLayout>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickStyle>
+#include <QTcpServer>
+#include <QTcpSocket>
 
 #include "backend.h"
 #include "markdownhighlighter.h"
 #include "renderhost.h"
+
+namespace {
+
+class ScopedConfigHome {
+public:
+    explicit ScopedConfigHome(const QString &path)
+        : wasSet(qEnvironmentVariableIsSet("XDG_CONFIG_HOME")),
+          previous(qgetenv("XDG_CONFIG_HOME")) {
+        qputenv("XDG_CONFIG_HOME", path.toUtf8());
+    }
+
+    ~ScopedConfigHome() {
+        if (wasSet)
+            qputenv("XDG_CONFIG_HOME", previous);
+        else
+            qunsetenv("XDG_CONFIG_HOME");
+    }
+
+private:
+    bool wasSet;
+    QByteArray previous;
+};
+
+struct DomainHttpRequest {
+    QByteArray method;
+    QString path;
+    QMap<QByteArray, QByteArray> headers;
+    QByteArray body;
+};
+
+class DomainHttpServer {
+public:
+    DomainHttpServer() {
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [this] {
+            while (QTcpSocket *socket = server.nextPendingConnection()) {
+                buffers.insert(socket, {});
+                QObject::connect(socket, &QTcpSocket::readyRead, socket,
+                                 [this, socket] { readRequest(socket); });
+                QObject::connect(socket, &QTcpSocket::disconnected, socket,
+                                 [this, socket] {
+                    buffers.remove(socket);
+                    socket->deleteLater();
+                });
+            }
+        });
+    }
+
+    bool listen() { return server.listen(QHostAddress::LocalHost, 0); }
+    QString baseUrl() const {
+        return QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    }
+
+    int responseStatus = 200;
+    QJsonObject response{
+        {QStringLiteral("status"), QStringLiteral("pending")},
+        {QStringLiteral("dns_instructions"), QJsonArray{
+            QJsonObject{{QStringLiteral("type"), QStringLiteral("CNAME")},
+                        {QStringLiteral("host"), QStringLiteral("decks")},
+                        {QStringLiteral("value"), QStringLiteral("domains.here.now")}},
+            QJsonObject{{QStringLiteral("type"), QStringLiteral("TXT")},
+                        {QStringLiteral("host"), QStringLiteral("_here-now.decks")},
+                        {QStringLiteral("value"), QStringLiteral("verify-123")}}}}};
+    QList<DomainHttpRequest> requests;
+    QString error;
+
+private:
+    void fail(const QString &message) {
+        if (error.isEmpty())
+            error = message;
+    }
+
+    void readRequest(QTcpSocket *socket) {
+        QByteArray &buffer = buffers[socket];
+        buffer += socket->readAll();
+        const qsizetype headerEnd = buffer.indexOf("\r\n\r\n");
+        if (headerEnd < 0)
+            return;
+        const QList<QByteArray> lines = buffer.left(headerEnd).split('\n');
+        const QList<QByteArray> first = lines.value(0).trimmed().split(' ');
+        if (first.size() < 2) {
+            fail(QStringLiteral("The local domain server received a bad request line."));
+            return;
+        }
+        QMap<QByteArray, QByteArray> headers;
+        for (qsizetype index = 1; index < lines.size(); ++index) {
+            const QByteArray line = lines.at(index).trimmed();
+            const qsizetype colon = line.indexOf(':');
+            if (colon > 0) {
+                headers.insert(line.left(colon).trimmed().toLower(),
+                               line.mid(colon + 1).trimmed());
+            }
+        }
+        bool lengthOk = false;
+        const qsizetype contentLength = headers.value(
+            QByteArrayLiteral("content-length"), QByteArrayLiteral("0"))
+                                                .toLongLong(&lengthOk);
+        if (!lengthOk || contentLength < 0) {
+            fail(QStringLiteral("The local domain server received a bad body length."));
+            return;
+        }
+        const qsizetype total = headerEnd + 4 + contentLength;
+        if (buffer.size() < total)
+            return;
+
+        const QUrl target(QString::fromUtf8(first.at(1)));
+        requests.append({first.at(0), target.path(), headers,
+                         buffer.mid(headerEnd + 4, contentLength)});
+        buffer.remove(0, total);
+
+        const QByteArray body = QJsonDocument(response).toJson(QJsonDocument::Compact);
+        const QByteArray reason = responseStatus >= 200 && responseStatus < 300
+            ? QByteArrayLiteral("OK") : QByteArrayLiteral("Forbidden");
+        const QByteArray wire = QByteArrayLiteral("HTTP/1.1 ")
+            + QByteArray::number(responseStatus) + ' ' + reason
+            + QByteArrayLiteral("\r\nContent-Type: application/json\r\nContent-Length: ")
+            + QByteArray::number(body.size())
+            + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + body;
+        socket->write(wire);
+        socket->disconnectFromHost();
+    }
+
+    QTcpServer server;
+    QHash<QTcpSocket *, QByteArray> buffers;
+};
+
+bool writePublishConfig(const QString &configHome, const QString &baseUrl) {
+    const QString path = QDir(configHome).filePath(
+        QStringLiteral("omapresent/publish.toml"));
+    if (!QDir().mkpath(QFileInfo(path).absolutePath()))
+        return false;
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    const QString contents = QStringLiteral(
+        "# Keep the publish preferences intact.\n"
+        "default = \"herenow\"\n\n"
+        "[providers.herenow]\n"
+        "type = \"herenow\"\n"
+        "api_base = \"%1\"\n"
+        "api_key = \"ui-domain-key\"\n"
+        "access = \"restricted\"\n"
+        "password = \"kept-secret\"\n"
+        "mount_prefix = \"/talks\"\n").arg(baseUrl);
+    return file.write(contents.toUtf8()) == contents.toUtf8().size();
+}
+
+} // namespace
 
 class PresentCaptureBackend final : public Backend {
 public:
@@ -884,6 +1040,110 @@ private slots:
         QVERIFY(written.contains(QStringLiteral("default = \"archive\"\n")));
     }
 
+    void customDomainBackendUsesSelectedProviderAndPreservesPreferences() {
+        QTemporaryDir configHome;
+        QVERIFY(configHome.isValid());
+        ScopedConfigHome scopedConfig(configHome.path());
+        DomainHttpServer server;
+        QVERIFY(server.listen());
+        QVERIFY(writePublishConfig(configHome.path(), server.baseUrl()));
+
+        Backend backend;
+        QSignalSpy finished(&backend, &Backend::publishDomainSetup);
+        QSignalSpy failed(&backend, &Backend::publishDomainSetupFailed);
+
+        // Backend construction and preference reads do not contact the provider.
+        QCOMPARE(server.requests.size(), 0);
+        QCOMPARE(backend.publishAccess(), QStringLiteral("restricted"));
+        QVERIFY(backend.setupPublishDomain(QStringLiteral("decks.example.test")));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 5000);
+
+        QCOMPARE(failed.size(), 0);
+        QCOMPARE(finished.constFirst().at(0).toString(),
+                 QStringLiteral("decks.example.test"));
+        QCOMPARE(finished.constFirst().at(1).toString(),
+                 QStringLiteral("pending"));
+        const QVariantList records = finished.constFirst().at(2).toList();
+        QCOMPARE(records.size(), 2);
+        QCOMPARE(records.at(1).toMap().value(QStringLiteral("value")).toString(),
+                 QStringLiteral("verify-123"));
+        QCOMPARE(server.requests.size(), 1);
+        QCOMPARE(server.requests.constFirst().method, QByteArrayLiteral("POST"));
+        QCOMPARE(server.requests.constFirst().path, QStringLiteral("/api/v1/domains"));
+        QCOMPARE(server.requests.constFirst().headers.value(
+                     QByteArrayLiteral("authorization")),
+                 QByteArrayLiteral("Bearer ui-domain-key"));
+        QCOMPARE(QJsonDocument::fromJson(server.requests.constFirst().body)
+                     .object().value(QStringLiteral("domain")).toString(),
+                 QStringLiteral("decks.example.test"));
+        QVERIFY2(server.error.isEmpty(), qPrintable(server.error));
+
+        QFile config(configHome.filePath(QStringLiteral("omapresent/publish.toml")));
+        QVERIFY(config.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString saved = QString::fromUtf8(config.readAll());
+        QVERIFY(saved.contains(QStringLiteral("# Keep the publish preferences intact.\n")));
+        QVERIFY(saved.contains(QStringLiteral("access = \"restricted\"\n")));
+        QVERIFY(saved.contains(QStringLiteral("password = \"kept-secret\"\n")));
+        QVERIFY(saved.contains(QStringLiteral("mount_prefix = \"/talks\"\n")));
+        QVERIFY(saved.contains(QStringLiteral("domain = \"decks.example.test\"\n")));
+    }
+
+    void customDomainUiStartsOnlyOnClickShowsErrorsAndCopiesRecords() {
+        QTemporaryDir configHome;
+        QVERIFY(configHome.isValid());
+        ScopedConfigHome scopedConfig(configHome.path());
+        DomainHttpServer server;
+        QVERIFY(server.listen());
+        QVERIFY(writePublishConfig(configHome.path(), server.baseUrl()));
+
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        QVERIFY(QMetaObject::invokeMethod(window.data(), "openPublishPreferences"));
+
+        QObject *field = window->findChild<QObject *>(QStringLiteral("publishDomainField"));
+        QObject *setup = window->findChild<QObject *>(QStringLiteral("domainSetupButton"));
+        QObject *status = window->findChild<QObject *>(QStringLiteral("domainSetupStatus"));
+        QObject *records = window->findChild<QObject *>(QStringLiteral("domainDnsRecords"));
+        QObject *copy = window->findChild<QObject *>(QStringLiteral("domainCopyButton"));
+        QVERIFY(field && setup && status && records && copy);
+        QVERIFY(field->setProperty("text", QStringLiteral("decks.example.test")));
+
+        // Loading and editing the preference are offline. The click is explicit.
+        QTest::qWait(50);
+        QCOMPARE(server.requests.size(), 0);
+        QVERIFY(QMetaObject::invokeMethod(setup, "clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(records->property("text").toString().contains(
+                                     QStringLiteral("CNAME  decks  domains.here.now")),
+                                 5000);
+        QVERIFY(records->property("text").toString().contains(
+            QStringLiteral("TXT  _here-now.decks  verify-123")));
+        QVERIFY(status->property("text").toString().contains(
+            QStringLiteral("pending")));
+        QCOMPARE(server.requests.size(), 1);
+
+        QGuiApplication::clipboard()->clear();
+        QVERIFY(QMetaObject::invokeMethod(copy, "clicked"));
+        QTRY_COMPARE(QGuiApplication::clipboard()->text(),
+                     records->property("text").toString());
+
+        server.responseStatus = 403;
+        server.response = QJsonObject{{QStringLiteral("message"),
+                                       QStringLiteral("domain is already claimed")}};
+        QVERIFY(QMetaObject::invokeMethod(setup, "clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(status->property("text").toString().contains(
+                                     QStringLiteral("domain is already claimed")),
+                                 5000);
+        QCOMPARE(records->property("text").toString(), QString());
+        QCOMPARE(server.requests.size(), 2);
+    }
+
     void editingACopyOfTheWelcomeDeckNeverTouchesTheOriginal() {
         // Stands in for /usr/share/omapresent/welcome.md, read-only as installed.
         QTemporaryDir homeDirectory;
@@ -944,6 +1204,8 @@ private slots:
             QStringLiteral("claimDialog"),          QStringLiteral("publishProviderBox"),
             QStringLiteral("publishAccessBox"),     QStringLiteral("publishPasswordField"),
             QStringLiteral("publishDomainField"),   QStringLiteral("publishEmailField"),
+            QStringLiteral("domainSetupButton"),    QStringLiteral("domainSetupStatus"),
+            QStringLiteral("domainDnsRecords"),     QStringLiteral("domainCopyButton"),
             QStringLiteral("publishSignInButton"),  QStringLiteral("publishCodeField"),
             QStringLiteral("publishVerifyButton"),  QStringLiteral("publishSlugLabel"),
             QStringLiteral("publishNowButton"),     QStringLiteral("republishButton"),

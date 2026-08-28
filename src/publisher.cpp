@@ -24,6 +24,7 @@
 #include <QUrlQuery>
 
 #include <algorithm>
+#include <functional>
 
 namespace {
 
@@ -377,6 +378,36 @@ QJsonArray hereUploads(const QJsonObject &response) {
     return response.value(QStringLiteral("presignedUploads")).toArray();
 }
 
+QJsonArray hereDnsRecords(const QJsonObject &response) {
+    const QJsonObject domain = response.value(QStringLiteral("domain")).toObject();
+    const QList<QJsonObject> sources{response, domain};
+    for (const QJsonObject &source : sources) {
+        for (const QString &key : {QStringLiteral("dnsRecords"),
+                                   QStringLiteral("dns_records"),
+                                   QStringLiteral("dns_instructions"),
+                                   QStringLiteral("records")}) {
+            const QJsonArray records = source.value(key).toArray();
+            if (!records.isEmpty())
+                return records;
+        }
+    }
+    return {};
+}
+
+QString hereDomainStatus(const QJsonObject &response) {
+    const QJsonObject domain = response.value(QStringLiteral("domain")).toObject();
+    for (const QJsonObject &source : {response, domain}) {
+        for (const QString &key : {QStringLiteral("status"),
+                                   QStringLiteral("verificationStatus"),
+                                   QStringLiteral("verification_status")}) {
+            const QString status = source.value(key).toString();
+            if (!status.isEmpty())
+                return status;
+        }
+    }
+    return QStringLiteral("pending");
+}
+
 QString hereVersionId(const QJsonObject &response) {
     const QString nested = response.value(QStringLiteral("upload")).toObject()
                                .value(QStringLiteral("versionId")).toString();
@@ -551,6 +582,9 @@ struct Publisher::Private {
                                const QJsonObject &provider,
                                const QJsonObject &body = {},
                                bool sendBody = true);
+    void addHereDomain(
+        const QJsonObject &provider, const QString &domain,
+        const std::function<void(const QJsonObject &, const QString &)> &done);
     void startHere(const QSharedPointer<HerePublishContext> &context);
     void uploadHereNext(const QSharedPointer<HerePublishContext> &context);
     void refreshHereUploads(const QSharedPointer<HerePublishContext> &context);
@@ -649,6 +683,54 @@ QNetworkReply *Publisher::Private::hereRequest(const QByteArray &method,
         payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
     }
     return network.sendCustomRequest(request, method, payload);
+}
+
+void Publisher::Private::addHereDomain(
+    const QJsonObject &provider, const QString &domain,
+    const std::function<void(const QJsonObject &, const QString &)> &done) {
+    QNetworkReply *reply = hereRequest(
+        QByteArrayLiteral("POST"), QStringLiteral("/api/v1/domains"),
+        provider, QJsonObject{{QStringLiteral("domain"), domain}});
+    QObject::connect(reply, &QNetworkReply::finished, q,
+                     [this, reply, provider, domain, done] {
+        const QByteArray responseBody = reply->readAll();
+        const int status = reply->attribute(
+            QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QJsonObject response = jsonObject(responseBody);
+        if (!replySucceeded(reply) && status != 409) {
+            const QString message = replyFailure(
+                reply, QStringLiteral("Adding the custom domain"), responseBody);
+            reply->deleteLater();
+            done({}, message);
+            return;
+        }
+        reply->deleteLater();
+        if (status == 409) {
+            const QString encodedDomain = QString::fromLatin1(
+                QUrl::toPercentEncoding(domain, QByteArrayLiteral("-_.~")));
+            QNetworkReply *statusReply = hereRequest(
+                QByteArrayLiteral("GET"),
+                QStringLiteral("/api/v1/domains/%1").arg(encodedDomain),
+                provider, {}, false);
+            QObject::connect(statusReply, &QNetworkReply::finished, q,
+                             [statusReply, done] {
+                const QByteArray statusBody = statusReply->readAll();
+                if (!replySucceeded(statusReply)) {
+                    const QString message = replyFailure(
+                        statusReply, QStringLiteral("Loading the custom domain status"),
+                        statusBody);
+                    statusReply->deleteLater();
+                    done({}, message);
+                    return;
+                }
+                const QJsonObject statusResponse = jsonObject(statusBody);
+                statusReply->deleteLater();
+                done(statusResponse, {});
+            });
+            return;
+        }
+        done(response, {});
+    });
 }
 
 void Publisher::Private::startHere(
@@ -987,22 +1069,12 @@ void Publisher::Private::configureHereDomain(
         finish(context->siteUrl, context->slug);
         return;
     }
-    QNetworkReply *reply = hereRequest(
-        QByteArrayLiteral("POST"), QStringLiteral("/api/v1/domains"),
-        context->provider, QJsonObject{{QStringLiteral("domain"), domain}});
-    QObject::connect(reply, &QNetworkReply::finished, q,
-                     [this, context, reply] {
-        const QByteArray responseBody = reply->readAll();
-        const int status = reply->attribute(
-            QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (!replySucceeded(reply) && status != 409) {
-            const QString message = replyFailure(
-                reply, QStringLiteral("Adding the custom domain"), responseBody);
-            reply->deleteLater();
-            fail(message);
+    addHereDomain(context->provider, domain,
+                  [this, context](const QJsonObject &, const QString &error) {
+        if (!error.isEmpty()) {
+            fail(error);
             return;
         }
-        reply->deleteLater();
         configureHereMount(context);
     });
 }
@@ -1687,6 +1759,68 @@ void Publisher::revert(const QString &slug, const QString &versionId,
         d->setBusy(false);
         emit reverted(liveUrl, siteSlug, versionId);
     });
+}
+
+bool Publisher::setupDomain(const QString &domain,
+                            const QString &providerName) {
+    const auto reject = [this](const QString &message) {
+        emit domainSetupFailed(message);
+        return false;
+    };
+
+    reloadConfig();
+    if (!d->configError.isEmpty())
+        return reject(d->configError);
+
+    const QString selected = providerName.isEmpty() ? defaultProvider() : providerName;
+    const QJsonObject provider = providers().value(selected).toObject();
+    if (provider.isEmpty()) {
+        return reject(QStringLiteral("Publish provider '%1' is not configured.")
+                          .arg(selected));
+    }
+    QString type = provider.value(QStringLiteral("type")).toString();
+    if (type.isEmpty() && selected == QStringLiteral("herenow"))
+        type = QStringLiteral("herenow");
+    if (type != QStringLiteral("herenow")) {
+        return reject(QStringLiteral(
+            "Custom-domain setup is available only for a here.now provider."));
+    }
+    if (!validHereApiBase(provider)) {
+        return reject(QStringLiteral(
+            "The here.now api_base override must be an HTTP loopback URL."));
+    }
+    if (provider.value(QStringLiteral("api_key")).toString().isEmpty()) {
+        return reject(QStringLiteral(
+            "Sign in to here.now before adding a custom domain."));
+    }
+
+    const QString cleanDomain = domain.trimmed();
+    const QUrl domainUrl(QStringLiteral("https://") + cleanDomain);
+    if (cleanDomain.isEmpty() || cleanDomain.contains(u'/')
+        || cleanDomain.contains(u'@') || cleanDomain.contains(u':')
+        || cleanDomain.contains(QRegularExpression(QStringLiteral("\\s")))
+        || !domainUrl.isValid() || domainUrl.host().isEmpty()) {
+        return reject(QStringLiteral(
+            "Enter a domain name such as decks.example.com, without a URL path."));
+    }
+    if (d->busy) {
+        return reject(QStringLiteral(
+            "Another publish operation is still running. Wait for it to finish."));
+    }
+
+    d->setBusy(true);
+    d->addHereDomain(
+        provider, cleanDomain,
+        [this, cleanDomain](const QJsonObject &response, const QString &error) {
+        d->setBusy(false);
+        if (!error.isEmpty()) {
+            emit domainSetupFailed(error);
+            return;
+        }
+        emit domainSetupFinished(cleanDomain, hereDomainStatus(response),
+                                 hereDnsRecords(response));
+    });
+    return true;
 }
 
 void Publisher::requestSignInCode(const QString &email) {

@@ -219,6 +219,9 @@ public:
     Q_INVOKABLE bool setPublishAccess(const QString &access);
     Q_INVOKABLE QString publishDomain() const;
     Q_INVOKABLE bool setPublishDomain(const QString &domain);
+    // Saves the selected provider's domain, then starts the explicit provider
+    // setup request. Opening and editing never call this method.
+    Q_INVOKABLE bool setupPublishDomain(const QString &domain);
     Q_INVOKABLE bool setPublishPassword(const QString &password);
     Q_INVOKABLE QString publishSlug() const { return deckSlug(); }
     Q_INVOKABLE void signInToProvider(const QString &email);
@@ -258,6 +261,9 @@ signals:
     void publishSignedIn();
     void publishVersions(const QString &slug, const QVariantList &versions);
     void publishClaimAvailable(const QString &claimUrl, const QString &claimToken);
+    void publishDomainSetup(const QString &domain, const QString &status,
+                            const QVariantList &dnsRecords);
+    void publishDomainSetupFailed(const QString &message);
 
 protected:
     // Window creation is a side effect. Keep it behind this seam so the

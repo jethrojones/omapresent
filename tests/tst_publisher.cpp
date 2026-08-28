@@ -463,6 +463,105 @@ private slots:
         QCOMPARE(server.requests.size(), 0);
     }
 
+    void hereNowDomainSetupIsExplicitAndReturnsDnsContract() {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        ScopedConfigHome configHome(temporary.path());
+        LocalHttpServer server;
+        QVERIFY(server.listen());
+
+        const QString config = QStringLiteral(
+            "default = \"herenow\"\n\n"
+            "[providers.herenow]\n"
+            "type = \"herenow\"\n"
+            "api_base = \"%1\"\n"
+            "api_key = \"domain-test-key\"\n").arg(server.baseUrl());
+        QVERIFY(writeBytes(temporary.filePath(QStringLiteral("omapresent/publish.toml")),
+                           config.toUtf8()));
+
+        int domainRequests = 0;
+        const QJsonObject domainResponse{
+            {QStringLiteral("domain"), QStringLiteral("decks.example.test")},
+            {QStringLiteral("status"), QStringLiteral("pending")},
+            {QStringLiteral("dns_instructions"), QJsonArray{
+                QJsonObject{{QStringLiteral("type"), QStringLiteral("CNAME")},
+                            {QStringLiteral("host"), QStringLiteral("decks")},
+                            {QStringLiteral("value"), QStringLiteral("domains.here.now")}},
+                QJsonObject{{QStringLiteral("type"), QStringLiteral("TXT")},
+                            {QStringLiteral("host"), QStringLiteral("_here-now.decks")},
+                            {QStringLiteral("value"), QStringLiteral("verify-123")}}}}};
+        server.handler = [&](const HttpRequest &request) -> HttpResponse {
+            server.check(request.headers.value(QByteArrayLiteral("authorization"))
+                             == QByteArrayLiteral("Bearer domain-test-key"),
+                         QStringLiteral("Domain setup omitted the provider token."));
+            if (request.method == QByteArrayLiteral("GET")
+                && request.path
+                    == QStringLiteral("/api/v1/domains/decks.example.test")) {
+                return jsonResponse(domainResponse);
+            }
+            server.check(request.method == QByteArrayLiteral("POST")
+                             && request.path == QStringLiteral("/api/v1/domains"),
+                         QStringLiteral("Domain setup used the wrong route."));
+            server.check(requestJson(request).value(QStringLiteral("domain")).toString()
+                             == QStringLiteral("decks.example.test"),
+                         QStringLiteral("Domain setup sent the wrong domain."));
+            ++domainRequests;
+            if (domainRequests == 2) {
+                return jsonResponse(QJsonObject{
+                    {QStringLiteral("message"), QStringLiteral("domain already exists")}},
+                                    409);
+            }
+            if (domainRequests == 3) {
+                return jsonResponse(QJsonObject{
+                    {QStringLiteral("message"),
+                     QStringLiteral("domain belongs to another account")}}, 403);
+            }
+            return jsonResponse(domainResponse);
+        };
+
+        Publisher publisher;
+        QSignalSpy finished(&publisher, &Publisher::domainSetupFinished);
+        QSignalSpy setupFailures(&publisher, &Publisher::domainSetupFailed);
+        QSignalSpy publishFailures(&publisher, &Publisher::failed);
+
+        // Reading config and constructing the provider stay offline.
+        publisher.reloadConfig();
+        QTest::qWait(50);
+        QCOMPARE(server.requests.size(), 0);
+
+        QVERIFY(publisher.setupDomain(QStringLiteral("decks.example.test"),
+                                      QStringLiteral("herenow")));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 5000);
+        QCOMPARE(setupFailures.size(), 0);
+        QCOMPARE(publishFailures.size(), 0);
+        QCOMPARE(finished.constFirst().at(0).toString(),
+                 QStringLiteral("decks.example.test"));
+        QCOMPARE(finished.constFirst().at(1).toString(),
+                 QStringLiteral("pending"));
+        const QJsonArray records = finished.constFirst().at(2).value<QJsonArray>();
+        QCOMPARE(records.size(), 2);
+        QCOMPARE(records.at(0).toObject().value(QStringLiteral("value")).toString(),
+                 QStringLiteral("domains.here.now"));
+        QVERIFY2(server.error.isEmpty(), qPrintable(server.error));
+
+        // Re-adding a domain is useful after a restart. A conflict is followed
+        // by the provider's status route so the records are still returned.
+        QVERIFY(publisher.setupDomain(QStringLiteral("decks.example.test"),
+                                      QStringLiteral("herenow")));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 2, 5000);
+        QCOMPARE(finished.at(1).at(2).value<QJsonArray>().size(), 2);
+
+        QVERIFY(publisher.setupDomain(QStringLiteral("decks.example.test"),
+                                      QStringLiteral("herenow")));
+        QTRY_COMPARE_WITH_TIMEOUT(setupFailures.size(), 1, 5000);
+        QVERIFY(setupFailures.constFirst().constFirst().toString().contains(
+            QStringLiteral("domain belongs to another account")));
+        QVERIFY(setupFailures.constFirst().constFirst().toString().contains(
+            QStringLiteral("HTTP 403")));
+        QCOMPARE(domainRequests, 3);
+        QCOMPARE(server.requests.size(), 4);
+    }
+
     void hereNowAnonymousPublishUploadsRefreshesAndFinalizesIdempotently() {
         QTemporaryDir temporary;
         QVERIFY(temporary.isValid());

@@ -1415,3 +1415,17 @@ unavailable in this restricted shell. Recorded live evidence shows one output,
 **NEEDS:** Theme live reload still lacks the explicitly specified installed
 Omapresent `theme-set` hook. Idle inhibit and two-output hotplug need a safe
 live run when those checks can be made without changing the user's baseline.
+
+### 2026-08-28 12:39 PT — publish (Codex GPT-5)
+**Task:** T20 custom-domain publish flow
+**Did:** Read the task, frozen contracts, current publish preferences, and the existing here.now domain transport. Confirmed that domain setup must be a separate explicit action.
+**Tests:** Not run yet.
+**Next:** Add the provider and backend result contract, then wire and test the publish-preferences controls.
+**NEEDS:** nothing
+
+### 2026-08-28 12:52 PT — publish (Codex GPT-5)
+**Task:** T20 custom-domain publish flow
+**Did:** Added an explicit selected-provider domain setup API and stable DNS result signals. Reused the here.now domain request for publish and setup. The publish dialog now saves the domain, shows provider status and DNS instructions, copies the records, and shows provider errors. Existing publish preferences remain intact.
+**Tests:** Added loopback-only provider, backend, and QML contract cases. They cover no request before the user action, bearer auth, the official `dns_instructions` response, an existing-domain status lookup, preference preservation, copy, and errors. `qmllint src/Main.qml`, `./bin/build`, and `./bin/test` pass: 500 C++ and 43 renderer cases. Scoped Autoreview is clean after its DNS-shape finding was fixed.
+**Next:** none
+**NEEDS:** nothing
