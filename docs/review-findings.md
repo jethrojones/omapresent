@@ -19,7 +19,7 @@ The path starts in `src/assetindex.cpp` in the recursive scan and `resolve()`. T
 
 This can disclose a private key or another readable file when a user publishes an untrusted deck tree. The user must still confirm publish. The confirmation says that embedded files will upload. The problem is that the visible asset name can hide a different target.
 
-`SecurityTest::indexedAssetSymlinkCannotLeaveTheAssetRoot` pins this as an expected failure.
+`SecurityTest::indexedAssetSymlinkCannotLeaveTheAssetRoot` now guards the fixed behavior with a normal assertion.
 
 ## SEC-002 — Medium — Opening a deck can make an unapproved network request
 
@@ -53,7 +53,7 @@ The path handling is in `src/videocache.cpp` in `cacheDir()`, `writeIndex()`, an
 
 This needs an explicit offline-prepare action. It can overwrite an existing `index.json` in the symlink target. Other output names are SHA-256 cache names. The impact is limited but real.
 
-`SecurityTest::videoCacheSymlinkCannotLeaveTheDeckDirectory` pins this as an expected failure.
+Fixed in commit `83ba985`. `SecurityTest::videoCacheSymlinkCannotLeaveTheDeckDirectory` now guards the fixed behavior with a normal assertion.
 
 ## SEC-004 — Medium — Bundle media copies use memory equal to the whole file
 
@@ -88,6 +88,56 @@ The current GUI and CLI publish path uses a new `QTemporaryDir`, so an attacker 
 
 `SecurityTest::bundleOutputSymlinkCannotLeaveTheOutputRoot` pins this as an expected failure.
 
+## Second-pass findings — 2026-08-28
+
+### SEC-006 — Medium — The CLI can publish an empty deck after its input fails to open
+
+`Backend::runCommand()` checks only whether the input path exists. It calls `open()`, but it does not check whether `open()` loaded the file. A directory or an unreadable file therefore reaches `publishDeck()` with the new backend's empty document.
+
+Concrete reproduction:
+
+1. Configure a command provider that prints a valid URL.
+2. Run `omapresent publish <directory> --provider test --yes`.
+3. Repeat with an existing file that the current user cannot read.
+4. In both cases, the provider runs, the CLI prints its URL, and the process exits 0.
+
+The path is in `src/backend.cpp` in `open()` and `runCommand()`. The failed `open()` sets a status message and returns. `runCommand()` ignores that result and continues.
+
+The user must still confirm or pass `--yes`. The command can publish an empty deck instead of the named file and report success. It does not disclose the unreadable file because that file was never read.
+
+`SecurityTest::cliRejectsADirectoryBeforePublishing` and `SecurityTest::cliRejectsAnUnreadableFileBeforePublishing` pin both forms as expected failures.
+
+### SEC-007 — Low — First run follows a symlinked agent skills directory
+
+`Backend::agentSkillDirectories()` accepts a path when `QFileInfo(path).isDir()` is true. That check follows a directory symlink. `installAgentSkill()` then creates the `omapresent` link through that path.
+
+Concrete reproduction:
+
+1. Make `~/.claude/skills` a symlink to another writable directory.
+2. Start Omapresent.
+3. The target directory receives an `omapresent` symlink.
+
+The issue is in `src/backend.cpp` in `agentSkillDirectories()` and `installAgentSkill()`.
+
+This creates one known symlink in a directory that the user can already write. It does not replace an existing file, directory, or different symlink. The main risk is a surprising write outside the expected agent tree.
+
+`SecurityTest::firstRunRefusesASymlinkedSkillDirectory` pins this as an expected failure.
+
+### SEC-008 — Low — A duplicate settings key can make a patch report success without applying
+
+`Publisher::patchToml()` replaces the first matching key in the first matching table. `Publisher::parseToml()` keeps the later value when a malformed file repeats the same table and key. `Settings::setValue()` can therefore return true, but a reload still reads the old later value.
+
+Concrete reproduction:
+
+1. Put `theme = "first"` in one `[editor]` table.
+2. Repeat `[editor]` and put `theme = "second"` in it.
+3. Call `Settings::setValue("editor.theme", "patched")`.
+4. The call returns true, but `Settings::stringValue("editor.theme")` is still `second`.
+
+The patch preserves both unknown keys in the test. It does not make the malformed file less readable. The failure is that the requested change does not take effect even though the API reports success.
+
+`SecurityTest::settingsPatchAppliesWithADuplicateKnownKey` pins this as an expected failure.
+
 ## Checks that passed
 
 - The command provider runs the configured command through `/bin/sh -c`. This is the feature. Deck-controlled values do not enter that command string. `Publisher` slugifies the slug and passes both the slug and bundle path through environment variables. The security test uses shell metacharacters and confirms that they stay data.
@@ -98,6 +148,16 @@ The current GUI and CLI publish path uses a new `QTemporaryDir`, so an attacker 
 - Cache filenames derived from URLs are SHA-256 values. Cached index filenames that contain `/`, `\\`, `.` or `..` are rejected.
 - The new parser test completed with one 8 MiB line, 10,000 slides, an unclosed frontmatter opener, and an unclosed code fence. Existing integration tests cover BOM, CRLF, a frontmatter-only file, and an unclosed fence. This is not proof that every 50 MiB input has an acceptable memory peak.
 - The package hook only refreshes desktop caches. First run links the packaged skill into existing user agent skill directories. It leaves an existing file or a different symlink unchanged.
+
+## Second-pass checks that passed
+
+- The CLI rejects a missing file with its full path and a nonzero exit code.
+- The CLI rejects an unknown `--provider` with the provider name and a clear `is not configured` error.
+- A deck with no frontmatter publishes through a local command provider and exits 0.
+- Without `--yes` or `-y`, a negative answer stops the CLI before the provider runs. The test uses a marker file to prove that the command did not start.
+- First run leaves a real `omapresent` skill directory and its content unchanged.
+- A one-key settings patch preserved a 256 KiB unknown key, an unterminated unknown string, two `[editor]` tables, and unknown keys before and after the repeated table.
+- A settings string that contains a newline was stored as an escaped `\\n` sequence. Reloading restored the original value. No new TOML line was injected.
 
 ---
 Created by Codex GPT-5.6 Sol on 2026-08-27 21:29 PT on ombee.

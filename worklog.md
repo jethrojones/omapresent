@@ -820,3 +820,10 @@ so inserting one never moves anybody.
 **Tests:** WebBundleTest 27/27. `./bin/build && ./bin/test` passes. A moved `file://` bundle rendered cleanly in Chromium at 1280x900 and 430x900. It has no `file:///`, `qrc:`, or `/home/jethro` references. Final Autoreview is clean after fixing its vertical-video finding.
 **Next:** Return to SEC-004 streaming copies and SEC-005 output-root hardening.
 **NEEDS:** nothing
+
+### 2026-08-28 06:42 PT — reviewer (Codex GPT-5.6 Sol)
+**Task:** T14 follow-up review of CLI, first-run skill links, and settings patches
+**Did:** Added SEC-006 for CLI publish continuing after a directory or unreadable file fails to open, SEC-007 for a symlinked agent skills directory, and SEC-008 for a shadowed key in a duplicate settings table. Added passing checks for publish confirmation, missing files, unknown providers, no-frontmatter publish, existing skill content, long and malformed settings text, unknown-key preservation, and newline escaping. Converted the fixed SEC-001 and SEC-003 pins to normal assertions. SEC-005 remains an expected failure while its owner works on it.
+**Tests:** `./bin/build && ./bin/test` passes. SecurityTest has 15 passes, 5 expected-failure assertions, and no unexpected results. All 39 renderer tests pass. Autoreview accepted and drove three test-hardening changes, then finished clean with no actionable findings.
+**Next:** Convert SEC-005 when its fix passes. Route SEC-006 through SEC-008 to their owners.
+**NEEDS:** Backend owner — SEC-006 and SEC-007. Settings or publish owner — SEC-008. WebBundle owner — SEC-005 pin remains live.
