@@ -65,6 +65,11 @@ public:
     // with its lightness nudged until it does. Audience window only.
     static QString ensureContrast(const QString &foreground, const QString &background,
                                   double minRatio = 4.5);
+    // Spec §6: the projector floor is for the audience window only. `audience`
+    // returns a copy whose text colours have been nudged against `background`;
+    // presenter, preview, pdf, web, export and editor get `palette` unchanged.
+    static QJsonObject paletteForRole(const QJsonObject &palette, const QString &role,
+                                      double minRatio = 4.5);
 
 signals:
     // The live theme changed on disk, or the override moved. Every open window

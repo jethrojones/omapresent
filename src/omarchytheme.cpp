@@ -612,6 +612,29 @@ QString OmarchyTheme::ensureContrast(const QString &foreground, const QString &b
     return (up.ratio >= down.ratio) ? up.hex : down.hex;
 }
 
+QJsonObject OmarchyTheme::paletteForRole(const QJsonObject &palette, const QString &role,
+                                         double minRatio)
+{
+    if (role != QStringLiteral("audience"))
+        return palette;
+
+    const QString background = palette.value(QStringLiteral("background")).toString();
+    if (background.isEmpty())
+        return palette;
+
+    static const QStringList textKeys{
+        QStringLiteral("foreground"), QStringLiteral("muted"),
+        QStringLiteral("dark_foreground"), QStringLiteral("accent")};
+
+    QJsonObject out = palette;
+    for (const QString &key : textKeys) {
+        const QString fg = palette.value(key).toString();
+        if (!fg.isEmpty())
+            out.insert(key, ensureContrast(fg, background, minRatio));
+    }
+    return out;
+}
+
 void OmarchyTheme::reload()
 {
     const QString current = currentStateDir();

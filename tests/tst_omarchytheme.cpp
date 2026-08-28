@@ -213,6 +213,8 @@ private slots:
     void ensureContrastSweepClearsWhenPossible();
     void ensureContrastReturnsBestWhenFloorImpossible();
     void ensureContrastPrefersOriginalLightnessRelationship();
+    void paletteForRoleFloorsAudienceOnly();
+    void paletteForRoleLeavesExactThemeForOtherRoles();
     void installedThemesUserWinsSorted();
     void overrideResolutionOrder();
     void overrideUnknownFallsBackToLive();
@@ -528,6 +530,61 @@ void OmarchyThemeTest::ensureContrastPrefersOriginalLightnessRelationship()
     QVERIFY(OmarchyTheme::contrastRatio(darkOut, bg) >= 4.5);
     QVERIFY(QColor(lightOut).lightnessF() > QColor(bg).lightnessF());
     QVERIFY(QColor(darkOut).lightnessF() < QColor(bg).lightnessF());
+}
+
+void OmarchyThemeTest::paletteForRoleFloorsAudienceOnly()
+{
+    QJsonObject palette = OmarchyTheme::parseColorsToml(
+        QStringLiteral("background = \"#808080\"\n"
+                       "foreground = \"#767676\"\n"
+                       "muted = \"#777777\"\n"
+                       "accent = \"#888888\"\n"
+                       "dark_foreground = \"#707070\"\n"));
+    QCOMPARE(palette.value(QStringLiteral("background")).toString(),
+             QStringLiteral("#808080"));
+    QVERIFY(OmarchyTheme::contrastRatio(palette.value(QStringLiteral("foreground")).toString(),
+                                        QStringLiteral("#808080"))
+            < 4.5);
+
+    const QJsonObject audience =
+        OmarchyTheme::paletteForRole(palette, QStringLiteral("audience"));
+    QCOMPARE(audience.value(QStringLiteral("background")).toString(),
+             QStringLiteral("#808080"));
+    QVERIFY(OmarchyTheme::contrastRatio(audience.value(QStringLiteral("foreground")).toString(),
+                                        QStringLiteral("#808080"))
+            >= 4.5);
+    QVERIFY(OmarchyTheme::contrastRatio(audience.value(QStringLiteral("muted")).toString(),
+                                        QStringLiteral("#808080"))
+            >= 4.5);
+    QVERIFY(OmarchyTheme::contrastRatio(audience.value(QStringLiteral("accent")).toString(),
+                                        QStringLiteral("#808080"))
+            >= 4.5);
+    QVERIFY(OmarchyTheme::contrastRatio(
+                audience.value(QStringLiteral("dark_foreground")).toString(),
+                QStringLiteral("#808080"))
+            >= 4.5);
+    // Input is not mutated.
+    QCOMPARE(palette.value(QStringLiteral("foreground")).toString(),
+             QStringLiteral("#767676"));
+}
+
+void OmarchyThemeTest::paletteForRoleLeavesExactThemeForOtherRoles()
+{
+    const QJsonObject palette = OmarchyTheme::parseColorsToml(
+        QStringLiteral("background = \"#808080\"\nforeground = \"#767676\"\n"));
+    const QStringList exactRoles{QStringLiteral("presenter"), QStringLiteral("preview"),
+                                 QStringLiteral("pdf"),       QStringLiteral("web"),
+                                 QStringLiteral("export"),    QStringLiteral("editor")};
+    for (const QString &role : exactRoles) {
+        const QJsonObject out = OmarchyTheme::paletteForRole(palette, role);
+        QCOMPARE(out.value(QStringLiteral("foreground")).toString(),
+                 palette.value(QStringLiteral("foreground")).toString());
+        QCOMPARE(out.value(QStringLiteral("background")).toString(),
+                 palette.value(QStringLiteral("background")).toString());
+        QVERIFY(OmarchyTheme::contrastRatio(out.value(QStringLiteral("foreground")).toString(),
+                                            QStringLiteral("#808080"))
+                < 4.5);
+    }
 }
 
 void OmarchyThemeTest::installedThemesUserWinsSorted()

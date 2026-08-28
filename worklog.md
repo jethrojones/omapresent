@@ -606,3 +606,10 @@ orchestrator wants it moved onto this class.
   files copied verbatim beside it. The bytes are unmodified — only the
   renderer's own relative import specifiers are rewritten, and the vendored
   libraries have none — but a reader of that file should not have to infer it.
+
+### 2026-08-27 21:21 PT — theme (Grok 4.6)
+**Task:** T3 — is the contrast floor wired to the audience window?
+**Did:** Traced `OmarchyTheme::palette()` into the deck JSON. `ensureContrast` is never called outside `omarchytheme.cpp` / `tst_omarchytheme.cpp`. `Backend::deckDocument` always passes `m_theme.palette()` into `RenderHost::composeDeck` for preview, present, pdf and web. `Presentation::setDeck` stores that one palette and `applyTo` `render`/`update`s the same `d->deck` for audience, presenter and next-slide preview. AudienceWindow.qml chrome also reads `presentation.palette` verbatim. Spec §6's audience-only floor does not exist in practice. Added `OmarchyTheme::paletteForRole(palette, role)` — `audience` nudges `foreground`/`muted`/`dark_foreground`/`accent` against `background`; presenter/preview/pdf/web/export/editor get the exact theme.
+**Tests:** `paletteForRoleFloorsAudienceOnly`, `paletteForRoleLeavesExactThemeForOtherRoles`. OmarchyThemeTest 31/31. `./bin/build` green.
+**Next:** waiting on app-shell and present to call the helper.
+**NEEDS:** app-shell (`src/backend.cpp` `deckDocument`, and PDF/web callers): keep `m_theme.palette()` for preview, pdf and web. present (`src/presentation.cpp` `setDeck` / `applyTo`): the audience `WebEngineView` must receive a deck whose `palette` is `OmarchyTheme::paletteForRole(exact, "audience")`. Presenter window, next-slide preview, and `AudienceWindow.qml` chrome currently share one unfloored object — only the audience page (and any audience chrome that draws text) should get the floored copy. Do not floor the presenter, preview pane, PDF, or published web bundle.
