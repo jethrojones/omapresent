@@ -648,3 +648,80 @@ were pinning the old AssetIndex behaviour.
 **Tests:** VideoCacheTest 113 cases. `./bin/build && ./bin/test` pass (full tree green).
 **Next:** done. Waiting for the next task.
 **NEEDS:** nothing
+
+### 2026-08-27 22:40 PT — doc-model (Claude Opus 5)
+**Task:** T13 live-sync tests, plus rewriting the T12 pins whose bugs are fixed
+**Did:** Added `tests/tst_livesync.cpp` (23 cases) for the editor-to-everything
+seam of spec §4.10. It drives the real path — `DeckModel::setSource` →
+`toJson()` → `DeckNavigator::setDeck` — plus `RenderHost`, so it needs no
+compositor and no window. One line added to `tests/tests.pro`. I did not touch
+`src/backend.cpp` or `src/renderhost.cpp`.
+
+Covered: editing the current slide, another slide, or adding one after it all
+hold the index; scroll position survives an edit inside the slide and is
+remembered per slide across edits; deleting down to fewer slides clamps;
+deleting everything leaves no dangling index and typing the deck back recovers;
+`slideIndexForLine` round-trips inside every slide, is never non-monotonic
+across a file, and returns -1 for frontmatter and for the lines of a `// ---`
+draft slide; removing the blank line above a separator merges two slides and the
+navigator clamps rather than dangling; and every keystroke on the way to typing
+`---` parses to something sane, because the preview re-renders on all of them.
+
+**Two decisions**, asserted rather than assumed, both with the reasoning in the
+test:
+- **Deleting the slide the presenter is on keeps the index**, so they land on
+  the slide that *followed* the deleted one — exactly where pressing Right would
+  have taken them. Moving backwards would rewind the talk, and blanking the
+  screen would be worse than either. It is also what every list UI does when you
+  delete the selected row.
+- **A separator line belongs to the slide it introduces**, so a caret parked on
+  `---` presents from the slide below it — the one the author is about to write,
+  not the one they just finished. This was already my T1 behaviour; it is now
+  written down as a decision with a reason.
+
+**Also:** rewrote the two T12 pins whose bugs the owners have now fixed, so they
+assert the fix instead of the defect, keeping every input case:
+`assetIndexReadsProseAsImagePaths` → `assetIndexTellsProseFromImagePaths` (now
+data-driven: prose with a slash is prose, paths are paths, and per the new
+contract §3a a local video is never also an image), and
+`rendererReadsBareVideoFilenamesAsWebUrls` →
+`videoFilenamesBehaveIdenticallyOnBothSides`.
+
+The third pin had **changed shape rather than being fixed**, which is why it was
+worth reading both answers instead of assuming. Everything agrees now except an
+inline `![alt](x)` inside a paragraph, and that difference is correct rather
+than a bug: contract §3 renders notes as formatted Markdown in the presenter and
+web roles, so an inline image in a note really is drawn there and its file
+really does need resolving. `AssetIndex` must collect it; the renderer's block
+classifier is right that the line is not an image *block*. That now has its own
+test, `inlineImagesInProseAreResolvedButNotDrawnAsBlocks`, saying so — no defect
+filed.
+
+**Tests:** `./bin/build` passes. `./bin/test` fully green — every C++ suite
+(LiveSyncTest 23, IntegrationTest 39, DeckModelTest 84) and all 38 renderer
+tests, 0 failures.
+
+**Heads-up:** as in T12, my staged files were swept into another agent's commit
+before mine ran — this time `0b23d2c` ("Exercise the offline video cache on a
+real deck"). Content is intact and I have not touched that commit, but two
+agents are now running `git add -A`.
+
+**NEEDS:** one defect, for whoever owns `src/presentation.cpp`.
+
+**`DeckNavigator::setDeck` follows the slide *number*, not the slide.** It only
+clamps the index, so an insertion or deletion *above* the presenter silently
+moves them onto different content. Insert a slide at position 2 while presenting
+slide 7 and the audience jumps to what was slide 6 — mid-talk, with no
+keystroke. Deleting above does the same in reverse. Pinned by
+`LiveSyncTest::insertingASlideBeforeTheCurrentOneMovesTheContentAway` and
+`deletingASlideBeforeTheCurrentOneMovesTheContentAway`; both are named after the
+defect and should be renamed when it is fixed.
+
+The fix is reachable from where the bug is, and the tests assert that too: the
+slide that was on screen is still present in the deck `setDeck` receives, just
+at a different flow index, so matching the outgoing slide's `markdown` against
+the incoming slides and moving the index to where it went would do it. Falling
+back to the current clamp when no match is found handles the case where the
+current slide is the one being edited. `skippedSlidesDoNotShiftTheFlowIndex`
+already passes and should keep passing — a `{q, skip}` slide is outside the flow,
+so inserting one never moves anybody.
