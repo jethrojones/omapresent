@@ -20,6 +20,14 @@ fi
 
 status=0
 
+# --- The application binary -------------------------------------------------
+# Some suites drive the CLI (publish confirmation, argument handling), and they
+# skip themselves when build/omapresent is missing -- which meant they never ran
+# unless someone happened to build first. Build it here so they always do.
+"$ROOT/bin/build" >/dev/null || {
+  echo "bin/build failed; the CLI suites will skip" >&2
+}
+
 # --- C++ suites (tests/tst_*.cpp, one binary, see tests/testrunner.h) --------
 mkdir -p "$BUILD_DIR"
 (
