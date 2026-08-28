@@ -221,3 +221,23 @@ Things the orchestrator checked directly, rather than taking an agent's word:
     `qt6-declarative` — so as written the package could never have installed.
     Dropped, and `qt6-webchannel`, `hicolor-icon-theme` and `ttf-ia-writer`
     added. The font is a dependency, not a bundle, which still satisfies §14.2.
+- **2026-08-27 — 470 tests green.** 433 C++ across eleven suites plus 37
+  renderer suites, zero failures, including the integration suite that was
+  red. The three cross-component bugs it found are fixed and the tests
+  re-pinned to the corrected behaviour.
+- **2026-08-27 — the contrast floor was never called.** Asked the `theme` agent
+  to trace whether §6's audience-only legibility floor was actually wired up
+  rather than merely implemented. It was not: `ensureContrast` appeared nowhere
+  outside `omarchytheme.cpp` and its own tests, and `Backend::deckDocument`
+  handed the same raw palette to preview, present, PDF and web alike, with
+  `Presentation::setDeck` sharing one deck object across the audience and
+  presenter views. So a feature with passing unit tests did not exist in
+  practice. `OmarchyTheme::paletteForRole(palette, role)` added; wiring routed
+  to `present` (audience page and chrome) and `app-shell` (leave preview, PDF
+  and web exact). This is the failure mode a parallel build produces most
+  easily — every piece correct, nothing connected — and it is why "the tests
+  pass" is not the same as "the feature works".
+- **2026-08-27 — renderer defects fixed and re-verified.** Re-exported the PDF
+  and looked at the pages: lists now run the full slide width, and the welcome
+  deck fell from 61 pages to 49 purely from that fix, exactly the cascade
+  predicted. Continuation pages now put the footer on the bottom edge.
