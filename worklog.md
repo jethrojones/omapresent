@@ -262,8 +262,88 @@ If any of those should change, say so and I will match.
 **Next:** done. Waiting for the next task.
 **NEEDS:** nothing
 
+### 2026-08-27 19:19 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** T2 shared renderer bundle — gate checkpoint
+**Did:** Replaced the renderer stubs with the full DOM API, offline Markdown/KaTeX/QR bundle, theme-only CSS, pure parser/layout/media modules, PDF/read modes, and a standalone browser fixture. Autoreview findings were verified and fixed for navigation, pagination, recall export, long-read order, media control, forced QR, code classification, overview scrolling, and tall images.
+**Tests:** 35 renderer tests pass. Chromium fixture and QR checks pass. A five-slide PDF fixture paginates to six pages. `./bin/build` passes. The shared test build stops in `tests/tst_integration.cpp` because `Slide` has no `operator==`.
+**Next:** Retry `./bin/build && ./bin/test` after the integration owner repairs its compile error, then commit the renderer files.
+**NEEDS:** The integration owner must remove `QList<Slide>::indexOf` / direct list comparison or add the frozen-contract-safe equality support. The backend owner must add bare local video filenames to `VideoCache::extractUrls()` so `describe()` can resolve them; the renderer already uses resolved asset entries and refuses broken raw paths.
+
+### 2026-08-27 19:24 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** T2 shared renderer bundle — handoff
+**Did:** Committed the complete renderer as `152abdd`. The bundle now supplies the frozen page API, QWebChannel state path, all closed-set layouts, fragments, scrolling, recall/blank/overview, offline Markdown/KaTeX/QR rendering, themed CSS, PDF/web output, vendor licences, and the standalone fixture. Final bounded Autoreview is clean.
+**Tests:** 35 renderer tests pass. Chromium fixture, forced-QR, long-read order, and six-page PDF pagination checks pass. `./bin/build` passes. Full `./bin/test` remains blocked before execution by the unrelated `Slide` equality compile error in uncommitted `tests/tst_integration.cpp`.
+**Next:** Integration owner fixes its compile error and reruns the shared gate. Renderer work is committed and ready.
+**NEEDS:** Same two cross-owner items above: integration test equality compile fix; backend extraction of bare local video filenames.
+
 ### 2026-08-27 19:39 PT — publish (Codex GPT-5.6 Sol)
 **Task:** T6 web publish and provider layer
 **Did:** Implemented byte-preserving publish config, slugging, here.now create/update/history/revert/auth/claim/domain flows, safe private publishing, command publishing, and S3 Signature V4 uploads. Publishing now owns a bundle snapshot and fails closed for invalid access, unreadable config, and private modes that a provider cannot enforce. Final Autoreview is clean.
 **Tests:** `tests/tst_publisher.cpp` — 12 cases pass with no network. An isolated T6 checkout passes `./bin/build && ./bin/test`. The shared `./bin/build` passes. The shared `./bin/test` cannot compile uncommitted `tests/tst_integration.cpp` because `Slide` has no `operator==`.
 **Next:** T6 is complete. Retry the shared test gate after the integration owner repairs its compile error.
+**NEEDS:** The integration owner must remove the `QList<Slide>` equality uses or add frozen-contract-safe equality support.
+
+### 2026-08-27 21:10 PT — renderer (Codex GPT-5.6 Sol)
+**Task:** T2 review 1 — rendered PDF list width and continuation footer
+**Did:** Reproduced the welcome-deck PDF and inspected pages 2, 3, and 7 as images. Confirmed that list width collapses because `27ch` resolves on the small list container, and that the footer ends at content height on a continuation page.
+**Tests:** Repro currently produces 53 PDF pages. Visual baseline captured under `/tmp/renderer-review-*.png` and `/tmp/renderer-footer-07.png`.
+**Next:** Fix full-width list layout with a rendered-width regression test, then correct footer pagination and re-export.
+**NEEDS:** nothing
+
+### 2026-08-27 21:12 PT — publish (Codex GPT-5.6 Sol)
+**Task:** T6 local here.now protocol integration coverage
+**Did:** Started a loopback-only mock-server test for create, upload, refresh, finalize, access, authentication, failure, and command-provider environment flows.
+**Tests:** not yet
+**Next:** Add the local endpoint seam, drive the full state machine, then run the shared build and test gate.
+**NEEDS:** nothing
+
+### 2026-08-27 21:20 PT — present (Claude Opus 5)
+**Task:** T9 present mode
+**Did:**
+- Implemented `src/presentation.cpp` in full. C++ holds the authoritative
+  position of the talk in a new pure `DeckNavigator` and drives every window
+  through the frozen page API, so the audience cannot drift from the presenter.
+  Fragment counts and scroll fractions are the renderer's to know, so they are
+  learned from its state events and remembered per slide (spec §4.7).
+- Two separate top-level windows, `src/AudienceWindow.qml` and
+  `src/PresenterWindow.qml`. The presenter carries the current slide, a real
+  next-slide preview (a third renderer view, so it looks like what will appear),
+  the notes as formatted Markdown, a click-to-reset elapsed timer, a wall clock,
+  x/count, the recall bindings and the `Ctrl+?` sheet.
+- Monitor assignment is the pure `assignOutputs()`; hotplug is wired to
+  `screenAdded`/`screenRemoved`/`primaryScreenChanged`, and windows drop out of
+  fullscreen to move, which is what makes a mid-talk projector land correctly.
+- All of §5.2 through one `Presentation::handleKey`, called from both windows,
+  so the two behave identically and the dispatch is unit-testable.
+- Idle inhibit and DND are RAII holders (`IdleInhibit`, `DoNotDisturbHold`)
+  released in the destructor as well as `stop()`, so a crash path still gives
+  the desktop back. DND reads the prior state first through
+  makoctl / swaync / dunstctl / `omarchy-toggle-notification-silencing`; idle
+  uses the ScreenSaver DBus inhibit (which hypridle itself serves) plus
+  `omarchy-toggle-idle`, and only touches a stay-awake it did not already find.
+  Starting twice does not stack either one.
+**Tests:** `tests/tst_presentation.cpp` — 44 cases, all green: navigation across
+fragments and slide boundaries, the digit-then-Enter jump including past the end,
+recall show/hide restoring slide + fragment + scroll exactly, scroll memory per
+slide, and monitor assignment over six output lists. Both QML windows were also
+instantiated for real against a live `Presentation` with WebEngine initialised,
+and load clean.
+**Next:** done with T9.
+**NEEDS:**
+- `app-shell`: register `PresenterWindow.qml` and `AudienceWindow.qml` in
+  `src/resources.qrc`, and call `backend.presentation()->setQmlEngine(&engine)`
+  in `main.cpp`. Without the qrc entries present mode logs a component error and
+  opens nothing; without the engine it builds a private `QQmlEngine` instead.
+- `app-shell`: `src/PreviewPane.qml` declares `WebEngineScript { ... }` and
+  assigns `userScripts.collection`. On Qt 6.11 that type is `isCreatable: false`
+  — instantiating it fails with "Element is not creatable", which takes the
+  whole component down, so the preview pane never loads and never gets state
+  events. I hit the same thing and moved to `runJavaScript(bridgeScript)` at
+  `LoadSucceededStatus`, which is equivalent for a page that never navigates.
+- `publish`: `WebBundle` cannot see the renderer when its directory is passed
+  with a `..` in it. `rendererFiles()` compares `QDirIterator` paths (uncleaned,
+  e.g. `.../build-tests/../src/renderer/render.js`) against a
+  `QDir::cleanPath()`ed prefix, so nothing ever matches and `build()` fails with
+  "no render.js". That is 1 of the 3 `WebBundleTest` failures currently red in
+  the shared tree; the other two are its expectations against the renderer's new
+  output. None of them are mine — `tst_presentation` is 44/44.

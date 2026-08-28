@@ -1,28 +1,1150 @@
-// STUB — awaiting implementation. See src/presentation.h for the contract and
-// tasks/ for the brief. Replace this file wholesale; do not edit the header's
-// existing declarations.
 #include "presentation.h"
 
-Presentation::Presentation(QObject *parent) : QObject(parent) {}
-Presentation::~Presentation() = default;
-bool Presentation::active() const { return false; }
-int Presentation::slideIndex() const { return 0; }
-int Presentation::slideCount() const { return 0; }
-int Presentation::elapsedSeconds() const { return 0; }
-void Presentation::start(int) {}
-void Presentation::stop() {}
-void Presentation::resetTimer() {}
-void Presentation::setDeck(const QJsonObject &) {}
-void Presentation::next() {}
-void Presentation::previous() {}
-void Presentation::gotoSlide(int) {}
-void Presentation::scrollBy(qreal) {}
-void Presentation::showRecall(const QString &) {}
-void Presentation::hideRecall() {}
-void Presentation::setBlank(const QString &) {}
-void Presentation::setOverview(bool) {}
-void Presentation::toggleNotesOverlay() {}
-QStringList Presentation::outputs() const { return {}; }
-void Presentation::assignMonitors() {}
-void Presentation::inhibitIdle(bool) {}
-void Presentation::setDoNotDisturb(bool) {}
+#include <QDebug>
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusReply>
+#include <QGuiApplication>
+#include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QPointer>
+#include <QProcess>
+#include <QQmlComponent>
+#include <QQmlContext>
+#include <QQmlEngine>
+#include <QQmlError>
+#include <QQuickWindow>
+#include <QScreen>
+#include <QStandardPaths>
+#include <QTimer>
+#include <QUrl>
+
+#include <memory>
+
+#include "renderhost.h"
+
+namespace {
+
+const QString audienceRole = QStringLiteral("audience");
+const QString presenterRole = QStringLiteral("presenter");
+// The next-slide preview in the presenter window. It draws with the renderer
+// like everything else, so what the speaker sees ahead is what will appear.
+const QString previewRole = QStringLiteral("preview");
+
+// One arrow press of scrolling, and one page. Renderer pixels (spec §4.7).
+constexpr qreal arrowScrollPixels = 120.0;
+constexpr qreal pageScrollPixels = 640.0;
+
+QString call(const QString &function) {
+    return QStringLiteral("window.omapresent && window.omapresent.%1();").arg(function);
+}
+
+QString call(const QString &function, int argument) {
+    return QStringLiteral("window.omapresent && window.omapresent.%1(%2);")
+        .arg(function)
+        .arg(argument);
+}
+
+QString call(const QString &function, qreal argument) {
+    return QStringLiteral("window.omapresent && window.omapresent.%1(%2);")
+        .arg(function)
+        .arg(argument, 0, 'f', 6);
+}
+
+QString call(const QString &function, const QString &argument) {
+    QString quoted = QJsonDocument(QJsonArray{argument}).toJson(QJsonDocument::Compact);
+    quoted = quoted.mid(1, quoted.size() - 2);  // the array brackets
+    return QStringLiteral("window.omapresent && window.omapresent.%1(%2);")
+        .arg(function, quoted);
+}
+
+// Runs a short command and hands back its stdout. Used only at the two ends of
+// a talk, to read and restore the desktop's notification state.
+QString runCommand(const QString &program, const QStringList &arguments, bool *ok = nullptr) {
+    if (ok)
+        *ok = false;
+    QProcess process;
+    process.start(program, arguments);
+    if (!process.waitForFinished(2000)) {
+        process.kill();
+        process.waitForFinished(200);
+        return {};
+    }
+    if (ok)
+        *ok = process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+    return QString::fromUtf8(process.readAllStandardOutput());
+}
+
+bool haveCommand(const QString &program) {
+    return !QStandardPaths::findExecutable(program).isEmpty();
+}
+
+// Keeps the screen awake for the length of a talk (spec §5.3). Taking one
+// inhibits, letting it go releases — including down a crash path, which is the
+// whole reason this is a holder and not a pair of calls.
+class IdleInhibit {
+public:
+    IdleInhibit() {
+        // hypridle serves org.freedesktop.ScreenSaver itself, so on Omarchy
+        // this one call covers both halves of the spec's "hypridle /
+        // org.freedesktop.ScreenSaver". The desktop-neutral PowerManagement
+        // interface is the fallback for machines running neither.
+        const struct { const char *service; const char *path; const char *interface; } buses[] = {
+            {"org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver",
+             "org.freedesktop.ScreenSaver"},
+            {"org.freedesktop.PowerManagement.Inhibit",
+             "/org/freedesktop/PowerManagement/Inhibit",
+             "org.freedesktop.PowerManagement.Inhibit"}};
+
+        for (const auto &bus : buses) {
+            QDBusInterface interface(QString::fromLatin1(bus.service),
+                                     QString::fromLatin1(bus.path),
+                                     QString::fromLatin1(bus.interface),
+                                     QDBusConnection::sessionBus());
+            if (!interface.isValid())
+                continue;
+            const QDBusReply<uint> reply =
+                interface.call(QStringLiteral("Inhibit"), QStringLiteral("omapresent"),
+                               QStringLiteral("Presenting"));
+            if (!reply.isValid())
+                continue;
+            m_service = QString::fromLatin1(bus.service);
+            m_path = QString::fromLatin1(bus.path);
+            m_interface = QString::fromLatin1(bus.interface);
+            m_cookie = reply.value();
+            break;
+        }
+
+        // Omarchy's own switch, which is what hypridle reads on this desktop.
+        // Only touched when it was not already held, so we never take away a
+        // stay-awake the user set for themselves.
+        if (haveCommand(QStringLiteral("omarchy-toggle-idle"))) {
+            bool ok = false;
+            const QString status =
+                runCommand(QStringLiteral("omarchy-toggle-idle"), {QStringLiteral("status")}, &ok);
+            m_wasStayingAwake = ok && status.contains(QStringLiteral("\"enabled\":true"));
+            if (ok && !m_wasStayingAwake) {
+                runCommand(QStringLiteral("omarchy-toggle-idle"), {QStringLiteral("stay-awake")});
+                m_heldStayAwake = true;
+            }
+        }
+    }
+
+    ~IdleInhibit() {
+        if (!m_service.isEmpty()) {
+            QDBusInterface interface(m_service, m_path, m_interface,
+                                     QDBusConnection::sessionBus());
+            if (interface.isValid())
+                interface.call(QStringLiteral("UnInhibit"), m_cookie);
+        }
+        if (m_heldStayAwake)
+            runCommand(QStringLiteral("omarchy-toggle-idle"), {QStringLiteral("allow-idle")});
+    }
+
+    IdleInhibit(const IdleInhibit &) = delete;
+    IdleInhibit &operator=(const IdleInhibit &) = delete;
+
+private:
+    QString m_service;
+    QString m_path;
+    QString m_interface;
+    uint m_cookie = 0;
+    bool m_wasStayingAwake = false;
+    bool m_heldStayAwake = false;
+};
+
+// Turns Do-Not-Disturb on for the length of a talk and puts it back exactly as
+// it was (spec §5.3). The prior state is read, never assumed — a presenter who
+// already lives in DND must not come out of a talk with notifications back on.
+class DoNotDisturbHold {
+public:
+    DoNotDisturbHold() {
+        if (haveCommand(QStringLiteral("makoctl"))) {
+            m_tool = Mako;
+            bool ok = false;
+            const QString modes = runCommand(QStringLiteral("makoctl"), {QStringLiteral("mode")}, &ok);
+            m_wasEnabled = ok && modes.split(u'\n').contains(QStringLiteral("do-not-disturb"));
+            if (ok && !m_wasEnabled) {
+                runCommand(QStringLiteral("makoctl"),
+                           {QStringLiteral("mode"), QStringLiteral("-a"),
+                            QStringLiteral("do-not-disturb")});
+                m_held = true;
+            }
+            return;
+        }
+
+        if (haveCommand(QStringLiteral("swaync-client"))) {
+            m_tool = Swaync;
+            bool ok = false;
+            const QString state = runCommand(QStringLiteral("swaync-client"), {QStringLiteral("-D")}, &ok);
+            m_wasEnabled = ok && state.trimmed() == QStringLiteral("true");
+            if (ok && !m_wasEnabled) {
+                runCommand(QStringLiteral("swaync-client"), {QStringLiteral("-df")});
+                m_held = true;
+            }
+            return;
+        }
+
+        if (haveCommand(QStringLiteral("dunstctl"))) {
+            m_tool = Dunst;
+            bool ok = false;
+            const QString paused =
+                runCommand(QStringLiteral("dunstctl"), {QStringLiteral("is-paused")}, &ok);
+            m_wasEnabled = ok && paused.trimmed() == QStringLiteral("true");
+            if (ok && !m_wasEnabled) {
+                runCommand(QStringLiteral("dunstctl"),
+                           {QStringLiteral("set-paused"), QStringLiteral("true")});
+                m_held = true;
+            }
+            return;
+        }
+
+        if (haveCommand(QStringLiteral("omarchy-toggle-notification-silencing"))) {
+            // The Omarchy shell only offers a toggle, but it prints the state it
+            // toggled to, so one flip tells us where we started. If we find DND
+            // was already on we flip straight back and leave it alone.
+            m_tool = Omarchy;
+            bool ok = false;
+            const QString state =
+                runCommand(QStringLiteral("omarchy-toggle-notification-silencing"), {}, &ok);
+            const QString lowered = state.trimmed().toLower();
+            const bool nowEnabled = lowered.contains(QStringLiteral("true"))
+                || lowered.contains(QStringLiteral("enabled"))
+                || lowered.contains(QStringLiteral("\"dnd\":1"));
+            const bool readable = ok
+                && (nowEnabled || lowered.contains(QStringLiteral("false"))
+                    || lowered.contains(QStringLiteral("disabled")));
+            if (!readable) {
+                // We cannot tell what we did, so undo it and stay out of the way.
+                if (ok)
+                    runCommand(QStringLiteral("omarchy-toggle-notification-silencing"), {});
+                m_tool = None;
+                return;
+            }
+            m_wasEnabled = !nowEnabled;
+            if (m_wasEnabled)
+                runCommand(QStringLiteral("omarchy-toggle-notification-silencing"), {});
+            else
+                m_held = true;
+        }
+    }
+
+    ~DoNotDisturbHold() {
+        if (!m_held)
+            return;
+        switch (m_tool) {
+        case Mako:
+            runCommand(QStringLiteral("makoctl"),
+                       {QStringLiteral("mode"), QStringLiteral("-r"),
+                        QStringLiteral("do-not-disturb")});
+            break;
+        case Swaync:
+            runCommand(QStringLiteral("swaync-client"), {QStringLiteral("-dn")});
+            break;
+        case Dunst:
+            runCommand(QStringLiteral("dunstctl"),
+                       {QStringLiteral("set-paused"), QStringLiteral("false")});
+            break;
+        case Omarchy:
+            runCommand(QStringLiteral("omarchy-toggle-notification-silencing"), {});
+            break;
+        case None:
+            break;
+        }
+    }
+
+    DoNotDisturbHold(const DoNotDisturbHold &) = delete;
+    DoNotDisturbHold &operator=(const DoNotDisturbHold &) = delete;
+
+private:
+    enum Tool { None, Mako, Swaync, Dunst, Omarchy };
+
+    Tool m_tool = None;
+    bool m_wasEnabled = false;
+    bool m_held = false;
+};
+
+// What one renderer window is currently showing, so we only ever send it the
+// difference between that and where the talk actually is.
+struct ViewState {
+    bool ready = false;
+    bool deckSent = false;
+    // -1 until the first goto, so the first sync always states a position.
+    DeckPosition applied{-1, 0, 0.0};
+    QString blank;
+    QString recall;
+    bool overview = false;
+};
+
+}  // namespace
+
+// --- Monitors ---------------------------------------------------------------
+
+MonitorAssignment assignOutputs(const QVector<PresentationOutput> &outputs) {
+    MonitorAssignment assignment;
+    if (outputs.isEmpty())
+        return assignment;
+    if (outputs.size() == 1) {
+        assignment.audience = 0;
+        assignment.presenter = 0;
+        return assignment;
+    }
+
+    int primary = 0;
+    for (int i = 0; i < outputs.size(); ++i) {
+        if (outputs.at(i).primary) {
+            primary = i;
+            break;
+        }
+    }
+    assignment.presenter = primary;
+    assignment.audience = primary == 0 ? 1 : 0;
+    return assignment;
+}
+
+// --- DeckNavigator ----------------------------------------------------------
+
+void DeckNavigator::setDeck(const QJsonObject &deckJson) {
+    const QJsonArray slides = deckJson.value(QStringLiteral("slides")).toArray();
+
+    QStringList keys;
+    int flowCount = 0;
+    for (const QJsonValue &value : slides) {
+        const QJsonObject slide = value.toObject();
+        const QString key = slide.value(QStringLiteral("recallKey")).toString();
+        if (!key.isEmpty() && !keys.contains(key))
+            keys.append(key);
+        if (!slide.value(QStringLiteral("skip")).toBool())
+            ++flowCount;
+    }
+
+    m_recallKeys = keys;
+    m_flowCount = flowCount;
+    // An edit can shorten the deck under us; keep what we know about the slides
+    // that survived and clamp the position into what is left.
+    m_scroll.resize(flowCount);
+    m_fragmentCounts.resize(flowCount);
+    if (!m_recall.isEmpty() && !m_recallKeys.contains(m_recall))
+        m_recall.clear();
+    m_position.slideIndex = qBound(0, m_position.slideIndex, qMax(0, flowCount - 1));
+    m_position.fragment = qMin(m_position.fragment, fragmentCount() - 1);
+    m_recallReturn.slideIndex =
+        qBound(0, m_recallReturn.slideIndex, qMax(0, flowCount - 1));
+}
+
+int DeckNavigator::fragmentCountAt(int slideIndex) const {
+    return qMax(1, m_fragmentCounts.value(slideIndex));
+}
+
+void DeckNavigator::noteFragmentCount(int slideIndex, int count) {
+    if (slideIndex < 0 || slideIndex >= m_flowCount || count <= 0)
+        return;
+
+    m_fragmentCounts[slideIndex] = count;
+    if (slideIndex != m_position.slideIndex)
+        return;
+
+    if (m_revealAllOnArrival) {
+        m_revealAllOnArrival = false;
+        m_position.fragment = count - 1;
+    }
+    m_position.fragment = qBound(0, m_position.fragment, count - 1);
+}
+
+bool DeckNavigator::next() {
+    if (m_flowCount == 0)
+        return false;
+    if (m_position.fragment + 1 < fragmentCount()) {
+        ++m_position.fragment;
+        return true;
+    }
+    return gotoSlide(m_position.slideIndex + 1);
+}
+
+bool DeckNavigator::previous() {
+    if (m_flowCount == 0)
+        return false;
+    if (m_position.fragment > 0) {
+        --m_position.fragment;
+        return true;
+    }
+    if (m_position.slideIndex == 0)
+        return false;
+
+    const int target = m_position.slideIndex - 1;
+    gotoSlide(target);
+    // Stepping back should undo the last step forward, which means landing on
+    // the previous slide fully revealed. If we have never displayed it we do
+    // not know how many fragments that is, so ask to be told on arrival.
+    const int known = m_fragmentCounts.value(target);
+    if (known > 0)
+        m_position.fragment = known - 1;
+    else
+        m_revealAllOnArrival = true;
+    return true;
+}
+
+bool DeckNavigator::gotoSlide(int slideIndex) {
+    if (m_flowCount == 0)
+        return false;
+
+    const DeckPosition before = m_position;
+    m_revealAllOnArrival = false;
+    m_position.slideIndex = qBound(0, slideIndex, m_flowCount - 1);
+    m_position.fragment = 0;
+    m_position.scrollFraction = m_scroll.value(m_position.slideIndex);
+    return !(m_position == before);
+}
+
+void DeckNavigator::setScrollFraction(qreal fraction) {
+    if (m_flowCount == 0)
+        return;
+    const qreal clamped = qBound(qreal(0), fraction, qreal(1));
+    m_position.scrollFraction = clamped;
+    m_scroll[m_position.slideIndex] = clamped;
+}
+
+bool DeckNavigator::appendJumpDigit(const QString &text) {
+    if (text.size() != 1 || !text.at(0).isDigit())
+        return false;
+    // A digit bound as a recall key is that binding when nothing has been typed
+    // yet; leading with `0` is how you then type a slide number starting with
+    // the same digit.
+    if (m_jump.isEmpty() && isRecallKey(text))
+        return false;
+    if (m_jump.size() >= 4)
+        return false;
+    m_jump += text;
+    return true;
+}
+
+void DeckNavigator::clearJump() {
+    m_jump.clear();
+}
+
+bool DeckNavigator::commitJump() {
+    if (m_jump.isEmpty())
+        return false;
+    const int number = m_jump.toInt();
+    m_jump.clear();
+    gotoSlide(number - 1);
+    return true;
+}
+
+bool DeckNavigator::showRecall(const QString &key) {
+    if (!isRecallKey(key))
+        return false;
+    // Switching straight from one overlay to another still returns to the slide
+    // the first one covered.
+    if (m_recall.isEmpty())
+        m_recallReturn = m_position;
+    m_recall = key;
+    return true;
+}
+
+bool DeckNavigator::hideRecall() {
+    if (m_recall.isEmpty())
+        return false;
+    m_recall.clear();
+    m_position = m_recallReturn;
+    return true;
+}
+
+// --- Presentation -----------------------------------------------------------
+
+struct Presentation::Private {
+    DeckNavigator nav;
+    QJsonObject deck;
+    QVariantMap palette;
+    QString deckTitle;
+    QString heading;
+    QString notesHtml;
+    QString blank;
+    bool overview = false;
+    bool notesOverlay = false;
+    bool shortcuts = false;
+    bool active = false;
+    bool mediaActive = false;
+    int elapsed = 0;
+    QTimer clock;
+
+    QQmlEngine *engine = nullptr;
+    std::unique_ptr<QQmlEngine> ownEngine;
+    QPointer<QQuickWindow> audienceWindow;
+    QPointer<QQuickWindow> presenterWindow;
+    QHash<QString, ViewState> views;
+    RenderHost *audienceHost = nullptr;
+    RenderHost *presenterHost = nullptr;
+    MonitorAssignment assignment;
+
+    std::unique_ptr<IdleInhibit> idle;
+    std::unique_ptr<DoNotDisturbHold> doNotDisturb;
+
+    // The window whose renderer we ask to navigate and scroll, and whose state
+    // events we believe. The presenter when there is one, because that is where
+    // the speaker's hands are; the audience when presenting on one screen.
+    QString masterRole() const {
+        return views.value(presenterRole).ready ? presenterRole : audienceRole;
+    }
+};
+
+Presentation::Presentation(QObject *parent) : QObject(parent), d(new Private) {
+    d->audienceHost = new RenderHost(this);
+    d->presenterHost = new RenderHost(this);
+
+    d->clock.setInterval(1000);
+    connect(&d->clock, &QTimer::timeout, this, [this]() {
+        ++d->elapsed;
+        emit elapsedChanged();
+    });
+
+    connect(d->audienceHost, &RenderHost::stateChanged, this,
+            [this]() { adoptState(audienceRole, d->audienceHost->lastState()); });
+    connect(d->presenterHost, &RenderHost::stateChanged, this,
+            [this]() { adoptState(presenterRole, d->presenterHost->lastState()); });
+
+    // Someone will plug a projector in mid-talk; that is the normal case
+    // (spec §5.1), so both windows follow the outputs wherever they go.
+    if (QGuiApplication *application = qGuiApp) {
+        connect(application, &QGuiApplication::screenAdded, this,
+                [this](QScreen *) { assignMonitors(); });
+        connect(application, &QGuiApplication::screenRemoved, this,
+                [this](QScreen *) { assignMonitors(); });
+        connect(application, &QGuiApplication::primaryScreenChanged, this,
+                [this](QScreen *) { assignMonitors(); });
+    }
+}
+
+Presentation::~Presentation() {
+    // The holders release here too, so an exception or a crash on the way out
+    // still gives the desktop its idle timer and its notifications back.
+    closeWindows();
+    delete d;
+}
+
+bool Presentation::active() const { return d->active; }
+int Presentation::slideIndex() const { return d->nav.slideIndex(); }
+int Presentation::slideCount() const { return d->nav.slideCount(); }
+int Presentation::elapsedSeconds() const { return d->elapsed; }
+
+const DeckNavigator &Presentation::navigator() const { return d->nav; }
+
+QUrl Presentation::rendererUrl() const {
+    return QUrl(QStringLiteral("qrc:/renderer/render.html"));
+}
+
+QString Presentation::bridgeScript() const { return RenderHost::bridgeScript(); }
+RenderHost *Presentation::audienceHost() const { return d->audienceHost; }
+RenderHost *Presentation::presenterHost() const { return d->presenterHost; }
+QVariantMap Presentation::palette() const { return d->palette; }
+QString Presentation::deckTitle() const { return d->deckTitle; }
+QString Presentation::heading() const { return d->heading; }
+QString Presentation::notesHtml() const { return d->notesHtml; }
+QStringList Presentation::recallKeys() const { return d->nav.recallKeys(); }
+QString Presentation::recall() const { return d->nav.recall(); }
+QString Presentation::jumpBuffer() const { return d->nav.jumpBuffer(); }
+QString Presentation::blank() const { return d->blank; }
+bool Presentation::overview() const { return d->overview; }
+bool Presentation::notesOverlay() const { return d->notesOverlay; }
+bool Presentation::shortcutsVisible() const { return d->shortcuts; }
+bool Presentation::singleOutput() const { return d->assignment.sharedOutput(); }
+
+void Presentation::setQmlEngine(QQmlEngine *engine) { d->engine = engine; }
+
+void Presentation::start(int fromSlideIndex) {
+    if (d->active) {
+        gotoSlide(fromSlideIndex);
+        return;
+    }
+
+    // Idempotent by construction: a second start() finds the holders already
+    // taken and does not stack another inhibit or forget the DND state we read
+    // the first time.
+    if (!d->idle)
+        d->idle.reset(new IdleInhibit);
+    if (!d->doNotDisturb)
+        d->doNotDisturb.reset(new DoNotDisturbHold);
+
+    d->active = true;
+    d->blank.clear();
+    d->overview = false;
+    d->notesOverlay = false;
+    d->shortcuts = false;
+    d->nav.clearJump();
+    d->nav.hideRecall();
+    d->nav.gotoSlide(fromSlideIndex);
+
+    d->elapsed = 0;
+    d->clock.start();
+
+    assignMonitors();
+    emit activeChanged();
+    emit elapsedChanged();
+    emit positionChanged();
+}
+
+void Presentation::stop() {
+    if (!d->active)
+        return;
+
+    d->active = false;
+    d->clock.stop();
+    closeWindows();
+    emit activeChanged();
+}
+
+void Presentation::resetTimer() {
+    d->elapsed = 0;
+    emit elapsedChanged();
+}
+
+void Presentation::setDeck(const QJsonObject &deckJson) {
+    d->deck = deckJson;
+    d->nav.setDeck(deckJson);
+
+    d->palette = deckJson.value(QStringLiteral("palette")).toObject().toVariantMap();
+    d->deckTitle = deckJson.value(QStringLiteral("frontmatter"))
+                       .toObject()
+                       .value(QStringLiteral("title"))
+                       .toString();
+
+    // A live edit keeps both windows where they are (renderer contract §2), so
+    // pages that already hold the deck get update(), not render().
+    for (auto it = d->views.begin(); it != d->views.end(); ++it) {
+        if (it->deckSent && it->ready)
+            emit runInView(it.key(), RenderHost::callScript(QStringLiteral("update"), d->deck));
+    }
+
+    emit deckChanged();
+    emit positionChanged();
+    syncViews();
+}
+
+void Presentation::next() {
+    d->nav.next();
+    afterNavigation();
+}
+
+void Presentation::previous() {
+    d->nav.previous();
+    afterNavigation();
+}
+
+void Presentation::gotoSlide(int index) {
+    d->nav.gotoSlide(index);
+    afterNavigation();
+}
+
+void Presentation::scrollBy(qreal deltaPixels) {
+    // The renderer turns pixels into a position and reports the fraction back;
+    // that report is what the audience window is then mirrored to (spec §4.7).
+    emit runInView(d->masterRole(), call(QStringLiteral("scrollBy"), deltaPixels));
+}
+
+void Presentation::showRecall(const QString &key) {
+    if (!d->nav.showRecall(key))
+        return;
+    for (const QString &role : {audienceRole, presenterRole})
+        applyOverlays(role);
+    emit positionChanged();
+}
+
+void Presentation::hideRecall() {
+    if (!d->nav.hideRecall())
+        return;
+    // Back to exactly where the overlay went up: same slide, same fragment,
+    // same scroll offset (spec §4.9).
+    afterNavigation();
+}
+
+void Presentation::setBlank(const QString &mode) {
+    const QString wanted = (mode == QStringLiteral("black") || mode == QStringLiteral("white"))
+        ? mode
+        : QString();
+    if (d->blank == wanted)
+        return;
+    d->blank = wanted;
+    applyOverlays(audienceRole);
+    emit positionChanged();
+}
+
+void Presentation::setOverview(bool on) {
+    if (d->overview == on)
+        return;
+    d->overview = on;
+    for (const QString &role : {audienceRole, presenterRole})
+        applyOverlays(role);
+    emit positionChanged();
+}
+
+void Presentation::toggleNotesOverlay() {
+    // Two windows already put the notes in front of the speaker; an overlay
+    // then would only put them on the audience screen (spec §5.1).
+    if (!singleOutput())
+        return;
+    d->notesOverlay = !d->notesOverlay;
+    emit positionChanged();
+}
+
+QStringList Presentation::outputs() const {
+    QStringList names;
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    names.reserve(screens.size());
+    for (const QScreen *screen : screens)
+        names.append(screen->name());
+    return names;
+}
+
+void Presentation::toggleFullscreen() {
+    if (!d->audienceWindow)
+        return;
+    if (d->audienceWindow->visibility() == QWindow::FullScreen)
+        d->audienceWindow->showNormal();
+    else
+        d->audienceWindow->showFullScreen();
+}
+
+void Presentation::toggleShortcuts() {
+    d->shortcuts = !d->shortcuts;
+    emit positionChanged();
+}
+
+QStringList Presentation::shortcutReference() const {
+    return QStringList{
+        QStringLiteral("→ / Space\tNext fragment, then next slide"),
+        QStringLiteral("Space\tPlay / pause the slide's first player"),
+        QStringLiteral("←\tPrevious fragment, then previous slide"),
+        QStringLiteral("↑ ↓ PgUp PgDn\tScroll this slide"),
+        QStringLiteral("Home / End\tFirst / last slide"),
+        QStringLiteral("digits then Enter\tJump to a slide number"),
+        QStringLiteral("F\tFullscreen the audience window"),
+        QStringLiteral("B / W\tBlack / white the audience screen"),
+        QStringLiteral("O\tOverview grid; arrows and Enter to pick"),
+        QStringLiteral("N\tNotes overlay (single screen)"),
+        QStringLiteral("Tab\tNext player on the slide"),
+        QStringLiteral("bound key\tShow or hide that recall slide"),
+        QStringLiteral("Esc\tClose what is open, then exit"),
+        QStringLiteral("Ctrl+?\tThis list")};
+}
+
+// --- Keys (spec §5.2) -------------------------------------------------------
+
+bool Presentation::handleKey(int key, int modifiers, const QString &text) {
+    const Qt::KeyboardModifiers mods(modifiers);
+
+    if (mods.testFlag(Qt::ControlModifier)) {
+        // `Ctrl+?` is Ctrl+Shift+/ on most layouts, so accept either spelling.
+        if (key == Qt::Key_Question || key == Qt::Key_Slash) {
+            toggleShortcuts();
+            return true;
+        }
+        return false;
+    }
+    if (mods.testFlag(Qt::AltModifier) || mods.testFlag(Qt::MetaModifier))
+        return false;
+
+    switch (key) {
+    case Qt::Key_Escape:
+        // Unwind whatever is on top before leaving; a presenter reaching for
+        // Escape to clear an overlay must not end the talk instead.
+        if (d->shortcuts) {
+            toggleShortcuts();
+        } else if (d->nav.jumpPending()) {
+            d->nav.clearJump();
+            emit positionChanged();
+        } else if (!d->nav.recall().isEmpty()) {
+            hideRecall();
+        } else if (d->overview) {
+            setOverview(false);
+        } else if (!d->blank.isEmpty()) {
+            setBlank(QString());
+        } else {
+            stop();
+            emit requestExit();
+        }
+        return true;
+
+    case Qt::Key_Space:
+        if (!d->nav.recall().isEmpty()) {
+            hideRecall();
+        } else if (d->mediaActive) {
+            // Space plays/pauses the first player first (spec §4.8); the
+            // renderer decides which one that is.
+            emit runInView(d->masterRole(), call(QStringLiteral("playPause")));
+        } else {
+            next();
+        }
+        return true;
+
+    case Qt::Key_Right:
+        if (d->overview)
+            gotoSlide(d->nav.slideIndex() + 1);
+        else
+            next();
+        return true;
+
+    case Qt::Key_Left:
+        if (d->overview)
+            gotoSlide(d->nav.slideIndex() - 1);
+        else
+            previous();
+        return true;
+
+    case Qt::Key_Down:
+        if (d->overview)
+            gotoSlide(d->nav.slideIndex() + 1);
+        else
+            scrollBy(arrowScrollPixels);
+        return true;
+
+    case Qt::Key_Up:
+        if (d->overview)
+            gotoSlide(d->nav.slideIndex() - 1);
+        else
+            scrollBy(-arrowScrollPixels);
+        return true;
+
+    case Qt::Key_PageDown:
+        scrollBy(pageScrollPixels);
+        return true;
+
+    case Qt::Key_PageUp:
+        scrollBy(-pageScrollPixels);
+        return true;
+
+    case Qt::Key_Home:
+        gotoSlide(0);
+        return true;
+
+    case Qt::Key_End:
+        gotoSlide(d->nav.slideCount() - 1);
+        return true;
+
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        if (d->nav.jumpPending()) {
+            d->nav.commitJump();
+            afterNavigation();
+        } else if (d->overview) {
+            setOverview(false);
+        }
+        return true;
+
+    case Qt::Key_Tab:
+        emit runInView(d->masterRole(), call(QStringLiteral("focusNextMedia")));
+        return true;
+
+    case Qt::Key_F:
+        toggleFullscreen();
+        return true;
+
+    case Qt::Key_B:
+        setBlank(d->blank == QStringLiteral("black") ? QString() : QStringLiteral("black"));
+        return true;
+
+    case Qt::Key_W:
+        setBlank(d->blank == QStringLiteral("white") ? QString() : QStringLiteral("white"));
+        return true;
+
+    case Qt::Key_O:
+        setOverview(!d->overview);
+        return true;
+
+    case Qt::Key_N:
+        toggleNotesOverlay();
+        return true;
+
+    default:
+        break;
+    }
+
+    if (text.size() != 1)
+        return false;
+
+    if (d->nav.appendJumpDigit(text)) {
+        emit positionChanged();
+        return true;
+    }
+
+    // Anything left that is bound shows or hides its overlay (spec §4.9). The
+    // fixed keys above win a collision: the speaker must always be able to
+    // black the screen, whatever the deck bound.
+    const QString binding = text.toLower();
+    if (d->nav.isRecallKey(binding)) {
+        if (d->nav.recall() == binding)
+            hideRecall();
+        else
+            showRecall(binding);
+        return true;
+    }
+
+    return false;
+}
+
+// --- Windows ----------------------------------------------------------------
+
+void Presentation::viewReady(const QString &role) {
+    ViewState &view = d->views[role];
+    view.ready = true;
+    view.deckSent = false;
+    view.applied = DeckPosition{-1, 0, 0.0};
+    view.blank.clear();
+    view.recall.clear();
+    view.overview = false;
+    applyTo(role);
+}
+
+void Presentation::viewGone(const QString &role) {
+    d->views.remove(role);
+}
+
+void Presentation::adoptState(const QString &role, const QJsonObject &state) {
+    ViewState &view = d->views[role];
+    const int slideIndex = state.value(QStringLiteral("slideIndex")).toInt();
+    view.applied.slideIndex = slideIndex;
+    view.applied.fragment = state.value(QStringLiteral("fragment")).toInt();
+    view.applied.scrollFraction = state.value(QStringLiteral("scrollFraction")).toDouble();
+
+    if (role != d->masterRole())
+        return;
+
+    // The renderer is the only thing that knows how many fragments a slide has
+    // and where a scroll landed. Everything else here is chrome for the
+    // presenter window.
+    d->nav.noteFragmentCount(slideIndex, state.value(QStringLiteral("fragmentCount")).toInt());
+    d->nav.setScrollFraction(view.applied.scrollFraction);
+    d->heading = state.value(QStringLiteral("heading")).toString();
+    d->notesHtml = state.value(QStringLiteral("notesHtml")).toString();
+    const int mediaCount = state.value(QStringLiteral("mediaCount")).toInt();
+    d->mediaActive = mediaCount > 0
+        && state.value(QStringLiteral("mediaActive")).toBool(true);
+
+    // Only the followers are driven from here. Pushing the master back to a
+    // position it just reported would be a loop.
+    for (const QString &follower : {audienceRole, presenterRole, previewRole}) {
+        if (follower != role)
+            applyTo(follower);
+    }
+    emit positionChanged();
+}
+
+void Presentation::afterNavigation() {
+    syncViews();
+    emit positionChanged();
+}
+
+void Presentation::syncViews() {
+    for (const QString &role : {audienceRole, presenterRole, previewRole})
+        applyTo(role);
+}
+
+void Presentation::applyTo(const QString &role) {
+    auto it = d->views.find(role);
+    if (it == d->views.end() || !it->ready)
+        return;
+    ViewState &view = *it;
+
+    QStringList script;
+    if (!view.deckSent) {
+        script << RenderHost::callScript(QStringLiteral("render"), d->deck);
+        script << QStringLiteral("window.omapresent && (window.omapresent.role = %1);")
+                      .arg(role == previewRole ? QStringLiteral("'audience'")
+                                               : QStringLiteral("'%1'").arg(role));
+        view.deckSent = true;
+        view.applied = DeckPosition{-1, 0, 0.0};
+    }
+
+    // The preview is one slide ahead and nothing else: no fragments, no scroll,
+    // no overlays (spec §5.1).
+    const DeckPosition target = role == previewRole
+        ? DeckPosition{qMin(d->nav.slideIndex() + 1, qMax(0, d->nav.slideCount() - 1)), 0, 0.0}
+        : d->nav.position();
+
+    if (view.applied.slideIndex != target.slideIndex
+        || view.applied.fragment > target.fragment) {
+        script << call(QStringLiteral("goto"), target.slideIndex);
+        view.applied = DeckPosition{target.slideIndex, 0, 0.0};
+    }
+    for (int fragment = view.applied.fragment; fragment < target.fragment; ++fragment)
+        script << call(QStringLiteral("next"));
+    view.applied.fragment = target.fragment;
+
+    if (!qFuzzyCompare(view.applied.scrollFraction + 1.0, target.scrollFraction + 1.0)) {
+        script << call(QStringLiteral("setScroll"), target.scrollFraction);
+        view.applied.scrollFraction = target.scrollFraction;
+    }
+
+    if (role != previewRole)
+        script << overlayScript(role);
+
+    script.removeAll(QString());
+    if (!script.isEmpty())
+        emit runInView(role, script.join(QLatin1Char('\n')));
+}
+
+void Presentation::applyOverlays(const QString &role) {
+    const QString script = overlayScript(role);
+    if (!script.isEmpty())
+        emit runInView(role, script);
+}
+
+QString Presentation::overlayScript(const QString &role) {
+    auto it = d->views.find(role);
+    if (it == d->views.end() || !it->ready)
+        return {};
+    ViewState &view = *it;
+    QStringList script;
+
+    // `B` and `W` black or white the *audience* screen; the presenter keeps its
+    // slide and shows an indicator instead (spec §5.2).
+    const QString blank = role == audienceRole ? d->blank : QString();
+    if (view.blank != blank) {
+        view.blank = blank;
+        script << call(QStringLiteral("setBlank"), blank);
+    }
+
+    if (view.overview != d->overview) {
+        view.overview = d->overview;
+        script << QStringLiteral("window.omapresent && window.omapresent.setOverview(%1);")
+                      .arg(d->overview ? QStringLiteral("true") : QStringLiteral("false"));
+    }
+
+    const QString recall = d->nav.recall();
+    if (view.recall != recall) {
+        view.recall = recall;
+        script << (recall.isEmpty() ? call(QStringLiteral("hideRecall"))
+                                    : call(QStringLiteral("showRecall"), recall));
+    }
+
+    return script.join(QLatin1Char('\n'));
+}
+
+QVector<PresentationOutput> Presentation::currentOutputs() const {
+    QVector<PresentationOutput> outputs;
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    const QScreen *primary = QGuiApplication::primaryScreen();
+    outputs.reserve(screens.size());
+    for (const QScreen *screen : screens)
+        outputs.append(PresentationOutput{screen->name(), screen == primary});
+    return outputs;
+}
+
+void Presentation::assignMonitors() {
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    const MonitorAssignment assignment = assignOutputs(currentOutputs());
+    d->assignment = assignment;
+
+    if (!d->active || assignment.isEmpty())
+        return;
+
+    if (!d->audienceWindow)
+        d->audienceWindow = createWindow(QStringLiteral("qrc:/AudienceWindow.qml"));
+    placeWindow(d->audienceWindow, screens.value(assignment.audience));
+
+    if (assignment.sharedOutput()) {
+        // One screen: the audience window is the whole presentation and `N`
+        // brings the notes up over it (spec §5.1).
+        if (d->presenterWindow) {
+            d->views.remove(presenterRole);
+            d->views.remove(previewRole);
+            d->presenterWindow->close();
+            delete d->presenterWindow;
+        }
+    } else {
+        if (!d->presenterWindow)
+            d->presenterWindow = createWindow(QStringLiteral("qrc:/PresenterWindow.qml"));
+        placeWindow(d->presenterWindow, screens.value(assignment.presenter));
+        d->notesOverlay = false;
+    }
+
+    emit activeChanged();
+    emit positionChanged();
+}
+
+QQuickWindow *Presentation::createWindow(const QString &source) {
+    QQmlEngine *engine = d->engine;
+    if (!engine) {
+        // Present mode can be asked for before anyone has handed us the
+        // application's engine; build one rather than refuse to present.
+        if (!d->ownEngine)
+            d->ownEngine.reset(new QQmlEngine);
+        engine = d->ownEngine.get();
+    }
+
+    QQmlComponent component(engine, QUrl(source));
+    if (component.isError()) {
+        for (const QQmlError &error : component.errors())
+            qWarning().noquote() << "omapresent: present mode:" << error.toString();
+        return nullptr;
+    }
+
+    QQmlContext *context = new QQmlContext(engine->rootContext(), this);
+    context->setContextProperty(QStringLiteral("presentation"), this);
+    QObject *object = component.create(context);
+    if (!object) {
+        for (const QQmlError &error : component.errors())
+            qWarning().noquote() << "omapresent: present mode:" << error.toString();
+        delete context;
+        return nullptr;
+    }
+
+    QQuickWindow *window = qobject_cast<QQuickWindow *>(object);
+    if (!window) {
+        qWarning() << "omapresent:" << source << "is not a Window";
+        delete object;
+        delete context;
+        return nullptr;
+    }
+    context->setParent(window);
+    QQmlEngine::setObjectOwnership(window, QQmlEngine::CppOwnership);
+    return window;
+}
+
+void Presentation::placeWindow(QQuickWindow *window, QScreen *screen) {
+    if (!window || !screen)
+        return;
+
+    // A fullscreen window will not move between outputs while it is fullscreen,
+    // so drop out, move, and go back — which is also what makes a projector
+    // plugged in mid-talk land on the right screen.
+    if (window->screen() != screen) {
+        window->setVisibility(QWindow::Windowed);
+        window->setScreen(screen);
+        window->setGeometry(screen->geometry());
+    }
+    window->showFullScreen();
+    window->requestActivate();
+}
+
+void Presentation::closeWindows() {
+    d->views.clear();
+    if (d->audienceWindow) {
+        d->audienceWindow->close();
+        delete d->audienceWindow;
+    }
+    if (d->presenterWindow) {
+        d->presenterWindow->close();
+        delete d->presenterWindow;
+    }
+    d->idle.reset();
+    d->doNotDisturb.reset();
+}
+
+void Presentation::inhibitIdle(bool on) {
+    if (on) {
+        if (!d->idle)
+            d->idle.reset(new IdleInhibit);
+    } else {
+        d->idle.reset();
+    }
+}
+
+void Presentation::setDoNotDisturb(bool on) {
+    if (on) {
+        if (!d->doNotDisturb)
+            d->doNotDisturb.reset(new DoNotDisturbHold);
+    } else {
+        d->doNotDisturb.reset();
+    }
+}
