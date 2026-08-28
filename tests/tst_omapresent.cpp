@@ -659,6 +659,313 @@ private slots:
         QVERIFY(!unseen.previewRenderScript().contains(QStringLiteral(".goto(")));
     }
 
+    void settingsReachTheRunningApplication() {
+        QTemporaryDir configDirectory;
+        QVERIFY(configDirectory.isValid());
+        const QString settingsPath = configDirectory.filePath(QStringLiteral("settings.toml"));
+
+        Backend backend;
+        backend.settings()->setPath(settingsPath);
+
+        // The desktop's own preferences, before settings.toml has a say.
+        backend.setDarkMode(true);
+        backend.setTextScale(1.0);
+        QVERIFY(backend.darkMode());
+        QCOMPARE(backend.textScale(), 1.0);
+        QVERIFY(backend.tripleReturnBreaksSlide());
+
+        QFile file(settingsPath);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(file.write(
+            "[editor]\n"
+            "dark_mode = \"light\"\n"
+            "text_scale = 1.5\n"
+            "auto_break_triple_return = false\n"
+            "remember_geometry = false\n") > 0);
+        file.close();
+        backend.settings()->reload();
+
+        // editor.dark_mode overrules the portal, and text_scale multiplies the
+        // desktop scale rather than replacing it.
+        QVERIFY(!backend.darkMode());
+        QCOMPARE(backend.textScale(), 1.5);
+        QVERIFY(!backend.tripleReturnBreaksSlide());
+
+        // A later portal change is still filtered through the setting.
+        backend.setDarkMode(true);
+        QVERIFY(!backend.darkMode());
+        backend.setTextScale(2.0);
+        QCOMPARE(backend.textScale(), 3.0);
+
+        // editor.remember_geometry off means the window always opens at the
+        // default size, whatever was stored last time.
+        backend.saveWindowGeometry(10, 20, 640, 480, false);
+        const QVariantMap geometry = backend.windowGeometry();
+        QCOMPARE(geometry.value(QStringLiteral("width")).toInt(), 1280);
+        QCOMPARE(geometry.value(QStringLiteral("x")).toInt(), -1);
+    }
+
+    void settingsFillInWhatTheDeckLeavesUnsaid() {
+        QTemporaryDir configDirectory;
+        QTemporaryDir deckDirectory;
+        QVERIFY(configDirectory.isValid() && deckDirectory.isValid());
+
+        const QString settingsPath = configDirectory.filePath(QStringLiteral("settings.toml"));
+        QFile settingsFile(settingsPath);
+        QVERIFY(settingsFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(settingsFile.write(
+            "[editor]\n"
+            "font = \"IBM Plex Sans\"\n"
+            "[presentation]\n"
+            "default_aspect = \"4:3\"\n"
+            "[export]\n"
+            "pdf_aspect = \"16:10\"\n") > 0);
+        settingsFile.close();
+
+        const QString deckPath = deckDirectory.filePath(QStringLiteral("deck.md"));
+        QFile deck(deckPath);
+        QVERIFY(deck.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(deck.write("# One\n") > 0);
+        deck.close();
+
+        Backend backend;
+        backend.settings()->setPath(settingsPath);
+        backend.open(QUrl::fromLocalFile(deckPath));
+
+        const QString preview = backend.previewRenderScript();
+        QVERIFY(preview.contains(QStringLiteral("\"font\":\"IBM Plex Sans\"")));
+        // On screen the canvas comes from presentation.default_aspect...
+        QVERIFY(preview.contains(QStringLiteral("\"aspect\":\"4:3\"")));
+
+        // ...and the PDF has a canvas preference of its own.
+        QCOMPARE(RenderHost::pageLayoutFor(
+                     backend.settings()->stringValue(QStringLiteral("export.pdf_aspect")))
+                     .fullRectPoints().height(),
+                 600);
+    }
+
+    void aDeckAlwaysOutranksThePreference() {
+        QTemporaryDir configDirectory;
+        QTemporaryDir deckDirectory;
+        QVERIFY(configDirectory.isValid() && deckDirectory.isValid());
+
+        const QString settingsPath = configDirectory.filePath(QStringLiteral("settings.toml"));
+        QFile settingsFile(settingsPath);
+        QVERIFY(settingsFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(settingsFile.write(
+            "[editor]\n"
+            "font = \"IBM Plex Sans\"\n"
+            "[presentation]\n"
+            "default_aspect = \"4:3\"\n") > 0);
+        settingsFile.close();
+
+        const QString deckPath = deckDirectory.filePath(QStringLiteral("deck.md"));
+        QFile deck(deckPath);
+        QVERIFY(deck.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(deck.write("---\ntitle: Quarterly Review\nfont: Inter\naspect: \"16:9\"\n---\n\n# One\n") > 0);
+        deck.close();
+
+        Backend backend;
+        backend.settings()->setPath(settingsPath);
+        backend.open(QUrl::fromLocalFile(deckPath));
+
+        const QString preview = backend.previewRenderScript();
+        QVERIFY(preview.contains(QStringLiteral("\"font\":\"Inter\"")));
+        QVERIFY(preview.contains(QStringLiteral("\"aspect\":\"16:9\"")));
+        QVERIFY(!preview.contains(QStringLiteral("IBM Plex Sans")));
+
+        // Spec §4.4: the window is named after the deck, not the file.
+        QCOMPARE(backend.deckTitle(), QStringLiteral("Quarterly Review"));
+    }
+
+    void anUntitledDeckFallsBackToItsFileName() {
+        QTemporaryDir deckDirectory;
+        QVERIFY(deckDirectory.isValid());
+        const QString deckPath = deckDirectory.filePath(QStringLiteral("untitled-talk.md"));
+        QFile deck(deckPath);
+        QVERIFY(deck.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(deck.write("# Just a heading\n") > 0);
+        deck.close();
+
+        Backend backend;
+        backend.open(QUrl::fromLocalFile(deckPath));
+        QCOMPARE(backend.deckTitle(), QStringLiteral("untitled-talk.md"));
+    }
+
+    void nothingFetchesMediaUntilItIsAskedTo() {
+        QTemporaryDir deckDirectory;
+        QVERIFY(deckDirectory.isValid());
+        const QString deckPath = deckDirectory.filePath(QStringLiteral("media.md"));
+        QFile deck(deckPath);
+        QVERIFY(deck.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(deck.write("# Watch\n\nhttps://youtu.be/dQw4w9WgXcQ\n") > 0);
+        deck.close();
+
+        Backend backend;
+        QSignalSpy finishedSpy(&backend, &Backend::offlinePrefetchFinished);
+
+        // Opening a deck reads the file and nothing else.
+        backend.open(QUrl::fromLocalFile(deckPath));
+        QCOMPARE(backend.offlineMediaUrls(),
+                 QStringList{QStringLiteral("https://youtu.be/dQw4w9WgXcQ")});
+        QVERIFY(!backend.offlinePrefetchRunning());
+        QCOMPARE(finishedSpy.count(), 0);
+
+        // So does saving it: presentation.auto_prefetch_video is off by default.
+        backend.save();
+        QTest::qWait(50);
+        QVERIFY(!backend.offlinePrefetchRunning());
+        QCOMPARE(finishedSpy.count(), 0);
+    }
+
+    void aDeckWithNoWebMediaHasNothingToPrepare() {
+        QTemporaryDir deckDirectory;
+        QVERIFY(deckDirectory.isValid());
+        const QString deckPath = deckDirectory.filePath(QStringLiteral("plain.md"));
+        QFile deck(deckPath);
+        QVERIFY(deck.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(deck.write("# One\n\nJust prose.\n") > 0);
+        deck.close();
+
+        Backend backend;
+        backend.open(QUrl::fromLocalFile(deckPath));
+        QVERIFY(backend.offlineMediaUrls().isEmpty());
+
+        // It answers immediately rather than starting a fetch of nothing.
+        QSignalSpy finishedSpy(&backend, &Backend::offlinePrefetchFinished);
+        backend.prepareForOffline();
+        QCOMPARE(finishedSpy.count(), 1);
+        QVERIFY(finishedSpy.takeFirst().constFirst().toStringList().isEmpty());
+        QVERIFY(!backend.offlinePrefetchRunning());
+    }
+
+    void publishPreferencesPersistAConfiguredDefaultProvider() {
+        QTemporaryDir configHome;
+        QVERIFY(configHome.isValid());
+        const QByteArray oldConfigHome = qgetenv("XDG_CONFIG_HOME");
+        const bool hadConfigHome = qEnvironmentVariableIsSet("XDG_CONFIG_HOME");
+        struct ConfigHomeRestorer {
+            QByteArray value;
+            bool hadValue;
+            ~ConfigHomeRestorer() {
+                if (hadValue)
+                    qputenv("XDG_CONFIG_HOME", value);
+                else
+                    qunsetenv("XDG_CONFIG_HOME");
+            }
+        } restoreConfigHome{oldConfigHome, hadConfigHome};
+        QVERIFY(qputenv("XDG_CONFIG_HOME", configHome.path().toUtf8()));
+
+        const QString configPath = configHome.filePath(QStringLiteral("omapresent/publish.toml"));
+        QVERIFY(QDir().mkpath(QFileInfo(configPath).absolutePath()));
+        QFile config(configPath);
+        QVERIFY(config.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(config.write(
+            "# Keep this comment.\n"
+            "default = \"herenow\"\n"
+            "\n"
+            "[providers.herenow]\n"
+            "type = \"herenow\"\n"
+            "\n"
+            "[providers.archive]\n"
+            "type = \"command\"\n") > 0);
+        config.close();
+
+        Backend backend;
+        QCOMPARE(backend.publishProvider(), QStringLiteral("herenow"));
+        QVERIFY(backend.setPublishProvider(QStringLiteral("archive")));
+        QCOMPARE(backend.publishProvider(), QStringLiteral("archive"));
+        QVERIFY(!backend.setPublishProvider(QStringLiteral("missing")));
+        QCOMPARE(backend.publishProvider(), QStringLiteral("archive"));
+
+        QVERIFY(config.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString written = QString::fromUtf8(config.readAll());
+        QVERIFY(written.contains(QStringLiteral("# Keep this comment.\n")));
+        QVERIFY(written.contains(QStringLiteral("default = \"archive\"\n")));
+    }
+
+    void editingACopyOfTheWelcomeDeckNeverTouchesTheOriginal() {
+        // Stands in for /usr/share/omapresent/welcome.md, read-only as installed.
+        QTemporaryDir homeDirectory;
+        QVERIFY(homeDirectory.isValid());
+        const QByteArray originalHome = qgetenv("HOME");
+        struct HomeRestorer {
+            QByteArray value;
+            ~HomeRestorer() { qputenv("HOME", value); }
+        } restoreHome{originalHome};
+        QVERIFY(qputenv("HOME", homeDirectory.path().toUtf8()));
+
+        const QString welcome = Backend::welcomeDeckPath();
+        if (welcome.isEmpty())
+            QSKIP("No welcome deck is installed next to this build.");
+        const QByteArray before = [&welcome]() {
+            QFile file(welcome);
+            return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+        }();
+        QVERIFY(!before.isEmpty());
+
+        Backend backend;
+        const QString copy = backend.editWelcomeCopy();
+        QVERIFY(!copy.isEmpty());
+        QCOMPARE(QFileInfo(copy).absolutePath(), homeDirectory.path());
+        QVERIFY(QFileInfo(copy).isWritable());
+        QCOMPARE(backend.fileUrl(), QUrl::fromLocalFile(copy));
+
+        // A second copy never lands on the first.
+        const QString second = backend.editWelcomeCopy();
+        QVERIFY(!second.isEmpty());
+        QVERIFY(second != copy);
+
+        QFile original(welcome);
+        QVERIFY(original.open(QIODevice::ReadOnly));
+        QCOMPARE(original.readAll(), before);
+    }
+
+    void everyNewControlIsReachableAndWired() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        // Nothing the menu offers may be a label with no handler behind it.
+        const QStringList controls{
+            QStringLiteral("menuButton"),          QStringLiteral("actionsMenu"),
+            QStringLiteral("exportPdfItem"),       QStringLiteral("prepareOfflineItem"),
+            QStringLiteral("publishItem"),         QStringLiteral("publishPreferencesItem"),
+            QStringLiteral("howItWorksItem"),      QStringLiteral("editWelcomeCopyItem"),
+            QStringLiteral("shortcutsItem"),       QStringLiteral("offlineDialog"),
+            QStringLiteral("welcomeCopyDialog"),   QStringLiteral("publishPreferences"),
+            QStringLiteral("claimDialog"),          QStringLiteral("publishProviderBox"),
+            QStringLiteral("publishAccessBox"),     QStringLiteral("publishPasswordField"),
+            QStringLiteral("publishDomainField"),   QStringLiteral("publishEmailField"),
+            QStringLiteral("publishSignInButton"),  QStringLiteral("publishCodeField"),
+            QStringLiteral("publishVerifyButton"),  QStringLiteral("publishSlugLabel"),
+            QStringLiteral("publishNowButton"),     QStringLiteral("republishButton"),
+            QStringLiteral("versionsButton"),       QStringLiteral("publishVersionList")};
+        for (const QString &name : controls)
+            QVERIFY2(window->findChild<QObject *>(name), qPrintable(name));
+
+        // The offline action tells the user what it is about to download.
+        QObject *offlineDialog = window->findChild<QObject *>(QStringLiteral("offlineDialog"));
+        QVERIFY(QMetaObject::invokeMethod(window.data(), "requestOfflinePreparation"));
+        QCOMPARE(offlineDialog->property("videoCount").toInt(), 0);
+
+        // Publish preferences load from the live provider config, not a stub.
+        QVERIFY(QMetaObject::invokeMethod(window.data(), "openPublishPreferences"));
+        QObject *providerBox = window->findChild<QObject *>(QStringLiteral("publishProviderBox"));
+        QVERIFY(providerBox);
+        QVERIFY(!providerBox->property("model").toStringList().isEmpty());
+        QObject *accessBox = window->findChild<QObject *>(QStringLiteral("publishAccessBox"));
+        QVERIFY(accessBox);
+        QCOMPARE(accessBox->property("model").toStringList().size(), 4);
+    }
+
 private:
     QTemporaryDir m_settingsDirectory;
 };

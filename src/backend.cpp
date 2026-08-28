@@ -62,6 +62,32 @@ static bool confirmPublishOnStdin(const QString &slug) {
     return answer == QStringLiteral("y") || answer == QStringLiteral("yes");
 }
 
+// Publisher owns provider table entries, but `default` is the top-level TOML
+// key. Keep the one-key, comment-preserving write here rather than pretending
+// it is a provider property. This is the same format and XDG location that
+// Publisher uses for its own narrowly scoped edits.
+static bool writePublishTomlSetting(const QString &key, const QString &value) {
+    const QString configPath = QDir(
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation))
+        .filePath(QStringLiteral("omapresent/publish.toml"));
+
+    QFile input(configPath);
+    QString original;
+    if (input.exists()) {
+        if (!input.open(QIODevice::ReadOnly))
+            return false;
+        original = QString::fromUtf8(input.readAll());
+    }
+
+    if (!QDir().mkpath(QFileInfo(configPath).absolutePath()))
+        return false;
+    QSaveFile output(configPath);
+    if (!output.open(QIODevice::WriteOnly))
+        return false;
+    const QString patched = Publisher::patchToml(original, key, value);
+    return output.write(patched.toUtf8()) >= 0 && output.commit();
+}
+
 static bool pathIsInside(const QString &path, const QString &root) {
     const QString relative = QDir(root).relativeFilePath(path);
     return relative != QStringLiteral("..")
@@ -854,9 +880,17 @@ void Backend::loadOmarchyTheme() {
         }
     }
 
-    bool themeModeKnown = false;
-    bool themeIsDark = m_darkMode;
-    if (themeMode == QStringLiteral("dark")) {
+    // editor.dark_mode is a decision, not a hint: when it names a mode, the
+    // Omarchy theme does not get to change it back.
+    const QString darkModePreference =
+        m_settings.stringValue(QStringLiteral("editor.dark_mode"));
+    bool themeModeKnown = darkModePreference == QStringLiteral("dark")
+        || darkModePreference == QStringLiteral("light");
+    bool themeIsDark = themeModeKnown ? darkModePreference == QStringLiteral("dark")
+                                      : m_darkMode;
+    if (themeModeKnown) {
+        // Nothing to derive.
+    } else if (themeMode == QStringLiteral("dark")) {
         themeIsDark = true;
         themeModeKnown = true;
     } else if (themeMode == QStringLiteral("light")) {
@@ -1669,12 +1703,16 @@ QString Backend::publishProvider() const {
 bool Backend::setPublishProvider(const QString &provider) {
     // publish.toml's `default` is the app-wide choice; a deck overrides it with
     // its own publish.provider key, which is the deck author's business.
-    const bool written = m_publisher.setProviderKey(QString(), QStringLiteral("default"),
-                                                    provider);
+    const QString chosen = provider.trimmed();
+    const bool exists = m_publisher.providers().contains(chosen);
+    const bool written = exists && writePublishTomlSetting(QStringLiteral("default"), chosen);
     if (written)
-        setStatus(QStringLiteral("Publishing to %1").arg(provider));
+        m_publisher.reloadConfig();
+    if (written)
+        setStatus(QStringLiteral("Publishing to %1").arg(chosen));
     else
-        setStatus(QStringLiteral("Could not write publish.toml."));
+        setStatus(exists ? QStringLiteral("Could not write publish.toml.")
+                         : QStringLiteral("That publish provider is not configured."));
     return written;
 }
 

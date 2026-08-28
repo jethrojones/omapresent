@@ -135,7 +135,10 @@ When presenting in environments with unreliable Wi-Fi:
 1. **Verify Local Image References:**
    Ensure image paths use filenames indexed in your `root:` folder or local relative paths.
 2. **Pre-fetch Video Embeds:**
-   Save the file in Omapresent, or let the C++ backend pre-cache embeds into `.omapresent-cache/`.
+   In Omapresent, select **Actions → Prepare for offline**. Read the download
+   confirmation. Then select **OK** to cache supported web video in
+   `.omapresent-cache/`. Opening or saving a deck does not fetch media unless
+   you set `presentation.auto_prefetch_video = true` in `settings.toml`.
 3. **Test in Offline Mode:**
    Run `omapresent present presentation.md` with network disabled to verify all cached media and QR code fallbacks render cleanly.
 

@@ -13,7 +13,9 @@ ApplicationWindow {
     minimumWidth: 720
     minimumHeight: 520
     visible: true
-    title: (backend.modified ? "* " : "") + backend.fileName + " - Omapresent"
+    // Spec §4.4: the deck's own `title:` names the window, so a screen-shared
+    // window says what the talk is rather than what the file is called.
+    title: (backend.modified ? "* " : "") + backend.deckTitle + " - Omapresent"
 
     readonly property bool darkMode: backend.darkMode
     readonly property color pageColor: backend.themeBackground
@@ -83,6 +85,23 @@ ApplicationWindow {
     // Every hardcoded size in the interface is expressed at text scale 1.
     function scaledSize(pixels) {
         return Math.max(1, Math.round(pixels * win.textScale));
+    }
+
+    function requestOfflinePreparation() {
+        offlineDialog.videoCount = backend.offlineMediaUrls().length;
+        offlineDialog.open();
+    }
+
+    function requestWelcomeCopy() {
+        var path = backend.editWelcomeCopy();
+        if (path === "")
+            return;
+        closeConfirmed = false;
+    }
+
+    function openPublishPreferences() {
+        publishPreferences.load();
+        publishPreferences.open();
     }
 
     function toggleFullScreen() {
@@ -303,6 +322,17 @@ ApplicationWindow {
                 previewLoader.item.runScript(script);
         }
 
+        function onPublishVersions(slug, versions) {
+            publishPreferences.versions = versions;
+        }
+
+        function onPublishClaimAvailable(claimUrl, claimToken) {
+            // An anonymous here.now deck expires in 24h unless it is claimed,
+            // so the link has to reach the person who published it (§9).
+            claimDialog.claimUrl = claimUrl;
+            claimDialog.open();
+        }
+
         function onPdfDialogRequested(suggestedUrl) {
             pdfFileDialog.selectedFile = suggestedUrl;
             pdfFileDialog.open();
@@ -354,6 +384,280 @@ ApplicationWindow {
         onAccepted: backend.publishDeck()
     }
 
+    Dialog {
+        id: claimDialog
+        objectName: "claimDialog"
+        modal: true
+        title: "Claim this deck"
+        anchors.centerIn: parent
+        width: Math.min(win.width - 80, win.scaledSize(520))
+        contentWidth: availableWidth
+        contentHeight: win.scaledSize(170)
+        standardButtons: Dialog.Close
+        property string claimUrl: ""
+        contentItem: Item {
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: win.scaledSize(8)
+            Label {
+                Layout.fillWidth: true
+                text: "This deck was published anonymously and expires in 24 hours. Open this link to keep it."
+                wrapMode: Text.WordWrap
+                lineHeight: 1.4
+            }
+            Label {
+                Layout.fillWidth: true
+                text: claimDialog.claimUrl
+                color: backend.themeAccent
+                wrapMode: Text.WrapAnywhere
+                font.pixelSize: win.scaledSize(12)
+            }
+            Button {
+                text: "Open the claim link"
+                onClicked: backend.openExternalUrl(claimDialog.claimUrl)
+            }
+        }
+        }
+    }
+
+    // Spec §4.8. The only control in the app that starts a media download, and
+    // it says so before it does.
+    Dialog {
+        id: offlineDialog
+        objectName: "offlineDialog"
+        modal: true
+        title: "Prepare this deck for offline?"
+        anchors.centerIn: parent
+        width: Math.min(win.width - 80, win.scaledSize(460))
+        contentWidth: availableWidth
+        contentHeight: win.scaledSize(72)
+        standardButtons: Dialog.Cancel | Dialog.Ok
+        property int videoCount: 0
+        contentItem: Label {
+            text: offlineDialog.videoCount === 0
+                ? "This deck has no web video to cache."
+                : "This downloads " + offlineDialog.videoCount
+                  + (offlineDialog.videoCount === 1 ? " video" : " videos")
+                  + " into .omapresent-cache so the deck presents with no network."
+            wrapMode: Text.WordWrap
+            lineHeight: 1.4
+        }
+        onAccepted: backend.prepareForOffline()
+    }
+
+    Dialog {
+        id: welcomeCopyDialog
+        objectName: "welcomeCopyDialog"
+        modal: true
+        title: "Edit a copy"
+        anchors.centerIn: parent
+        width: Math.min(win.width - 80, win.scaledSize(460))
+        contentWidth: availableWidth
+        contentHeight: win.scaledSize(72)
+        standardButtons: Dialog.Cancel | Dialog.Ok
+        contentItem: Label {
+            text: "The bundled welcome deck is read-only. This drops a copy in your home directory and opens it."
+            wrapMode: Text.WordWrap
+            lineHeight: 1.4
+        }
+        onAccepted: win.requestWelcomeCopy()
+    }
+
+    // Spec §9's settings surface: provider, sign-in, custom domain, access, and
+    // the version history that republish and revert act on.
+    Dialog {
+        id: publishPreferences
+        objectName: "publishPreferences"
+        modal: true
+        title: "Publish"
+        anchors.centerIn: parent
+        width: Math.min(win.width - 60, win.scaledSize(620))
+        contentWidth: availableWidth
+        contentHeight: Math.min(win.height - 160, win.scaledSize(440))
+        standardButtons: Dialog.Close
+
+        property var versions: []
+        property string signInEmail: ""
+
+        function load() {
+            var providers = backend.publishProviders();
+            var names = [];
+            for (var name in providers)
+                names.push(name);
+            names.sort();
+            providerBox.model = names;
+            providerBox.currentIndex = Math.max(0, names.indexOf(backend.publishProvider()));
+            accessBox.currentIndex = Math.max(0, accessBox.model.indexOf(backend.publishAccess()));
+            domainField.text = backend.publishDomain();
+            slugLabel.text = backend.publishSlug();
+            versions = [];
+        }
+
+        function loadSelectedProvider() {
+            accessBox.currentIndex = Math.max(0, accessBox.model.indexOf(backend.publishAccess()));
+            domainField.text = backend.publishDomain();
+            passwordField.text = "";
+        }
+
+        contentItem: Item {
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: win.scaledSize(10)
+
+            GridLayout {
+                columns: 2
+                columnSpacing: win.scaledSize(12)
+                rowSpacing: win.scaledSize(8)
+                Layout.fillWidth: true
+
+                Label { text: "Provider"; color: win.mutedColor }
+                ComboBox {
+                    id: providerBox
+                    objectName: "publishProviderBox"
+                    Layout.fillWidth: true
+                    onActivated: {
+                        backend.setPublishProvider(currentText);
+                        publishPreferences.loadSelectedProvider();
+                    }
+                }
+
+                Label { text: "Access"; color: win.mutedColor }
+                ComboBox {
+                    id: accessBox
+                    objectName: "publishAccessBox"
+                    Layout.fillWidth: true
+                    // The four modes the here.now access endpoint accepts (§9).
+                    model: ["link", "public", "password", "restricted"]
+                    onActivated: backend.setPublishAccess(currentText)
+                }
+
+                Label { text: "Password"; color: win.mutedColor }
+                TextField {
+                    id: passwordField
+                    objectName: "publishPasswordField"
+                    Layout.fillWidth: true
+                    echoMode: TextInput.Password
+                    enabled: accessBox.currentText === "password"
+                    placeholderText: enabled ? "Used for password access" : "Only for password access"
+                    onEditingFinished: backend.setPublishPassword(text)
+                }
+
+                Label { text: "Custom domain"; color: win.mutedColor }
+                TextField {
+                    id: domainField
+                    objectName: "publishDomainField"
+                    Layout.fillWidth: true
+                    placeholderText: "decks.example.com"
+                    onEditingFinished: backend.setPublishDomain(text)
+                }
+
+                Label { text: "Sign in"; color: win.mutedColor }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: win.scaledSize(6)
+                    TextField {
+                        id: emailField
+                        objectName: "publishEmailField"
+                        Layout.fillWidth: true
+                        placeholderText: "you@example.com"
+                    }
+                    Button {
+                        objectName: "publishSignInButton"
+                        text: "Send code"
+                        enabled: emailField.text.indexOf("@") > 0
+                        onClicked: {
+                            publishPreferences.signInEmail = emailField.text;
+                            backend.signInToProvider(emailField.text);
+                        }
+                    }
+                }
+
+                Label { text: "Code"; color: win.mutedColor; visible: codeField.visible }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: win.scaledSize(6)
+                    visible: codeField.visible
+                    TextField {
+                        id: codeField
+                        objectName: "publishCodeField"
+                        Layout.fillWidth: true
+                        visible: publishPreferences.signInEmail !== ""
+                        placeholderText: "From the email"
+                    }
+                    Button {
+                        objectName: "publishVerifyButton"
+                        text: "Verify"
+                        visible: codeField.visible
+                        onClicked: backend.confirmSignInCode(publishPreferences.signInEmail,
+                                                             codeField.text)
+                    }
+                }
+
+                Label { text: "Slug"; color: win.mutedColor }
+                Label {
+                    id: slugLabel
+                    objectName: "publishSlugLabel"
+                    color: win.textColor
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: win.scaledSize(8)
+                Button {
+                    objectName: "publishNowButton"
+                    text: "Publish"
+                    onClicked: publishDialog.open()
+                }
+                Button {
+                    objectName: "republishButton"
+                    text: "Republish"
+                    enabled: !backend.publisher.busy
+                    onClicked: backend.republishDeck()
+                }
+                Button {
+                    objectName: "versionsButton"
+                    text: "Version history"
+                    onClicked: backend.requestPublishedVersions()
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            Label {
+                text: publishPreferences.versions.length === 0
+                    ? "No versions loaded."
+                    : "Pick a version to put back live:"
+                color: win.mutedColor
+                font.pixelSize: win.scaledSize(12)
+            }
+
+            ListView {
+                objectName: "publishVersionList"
+                Layout.fillWidth: true
+                Layout.preferredHeight: win.scaledSize(120)
+                clip: true
+                model: publishPreferences.versions
+                delegate: RowLayout {
+                    width: ListView.view.width
+                    spacing: win.scaledSize(8)
+                    Label {
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        color: win.textColor
+                        font.pixelSize: win.scaledSize(12)
+                        text: (modelData.createdAt || modelData.created_at || "")
+                              + "  " + (modelData.versionId || modelData.id || "")
+                    }
+                    Button {
+                        text: "Revert"
+                        onClicked: backend.revertPublished(modelData.versionId || modelData.id)
+                    }
+                }
+            }
+        }
+        }
+    }
+
     UnsavedChangesDialog {
         id: unsavedChangesDialog
         fileName: backend.fileName
@@ -396,6 +700,7 @@ ApplicationWindow {
         title: "Keyboard shortcuts"
         standardButtons: Dialog.Close
         anchors.centerIn: parent
+        width: Math.min(win.width - 80, win.scaledSize(520))
         contentItem: Label {
             text: "Editor\n"
                 + "Ctrl+S  Save\nCtrl+Shift+S  Save As\nCtrl+O  Open\nCtrl+N  New Window\n"
@@ -414,6 +719,54 @@ ApplicationWindow {
         }
     }
 
+    Menu {
+        id: actionsMenu
+        objectName: "actionsMenu"
+
+        MenuItem {
+            objectName: "exportPdfItem"
+            text: "Export PDF…"
+            onTriggered: backend.exportPdfDialog()
+        }
+        MenuItem {
+            objectName: "prepareOfflineItem"
+            text: "Prepare for offline…"
+            enabled: !backend.offlinePrefetchRunning
+            onTriggered: win.requestOfflinePreparation()
+        }
+
+        MenuSeparator {}
+
+        MenuItem {
+            objectName: "publishItem"
+            text: "Publish…"
+            onTriggered: publishDialog.open()
+        }
+        MenuItem {
+            objectName: "publishPreferencesItem"
+            text: "Publish preferences…"
+            onTriggered: win.openPublishPreferences()
+        }
+
+        MenuSeparator {}
+
+        MenuItem {
+            objectName: "howItWorksItem"
+            text: "How Omapresent works"
+            onTriggered: backend.openWelcomeDeck()
+        }
+        MenuItem {
+            objectName: "editWelcomeCopyItem"
+            text: "Edit a copy of the welcome deck"
+            onTriggered: welcomeCopyDialog.open()
+        }
+        MenuItem {
+            objectName: "shortcutsItem"
+            text: "Keyboard shortcuts"
+            onTriggered: shortcutsDialog.open()
+        }
+    }
+
     Item {
         anchors.fill: parent
 
@@ -425,7 +778,9 @@ ApplicationWindow {
             handle: Rectangle {
                 implicitWidth: 1
                 color: win.mutedColor
-                opacity: SplitView.pressed ? 0.7 : 0.3
+                // A handle is a delegate rather than a child of the SplitView,
+                // so its state arrives on SplitHandle, not SplitView.
+                opacity: SplitHandle.pressed ? 0.7 : 0.3
             }
 
             Flickable {
@@ -700,7 +1055,9 @@ ApplicationWindow {
                             replaceSelectionWith("\n");
                             return;
                         }
-                        var slideBreak = EditorMutations.slideBreakForReturn(text, cursorPosition);
+                        var slideBreak = backend.tripleReturnBreaksSlide
+                            ? EditorMutations.slideBreakForReturn(text, cursorPosition)
+                            : null;
                         if (slideBreak) {
                             EditorMutations.replaceRange(editor, slideBreak.start, slideBreak.end,
                                                          slideBreak.insert);
@@ -911,7 +1268,7 @@ ApplicationWindow {
         // finds it. Wayland hands us percent-encoded file:// URIs.
         DropArea {
             id: imageDrop
-            anchors.fill: editorFlick
+            anchors.fill: parent
             keys: ["text/uri-list"]
             onDropped: function(drop) {
                 var embeds = backend.imageEmbedsForDrop(drop.getDataAsString("text/uri-list"));
@@ -950,6 +1307,21 @@ ApplicationWindow {
                 iconColor: win.mutedColor
                 tooltip: "Open"
                 onClicked: backend.openDialog()
+            }
+
+            ToolButton {
+                objectName: "menuButton"
+                text: "Actions"
+                Accessible.name: "Actions"
+                Accessible.description: "Export, offline preparation, publishing and help"
+                ToolTip.visible: hovered
+                ToolTip.text: "Export, offline, publish and help"
+                flat: true
+                padding: 0
+                font.family: "iA Writer Mono S"
+                font.pixelSize: win.scaledSize(11)
+                font.weight: Font.DemiBold
+                onClicked: actionsMenu.popup()
             }
 
             ToolButton {
