@@ -9,6 +9,7 @@
 // may upload without an explicit user-initiated call to publish().
 
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -40,6 +41,17 @@ public:
     Q_INVOKABLE void publish(const QString &bundleDir, const QString &slug,
                              const QString &providerName, const QString &access);
 
+    // Update an existing here.now Site. Other providers publish to the same
+    // deterministic slug and therefore use the same operation as publish().
+    Q_INVOKABLE void republish(const QString &bundleDir, const QString &slug,
+                               const QString &providerName, const QString &access);
+
+    // here.now version history and instant rollback (spec §9).
+    Q_INVOKABLE void requestVersions(const QString &slug,
+                                     const QString &providerName);
+    Q_INVOKABLE void revert(const QString &slug, const QString &versionId,
+                            const QString &providerName);
+
     // The here.now email code flow (spec §9), for Preferences.
     Q_INVOKABLE void requestSignInCode(const QString &email);
     Q_INVOKABLE void verifySignInCode(const QString &email, const QString &code);
@@ -61,6 +73,10 @@ signals:
     void busyChanged();
     void progress(int done, int total, const QString &what);
     void published(const QString &liveUrl, const QString &slug);
+    void versionsReceived(const QString &slug, const QJsonArray &versions);
+    void reverted(const QString &liveUrl, const QString &slug,
+                  const QString &versionId);
+    void claimAvailable(const QString &claimUrl, const QString &claimToken);
     void failed(const QString &message);
     void signInCodeSent();
     void signedIn();
