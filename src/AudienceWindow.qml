@@ -38,9 +38,21 @@ Window {
         Component.onCompleted: registerObjects({"omapresentHost": presentation.audienceHost})
     }
 
+    // Hyprland resizes a Wayland top-level through a configure event. Bind the
+    // web item straight to the Window client size, then pulse the renderer only
+    // after Qt Quick has applied that size. This avoids a stale Chromium
+    // viewport when a tiled audience window moves into a larger pane.
+    Timer {
+        id: viewportResize
+        interval: 0
+        repeat: false
+        onTriggered: view.runJavaScript("window.dispatchEvent(new Event('resize'));")
+    }
+
     WebEngineView {
         id: view
-        anchors.fill: parent
+        width: parent.width
+        height: parent.height
         url: presentation.rendererUrl
         backgroundColor: audience.background
         webChannel: hostChannel
@@ -48,6 +60,9 @@ Window {
         // playPause() on the contract. Clicking a video must not take focus
         // away from the key handler.
         activeFocusOnPress: false
+
+        onWidthChanged: viewportResize.restart()
+        onHeightChanged: viewportResize.restart()
 
         onLoadingChanged: function(loadRequest) {
             if (loadRequest.status === WebEngineLoadingInfo.LoadSucceededStatus) {

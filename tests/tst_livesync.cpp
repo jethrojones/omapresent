@@ -153,13 +153,8 @@ private slots:
 
     // --- Inserting and deleting before the current slide -------------------
 
-    void insertingASlideBeforeTheCurrentOneMovesTheContentAway()
+    void insertingASlideBeforeTheCurrentOneFollowsTheUnchangedContent()
     {
-        // KNOWN DEFECT, recorded in the worklog under T13 NEEDS.
-        // DeckNavigator::setDeck only clamps the index, so an insertion above
-        // the presenter leaves them on the same *number* while the content
-        // under that number slides down by one. What should happen is that the
-        // index follows the content, i.e. 7 -> 8 here.
         QStringList bodies = slideBodies(10);
         DeckModel deck;
         DeckNavigator navigator;
@@ -172,19 +167,15 @@ private slots:
         applyEdit(&deck, &navigator, joinSlides(bodies));
 
         QCOMPARE(navigator.slideCount(), 11);
-        QCOMPARE(navigator.slideIndex(), 7);
-        // The presenter is now looking at what used to be slide 6.
-        QCOMPARE(markdownAt(deck, navigator.slideIndex()), slideBody(6));
+        QCOMPARE(navigator.slideIndex(), 8);
+        // The presenter follows the unchanged content to its new flow index.
+        QCOMPARE(markdownAt(deck, navigator.slideIndex()), onScreen);
 
-        // The information needed to follow the content is already in the deck
-        // the navigator is handed, so this is fixable there: the slide that was
-        // on screen is still present, one place further down.
         QCOMPARE(flowIndexOfMarkdown(deck, onScreen), 8);
     }
 
-    void deletingASlideBeforeTheCurrentOneMovesTheContentAway()
+    void deletingASlideBeforeTheCurrentOneFollowsTheUnchangedContent()
     {
-        // Same defect, the other direction: 7 should follow its content to 6.
         QStringList bodies = slideBodies(10);
         DeckModel deck;
         DeckNavigator navigator;
@@ -196,9 +187,9 @@ private slots:
         applyEdit(&deck, &navigator, joinSlides(bodies));
 
         QCOMPARE(navigator.slideCount(), 9);
-        QCOMPARE(navigator.slideIndex(), 7);
-        // Now showing what used to be slide 8.
-        QCOMPARE(markdownAt(deck, navigator.slideIndex()), slideBody(8));
+        QCOMPARE(navigator.slideIndex(), 6);
+        // The presenter follows the unchanged content to its new flow index.
+        QCOMPARE(markdownAt(deck, navigator.slideIndex()), onScreen);
         QCOMPARE(flowIndexOfMarkdown(deck, onScreen), 6);
     }
 
@@ -254,7 +245,7 @@ private slots:
         QCOMPARE(deck.slideCount(), 0);
         QCOMPARE(navigator.slideCount(), 0);
         QCOMPARE(navigator.slideIndex(), 0);
-        QCOMPARE(navigator.fragmentCount(), 1);
+        QCOMPARE(navigator.fragmentCount(), 0);
         // Nothing to navigate to, and asking must not crash or leave a
         // position pointing past the end.
         QCOMPARE(navigator.gotoSlide(5), false);
@@ -439,6 +430,8 @@ private slots:
         applyEdit(&deck, &navigator, split);
         QCOMPARE(navigator.slideCount(), 3);
         navigator.gotoSlide(2);
+        const QString onScreen = markdownAt(deck, navigator.slideIndex());
+        QCOMPARE(onScreen, QStringLiteral("# Three\n"));
 
         // Delete the blank line above the first separator: `---` is now a
         // Setext underline for "Prose one.", so slides one and two merge.
@@ -450,17 +443,17 @@ private slots:
         QVERIFY(deck.slides().first().markdown.contains(QStringLiteral("Prose one.")));
         QVERIFY(deck.slides().first().markdown.contains(QStringLiteral("# Two")));
 
-        // The presenter was on the last slide and there are fewer now: clamp,
-        // and never leave an index past the end.
+        // The presenter follows the unchanged last slide to its new flow index.
         QCOMPARE(navigator.slideCount(), 2);
         QCOMPARE(navigator.slideIndex(), 1);
         QVERIFY(navigator.slideIndex() < navigator.slideCount());
-        QCOMPARE(markdownAt(deck, 1), QStringLiteral("# Three\n"));
+        QCOMPARE(markdownAt(deck, navigator.slideIndex()), onScreen);
 
         // Typing the blank line back splits them again.
         applyEdit(&deck, &navigator, split);
         QCOMPARE(navigator.slideCount(), 3);
-        QCOMPARE(navigator.slideIndex(), 1);
+        QCOMPARE(navigator.slideIndex(), 2);
+        QCOMPARE(markdownAt(deck, navigator.slideIndex()), onScreen);
     }
 
     void halfTypedSeparatorsDoNotSplitTheDeck()

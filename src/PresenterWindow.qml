@@ -71,6 +71,20 @@ Window {
         onTriggered: text = Qt.formatTime(new Date(), "h:mm AP")
     }
 
+    // A Wayland configure can change this top-level window from a small tile
+    // to a large one in one frame. The explicit item bindings below carry the
+    // new client size into Qt WebEngine; this deferred pulse then makes the
+    // shared renderer recalculate its fit and scroll state after that layout.
+    Timer {
+        id: viewportResize
+        interval: 0
+        repeat: false
+        onTriggered: {
+            currentView.runJavaScript("window.dispatchEvent(new Event('resize'));")
+            previewView.runJavaScript("window.dispatchEvent(new Event('resize'));")
+        }
+    }
+
     RowLayout {
         anchors.fill: parent
         anchors.margins: 12
@@ -100,12 +114,17 @@ Window {
 
                 WebEngineView {
                     id: currentView
-                    anchors.fill: parent
-                    anchors.margins: 1
+                    x: 1
+                    y: 1
+                    width: Math.max(0, parent.width - 2)
+                    height: Math.max(0, parent.height - 2)
                     url: presentation.rendererUrl
                     backgroundColor: presenter.paletteColor("background", "#101010")
                     webChannel: hostChannel
                     activeFocusOnPress: false
+
+                    onWidthChanged: viewportResize.restart()
+                    onHeightChanged: viewportResize.restart()
 
                     onLoadingChanged: function(loadRequest) {
                         if (loadRequest.status === WebEngineLoadingInfo.LoadSucceededStatus) {
@@ -191,13 +210,18 @@ Window {
 
                 WebEngineView {
                     id: previewView
-                    anchors.fill: parent
-                    anchors.margins: 1
+                    x: 1
+                    y: 1
+                    width: Math.max(0, parent.width - 2)
+                    height: Math.max(0, parent.height - 2)
                     url: presentation.rendererUrl
                     backgroundColor: presenter.paletteColor("background", "#101010")
                     activeFocusOnPress: false
                     // No host bridge: the preview never reports state, it only
                     // ever gets told which slide to show.
+
+                    onWidthChanged: viewportResize.restart()
+                    onHeightChanged: viewportResize.restart()
 
                     onLoadingChanged: function(loadRequest) {
                         if (loadRequest.status === WebEngineLoadingInfo.LoadSucceededStatus)

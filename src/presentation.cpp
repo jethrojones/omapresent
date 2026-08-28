@@ -60,6 +60,118 @@ QString call(const QString &function, const QString &argument) {
         .arg(function, quoted);
 }
 
+int commonSubsequenceLength(const QVector<QString> &oldFlowMarkdown,
+                            const QVector<QString> &newFlowMarkdown) {
+    QVector<int> previous(newFlowMarkdown.size() + 1, 0);
+    for (const QString &oldMarkdown : oldFlowMarkdown) {
+        QVector<int> current(newFlowMarkdown.size() + 1, 0);
+        for (int newIndex = 1; newIndex <= newFlowMarkdown.size(); ++newIndex) {
+            if (oldMarkdown == newFlowMarkdown.at(newIndex - 1))
+                current[newIndex] = previous.at(newIndex - 1) + 1;
+            else
+                current[newIndex] = qMax(previous.at(newIndex), current.at(newIndex - 1));
+        }
+        previous.swap(current);
+    }
+    return previous.last();
+}
+
+// Returns one stable, left-to-right longest-common-subsequence alignment.
+QVector<int> commonSubsequenceMatches(const QVector<QString> &oldFlowMarkdown,
+                                      const QVector<QString> &newFlowMarkdown) {
+    const int oldCount = oldFlowMarkdown.size();
+    const int newCount = newFlowMarkdown.size();
+    const int width = newCount + 1;
+    QVector<int> scores((oldCount + 1) * width, 0);
+    const auto score = [&scores, width](int oldIndex, int newIndex) {
+        return scores.at(oldIndex * width + newIndex);
+    };
+    const auto setScore = [&scores, width](int oldIndex, int newIndex, int value) {
+        scores[oldIndex * width + newIndex] = value;
+    };
+
+    for (int oldIndex = oldCount - 1; oldIndex >= 0; --oldIndex) {
+        for (int newIndex = newCount - 1; newIndex >= 0; --newIndex) {
+            if (oldFlowMarkdown.at(oldIndex) == newFlowMarkdown.at(newIndex))
+                setScore(oldIndex, newIndex, score(oldIndex + 1, newIndex + 1) + 1);
+            else
+                setScore(oldIndex, newIndex,
+                         qMax(score(oldIndex + 1, newIndex), score(oldIndex, newIndex + 1)));
+        }
+    }
+
+    QVector<int> matches(oldCount, -1);
+    int oldIndex = 0;
+    int newIndex = 0;
+    while (oldIndex < oldCount && newIndex < newCount) {
+        if (oldFlowMarkdown.at(oldIndex) == newFlowMarkdown.at(newIndex) &&
+            score(oldIndex, newIndex) == score(oldIndex + 1, newIndex + 1) + 1) {
+            matches[oldIndex] = newIndex;
+            ++oldIndex;
+            ++newIndex;
+        } else if (score(oldIndex + 1, newIndex) >= score(oldIndex, newIndex + 1)) {
+            ++oldIndex;
+        } else {
+            ++newIndex;
+        }
+    }
+    return matches;
+}
+
+// Source line spans describe the resulting document, not the edit that made
+// it. Inserting before or after equal adjacent slides gives the same raw text
+// and spans. Preserve the active slide only when every longest sequence
+// alignment contains it at one new index; otherwise setDeck() must clamp.
+int unambiguousCurrentSlide(const QVector<QString> &oldFlowMarkdown,
+                            const QVector<QString> &newFlowMarkdown,
+                            int oldCurrentIndex) {
+    if (oldCurrentIndex < 0 || oldCurrentIndex >= oldFlowMarkdown.size())
+        return -1;
+
+    const int commonLength = commonSubsequenceLength(oldFlowMarkdown, newFlowMarkdown);
+    QVector<QString> withoutCurrent = oldFlowMarkdown;
+    withoutCurrent.removeAt(oldCurrentIndex);
+    if (commonSubsequenceLength(withoutCurrent, newFlowMarkdown) == commonLength)
+        return -1;
+
+    QVector<int> before(newFlowMarkdown.size() + 1, 0);
+    for (int oldIndex = 0; oldIndex < oldCurrentIndex; ++oldIndex) {
+        QVector<int> next(newFlowMarkdown.size() + 1, 0);
+        for (int newIndex = 1; newIndex <= newFlowMarkdown.size(); ++newIndex) {
+            if (oldFlowMarkdown.at(oldIndex) == newFlowMarkdown.at(newIndex - 1))
+                next[newIndex] = before.at(newIndex - 1) + 1;
+            else
+                next[newIndex] = qMax(before.at(newIndex), next.at(newIndex - 1));
+        }
+        before.swap(next);
+    }
+
+    QVector<int> after(newFlowMarkdown.size() + 1, 0);
+    for (int oldIndex = oldFlowMarkdown.size() - 1; oldIndex > oldCurrentIndex;
+         --oldIndex) {
+        QVector<int> next(newFlowMarkdown.size() + 1, 0);
+        for (int newIndex = newFlowMarkdown.size() - 1; newIndex >= 0; --newIndex) {
+            if (oldFlowMarkdown.at(oldIndex) == newFlowMarkdown.at(newIndex))
+                next[newIndex] = after.at(newIndex + 1) + 1;
+            else
+                next[newIndex] = qMax(after.at(newIndex), next.at(newIndex + 1));
+        }
+        after.swap(next);
+    }
+
+    int match = -1;
+    const QString &currentMarkdown = oldFlowMarkdown.at(oldCurrentIndex);
+    for (int newIndex = 0; newIndex < newFlowMarkdown.size(); ++newIndex) {
+        if (newFlowMarkdown.at(newIndex) != currentMarkdown ||
+            before.at(newIndex) + 1 + after.at(newIndex + 1) != commonLength)
+            continue;
+        if (match >= 0)
+            return -1;
+        match = newIndex;
+    }
+    return match;
+}
+
 // Runs a short command and hands back its stdout. Used only at the two ends of
 // a talk, to read and restore the desktop's notification state.
 QString runCommand(const QString &program, const QStringList &arguments, bool *ok = nullptr) {
@@ -357,36 +469,93 @@ void DeckNavigator::setDeck(const QJsonObject &deckJson) {
     const QJsonArray slides = deckJson.value(QStringLiteral("slides")).toArray();
 
     QStringList keys;
-    int flowCount = 0;
+    QVector<QString> flowMarkdown;
     for (const QJsonValue &value : slides) {
         const QJsonObject slide = value.toObject();
         const QString key = slide.value(QStringLiteral("recallKey")).toString();
         if (!key.isEmpty() && !keys.contains(key))
             keys.append(key);
         if (!slide.value(QStringLiteral("skip")).toBool())
-            ++flowCount;
+            flowMarkdown.append(slide.value(QStringLiteral("markdown")).toString());
     }
 
+    // A live edit is a full deck replacement. Keep state with the matching
+    // slide content, not the old numeric position: inserting or deleting
+    // above the speaker must not make the audience jump to another slide.
+    const QVector<QString> oldFlowMarkdown = m_flowMarkdown;
+    const QVector<qreal> oldScroll = m_scroll;
+    const QVector<int> oldFragmentCounts = m_fragmentCounts;
+    QVector<bool> newUsed(flowMarkdown.size(), false);
+    QVector<int> oldToNew(oldFlowMarkdown.size(), -1);
+    QVector<qreal> scroll(flowMarkdown.size(), 0.0);
+    QVector<int> fragmentCounts(flowMarkdown.size(), 0);
+    const auto match = [&](int oldIndex, int newIndex) {
+        newUsed[newIndex] = true;
+        oldToNew[oldIndex] = newIndex;
+        scroll[newIndex] = oldScroll.value(oldIndex);
+        fragmentCounts[newIndex] = oldFragmentCounts.value(oldIndex);
+    };
+
+    const int oldCurrentIndex = m_position.slideIndex;
+    const int newCurrentIndex =
+        unambiguousCurrentSlide(oldFlowMarkdown, flowMarkdown, oldCurrentIndex);
+    const bool currentSlideSurvived = newCurrentIndex >= 0;
+    const bool currentContentStillExists =
+        oldCurrentIndex >= 0 && oldCurrentIndex < oldFlowMarkdown.size() &&
+        flowMarkdown.contains(oldFlowMarkdown.at(oldCurrentIndex));
+
+    // Do not give an ambiguous duplicate the active slide's saved state. A
+    // deterministic LCS still preserves the other slides in document order.
+    QVector<QString> matchingMarkdown;
+    QVector<int> matchingOldIndexes;
+    matchingMarkdown.reserve(oldFlowMarkdown.size());
+    matchingOldIndexes.reserve(oldFlowMarkdown.size());
+    for (int oldIndex = 0; oldIndex < oldFlowMarkdown.size(); ++oldIndex) {
+        if (!currentSlideSurvived && oldIndex == oldCurrentIndex)
+            continue;
+        matchingMarkdown.append(oldFlowMarkdown.at(oldIndex));
+        matchingOldIndexes.append(oldIndex);
+    }
+    const QVector<int> matches = commonSubsequenceMatches(matchingMarkdown, flowMarkdown);
+    for (int index = 0; index < matches.size(); ++index) {
+        if (matches.at(index) >= 0)
+            match(matchingOldIndexes.at(index), matches.at(index));
+    }
+
+    const auto rebasedIndex = [&oldToNew, flowMarkdown](int oldIndex) {
+        const int matched = oldToNew.value(oldIndex, -1);
+        return matched >= 0 ? matched : qBound(0, oldIndex, qMax(0, flowMarkdown.size() - 1));
+    };
+
     m_recallKeys = keys;
-    m_flowCount = flowCount;
-    // An edit can shorten the deck under us; keep what we know about the slides
-    // that survived and clamp the position into what is left.
-    m_scroll.resize(flowCount);
-    m_fragmentCounts.resize(flowCount);
+    m_flowCount = flowMarkdown.size();
+    m_flowMarkdown = flowMarkdown;
+    m_scroll = scroll;
+    m_fragmentCounts = fragmentCounts;
     if (!m_recall.isEmpty() && !m_recallKeys.contains(m_recall))
         m_recall.clear();
-    m_position.slideIndex = qBound(0, m_position.slideIndex, qMax(0, flowCount - 1));
-    m_position.fragment = qMin(m_position.fragment, fragmentCount() - 1);
-    m_recallReturn.slideIndex =
-        qBound(0, m_recallReturn.slideIndex, qMax(0, flowCount - 1));
+    m_position.slideIndex = rebasedIndex(m_position.slideIndex);
+    // A changed, deleted, or ambiguous active slide has no identity to carry
+    // to its fallback. Keep scroll only for clearly changed new content.
+    if (!currentSlideSurvived) {
+        m_revealAllOnArrival = false;
+        m_position.fragment = 0;
+        if (!currentContentStillExists && !newUsed.value(m_position.slideIndex) &&
+            !m_scroll.isEmpty())
+            m_scroll[m_position.slideIndex] = m_position.scrollFraction;
+    } else {
+        m_position.fragment = qBound(0, m_position.fragment, fragmentCount());
+    }
+    m_position.scrollFraction = m_scroll.value(m_position.slideIndex);
+    m_recallReturn.slideIndex = rebasedIndex(m_recallReturn.slideIndex);
 }
 
 int DeckNavigator::fragmentCountAt(int slideIndex) const {
-    return qMax(1, m_fragmentCounts.value(slideIndex));
+    return qMax(0, m_fragmentCounts.value(slideIndex));
 }
 
 void DeckNavigator::noteFragmentCount(int slideIndex, int count) {
-    if (slideIndex < 0 || slideIndex >= m_flowCount || count <= 0)
+    if (slideIndex < 0 || slideIndex >= m_flowCount || count < 0)
         return;
 
     m_fragmentCounts[slideIndex] = count;
@@ -395,15 +564,15 @@ void DeckNavigator::noteFragmentCount(int slideIndex, int count) {
 
     if (m_revealAllOnArrival) {
         m_revealAllOnArrival = false;
-        m_position.fragment = count - 1;
+        m_position.fragment = count;
     }
-    m_position.fragment = qBound(0, m_position.fragment, count - 1);
+    m_position.fragment = qBound(0, m_position.fragment, count);
 }
 
 bool DeckNavigator::next() {
     if (m_flowCount == 0)
         return false;
-    if (m_position.fragment + 1 < fragmentCount()) {
+    if (m_position.fragment < fragmentCount()) {
         ++m_position.fragment;
         return true;
     }
@@ -427,7 +596,7 @@ bool DeckNavigator::previous() {
     // not know how many fragments that is, so ask to be told on arrival.
     const int known = m_fragmentCounts.value(target);
     if (known > 0)
-        m_position.fragment = known - 1;
+        m_position.fragment = known;
     else
         m_revealAllOnArrival = true;
     return true;

@@ -1,4 +1,5 @@
 #include <QGuiApplication>
+#include <QFile>
 #include <QJsonArray>
 #include <QSet>
 #include <QtTest>
@@ -34,6 +35,18 @@ private:
 
     static QJsonObject plainDeck(int slideCount) {
         return deck(QStringList(slideCount, QString()));
+    }
+
+    static QJsonObject contentDeck(const QStringList &markdown) {
+        QJsonArray slides;
+        for (int index = 0; index < markdown.size(); ++index) {
+            slides.append(QJsonObject{{QStringLiteral("index"), index},
+                                      {QStringLiteral("markdown"), markdown.at(index)},
+                                      {QStringLiteral("recallKey"), QString()},
+                                      {QStringLiteral("skip"), false}});
+        }
+        return QJsonObject{{QStringLiteral("mode"), QStringLiteral("present")},
+                           {QStringLiteral("slides"), slides}};
     }
 
     static PresentationOutput output(const QString &name, bool primary = false) {
@@ -93,17 +106,39 @@ private slots:
     void nextStepsFragmentsBeforeSlides() {
         DeckNavigator navigator;
         navigator.setDeck(plainDeck(3));
+        // Three reveals means four positions: none shown, then one, two, three.
+        // render.js counts fragment *elements*, so the last one has to be
+        // reachable before the slide turns, or its final list item is never
+        // seen (spec §4.6).
         navigator.noteFragmentCount(0, 3);
 
-        QVERIFY(navigator.next());
-        QCOMPARE(navigator.slideIndex(), 0);
-        QCOMPARE(navigator.fragment(), 1);
-        QVERIFY(navigator.next());
-        QCOMPARE(navigator.fragment(), 2);
+        for (int fragment = 1; fragment <= 3; ++fragment) {
+            QVERIFY(navigator.next());
+            QCOMPARE(navigator.slideIndex(), 0);
+            QCOMPARE(navigator.fragment(), fragment);
+        }
 
         QVERIFY(navigator.next());
         QCOMPARE(navigator.slideIndex(), 1);
         QCOMPARE(navigator.fragment(), 0);
+    }
+
+    void everyListItemIsReachableBeforeTheSlideTurns() {
+        // The welcome deck's "Progressive Disclosure" slide: five list items,
+        // one of them nested. Live verification caught the slide advancing on
+        // the fifth press, so the fifth item never appeared.
+        DeckNavigator navigator;
+        navigator.setDeck(plainDeck(2));
+        navigator.noteFragmentCount(0, 5);
+
+        QCOMPARE(navigator.fragment(), 0);
+        for (int revealed = 1; revealed <= 5; ++revealed) {
+            QVERIFY(navigator.next());
+            QCOMPARE(navigator.slideIndex(), 0);
+            QCOMPARE(navigator.fragment(), revealed);
+        }
+        QVERIFY(navigator.next());
+        QCOMPARE(navigator.slideIndex(), 1);
     }
 
     void nextStopsAtTheEndOfTheDeck() {
@@ -129,12 +164,14 @@ private slots:
         navigator.noteFragmentCount(0, 3);
         navigator.next();
         navigator.next();
+        navigator.next();
         navigator.next();  // onto slide 1
         QCOMPARE(navigator.slideIndex(), 1);
 
         QVERIFY(navigator.previous());
         QCOMPARE(navigator.slideIndex(), 0);
-        QCOMPARE(navigator.fragment(), 2);
+        // Everything revealed, which is the undo of the step that left it.
+        QCOMPARE(navigator.fragment(), 3);
     }
 
     void steppingBackOntoAnUnseenSlideWaitsForItsFragmentCount() {
@@ -148,7 +185,7 @@ private slots:
         QCOMPARE(navigator.fragment(), 0);
 
         navigator.noteFragmentCount(1, 4);
-        QCOMPARE(navigator.fragment(), 3);
+        QCOMPARE(navigator.fragment(), 4);
     }
 
     void aReportedFragmentCountNeverStrandsUsPastTheEnd() {
@@ -157,11 +194,12 @@ private slots:
         navigator.noteFragmentCount(0, 4);
         navigator.next();
         navigator.next();
-        QCOMPARE(navigator.fragment(), 2);
+        navigator.next();
+        QCOMPARE(navigator.fragment(), 3);
 
-        // The slide was edited down to two fragments while we sat on it.
+        // The slide was edited down to two reveals while we sat on it.
         navigator.noteFragmentCount(0, 2);
-        QCOMPARE(navigator.fragment(), 1);
+        QCOMPARE(navigator.fragment(), 2);
     }
 
     void gotoSlideClampsAndResetsFragments() {
@@ -196,6 +234,147 @@ private slots:
         navigator.setDeck(plainDeck(2));
         QCOMPARE(navigator.slideCount(), 2);
         QCOMPARE(navigator.slideIndex(), 1);
+    }
+
+    void insertingBeforeTheCurrentSlideKeepsItsContentAndState() {
+        const QStringList original{QStringLiteral("# One\n"), QStringLiteral("# Two\n"),
+                                   QStringLiteral("# Keep this slide\n"),
+                                   QStringLiteral("# Four\n")};
+        DeckNavigator navigator;
+        navigator.setDeck(contentDeck(original));
+        navigator.gotoSlide(2);
+        navigator.noteFragmentCount(2, 3);
+        navigator.next();
+        navigator.next();
+        navigator.setScrollFraction(0.42);
+
+        QStringList edited = original;
+        edited.insert(1, QStringLiteral("# Inserted\n"));
+        navigator.setDeck(contentDeck(edited));
+
+        QCOMPARE(navigator.slideCount(), 5);
+        QCOMPARE(navigator.slideIndex(), 3);
+        QCOMPARE(navigator.fragment(), 2);
+        QCOMPARE(navigator.scrollFraction(), 0.42);
+
+        // The remapped scroll memory remains with this slide after leaving it.
+        navigator.gotoSlide(0);
+        navigator.gotoSlide(3);
+        QCOMPARE(navigator.scrollFraction(), 0.42);
+    }
+
+    void deletingBeforeTheCurrentSlideKeepsItsContent() {
+        const QStringList original{QStringLiteral("# One\n"), QStringLiteral("# Two\n"),
+                                   QStringLiteral("# Three\n"),
+                                   QStringLiteral("# Keep this slide\n"),
+                                   QStringLiteral("# Five\n")};
+        DeckNavigator navigator;
+        navigator.setDeck(contentDeck(original));
+        navigator.gotoSlide(3);
+
+        QStringList edited = original;
+        edited.removeAt(1);
+        navigator.setDeck(contentDeck(edited));
+
+        QCOMPARE(navigator.slideCount(), 4);
+        QCOMPARE(navigator.slideIndex(), 2);
+    }
+
+    void deletingTheActiveDuplicateUsesTheClampFallback() {
+        const QString duplicate = QStringLiteral("# Duplicate\n");
+        const QStringList original{QStringLiteral("# Before\n"), duplicate, duplicate,
+                                   QStringLiteral("# After\n")};
+        DeckNavigator navigator;
+        navigator.setDeck(contentDeck(original));
+        navigator.gotoSlide(2);
+        navigator.setScrollFraction(0.67);
+        navigator.gotoSlide(1);
+        navigator.noteFragmentCount(1, 4);
+        navigator.next();
+        navigator.next();
+        navigator.setScrollFraction(0.23);
+
+        QStringList edited = original;
+        edited.removeAt(1);
+        navigator.setDeck(contentDeck(edited));
+
+        QCOMPARE(navigator.slideCount(), 3);
+        QCOMPARE(navigator.slideIndex(), 1);
+        QCOMPARE(navigator.fragment(), 0);
+        QCOMPARE(navigator.scrollFraction(), 0.67);
+
+        navigator.gotoSlide(0);
+        navigator.gotoSlide(1);
+        QCOMPARE(navigator.scrollFraction(), 0.67);
+    }
+
+    void insertingAnIdenticalSlideBeforeTheCurrentOneNearTheEndUsesClampFallback() {
+        const QString duplicate = QStringLiteral("# Duplicate\n");
+        const QStringList original{QStringLiteral("# One\n"),
+                                   QStringLiteral("# Anchor\n"), duplicate,
+                                   QStringLiteral("# End\n")};
+        DeckNavigator navigator;
+        navigator.setDeck(contentDeck(original));
+        navigator.gotoSlide(2);
+        navigator.noteFragmentCount(2, 4);
+        navigator.next();
+        navigator.next();
+        navigator.setScrollFraction(0.42);
+
+        QStringList edited = original;
+        edited.insert(2, duplicate);
+        navigator.setDeck(contentDeck(edited));
+
+        // Inserting before or after identical adjacent text has the same
+        // source result. The stable rule is the documented clamp fallback.
+        QCOMPARE(navigator.slideIndex(), 2);
+        QCOMPARE(navigator.fragment(), 0);
+        QCOMPARE(navigator.scrollFraction(), 0.0);
+    }
+
+    void deletingTheCurrentSlideKeepsTheFallbackSlideScroll() {
+        const QStringList original{QStringLiteral("# One\n"),
+                                   QStringLiteral("# Delete this slide\n"),
+                                   QStringLiteral("# Fallback slide\n"),
+                                   QStringLiteral("# Four\n")};
+        DeckNavigator navigator;
+        navigator.setDeck(contentDeck(original));
+        navigator.gotoSlide(2);
+        navigator.setScrollFraction(0.67);
+        navigator.gotoSlide(1);
+        navigator.setScrollFraction(0.23);
+
+        QStringList edited = original;
+        edited.removeAt(1);
+        navigator.setDeck(contentDeck(edited));
+
+        QCOMPARE(navigator.slideIndex(), 1);
+        QCOMPARE(navigator.scrollFraction(), 0.67);
+
+        navigator.gotoSlide(0);
+        navigator.gotoSlide(1);
+        QCOMPARE(navigator.scrollFraction(), 0.67);
+    }
+
+    void changingTheCurrentSlideFallsBackToItsClampedPosition() {
+        const QStringList original{QStringLiteral("# One\n"), QStringLiteral("# Two\n"),
+                                   QStringLiteral("# Current before edit\n"),
+                                   QStringLiteral("# Four\n")};
+        DeckNavigator navigator;
+        navigator.setDeck(contentDeck(original));
+        navigator.gotoSlide(2);
+        navigator.noteFragmentCount(2, 3);
+        navigator.next();
+
+        QStringList edited = original;
+        edited.insert(0, QStringLiteral("# Inserted\n"));
+        edited[3] = QStringLiteral("# Current after edit\n");
+        navigator.setDeck(contentDeck(edited));
+
+        // Current content changed, so the documented fallback is the same
+        // numeric position, clamped to the new flow, with no stale fragments.
+        QCOMPARE(navigator.slideIndex(), 2);
+        QCOMPARE(navigator.fragment(), 0);
     }
 
     // --- Jump to a slide number (spec §5.2) -------------------------------
@@ -597,6 +776,36 @@ private slots:
     void everyScreenIsAnOutput() {
         Presentation presentation;
         QCOMPARE(presentation.outputs().size(), QGuiApplication::screens().size());
+    }
+
+    void presentationViewsRefitAfterAClientResize() {
+        // The compositor owns top-level resize on Wayland. The focused seam we
+        // can cover without a Hyprland session is the QML wiring: each browser
+        // item follows its parent client size, then gives render.js its normal
+        // resize event after the Qt Quick layout settles.
+        const auto qml = [](const QString &name) {
+            const QByteArray relative = (QStringLiteral("../src/") + name).toUtf8();
+            QFile file(QFINDTESTDATA(relative.constData()));
+            if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+                return QString();
+            return QString::fromUtf8(file.readAll());
+        };
+
+        const QString audience = qml(QStringLiteral("AudienceWindow.qml"));
+        QVERIFY(!audience.isEmpty());
+        QVERIFY(audience.contains(QStringLiteral("width: parent.width")));
+        QVERIFY(audience.contains(QStringLiteral("height: parent.height")));
+        QVERIFY(audience.contains(QStringLiteral("onWidthChanged: viewportResize.restart()")));
+        QVERIFY(audience.contains(QStringLiteral("onHeightChanged: viewportResize.restart()")));
+
+        const QString presenter = qml(QStringLiteral("PresenterWindow.qml"));
+        QVERIFY(!presenter.isEmpty());
+        QCOMPARE(presenter.count(QStringLiteral("onWidthChanged: viewportResize.restart()")), 2);
+        QCOMPARE(presenter.count(QStringLiteral("onHeightChanged: viewportResize.restart()")), 2);
+
+        const QString resizeEvent = QStringLiteral("window.dispatchEvent(new Event('resize'))");
+        QVERIFY(audience.contains(resizeEvent));
+        QCOMPARE(presenter.count(resizeEvent), 2);
     }
 };
 

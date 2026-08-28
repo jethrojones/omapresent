@@ -83,8 +83,13 @@ public:
     qreal scrollFraction() const { return m_position.scrollFraction; }
     DeckPosition position() const { return m_position; }
 
-    // How many fragments the current slide has. 1 until the renderer has said
-    // otherwise, so a slide we have never displayed behaves like a plain one.
+    // How many *reveals* the current slide has, which is how many fragment
+    // elements the renderer found in it — not how many positions there are.
+    // Position 0 shows none of them and position `fragmentCount()` shows them
+    // all, so a five-item list has six positions. This is render.js's own rule
+    // (`if (fragment < count) fragment += 1`), and the renderer owns it.
+    // 0 until the renderer has said otherwise, so a slide we have never
+    // displayed behaves like one with nothing to reveal.
     int fragmentCount() const { return fragmentCountAt(m_position.slideIndex); }
     int fragmentCountAt(int slideIndex) const;
     // The renderer reports the count for the slide it is showing; remember it,
@@ -122,6 +127,10 @@ public:
 
 private:
     DeckPosition m_position;
+    // The last known content of each flow slide. Live edits may insert or
+    // delete before the active slide, so this lets setDeck() rebase our
+    // per-slide state onto the same content rather than following its number.
+    QVector<QString> m_flowMarkdown;
     // Scroll offset and fragment count per flow slide, both learned as we go.
     QVector<qreal> m_scroll;
     QVector<int> m_fragmentCounts;
