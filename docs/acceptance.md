@@ -343,3 +343,13 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   do nothing from a build tree, because both read from `/usr/share/omapresent/`,
   which only exists once packaged — and `media` verified the package installs
   both there. Opening a deck does not mark it modified.
+- **Long read fixed and verified.** Built a fresh bundle, moved it to an
+  unrelated directory, rendered `read/index.html` headless from `file://`. It is
+  now a genuine article: article-scale type, readable measure, section
+  dividers — and speaker-note prose promoted to body text and flowed in with the
+  headings and lists, which is the §9.2 requirement that makes the long read
+  worth having as a separate view. Notes appear in both views and correctly
+  differ in role: body text in the article, toggleable subtitles in the deck.
+  Self-containment survived: 32 files, zero `file:///`, `qrc:` or home paths.
+  Two agents negotiated the CSS ownership boundary themselves (renderer inside
+  `#deck`, webbundle outside it) and it held.
