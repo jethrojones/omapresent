@@ -11,17 +11,17 @@ Status: `—` not started · `~` in progress · `x` done and verified
 
 | | Requirement | Verified by |
 |---|---|---|
-| — | `---` is a break only with a blank line either side | `tst_deckmodel` |
-| — | Setext `Heading\n---` is not a break | `tst_deckmodel` |
-| — | `***`, `___`, `----`, `- - -` are not breaks | `tst_deckmodel` |
-| — | `---` inside a fenced code block is not a break | `tst_deckmodel` |
+| x | `---` is a break only with a blank line either side | `tst_deckmodel` |
+| x | Setext `Heading\n---` is not a break | `tst_deckmodel` |
+| x | `***`, `___`, `----`, `- - -` are not breaks | `tst_deckmodel` |
+| x | `---` inside a fenced code block is not a break | `tst_deckmodel` |
 | — | No separators = one slide | `tst_deckmodel` |
-| — | Frontmatter only when line 1 is `---`; closing `---` is not a break | `tst_deckmodel` |
-| — | All §4.4 keys parse, incl. nested `publish:` | `tst_deckmodel` |
-| — | `//`, `%%…%%`, `<!-- … -->` stripped — but not inside code fences | `tst_deckmodel` |
-| — | `// ---` drops the whole following slide | `tst_deckmodel` |
-| — | `--- {q}` binds; `--- {q, skip}` also leaves the linear flow | `tst_deckmodel` |
-| — | `sourceStartLine`/`EndLine` correct against the original file | `tst_deckmodel` |
+| x | Frontmatter only when line 1 is `---`; closing `---` is not a break | `tst_deckmodel` |
+| x | All §4.4 keys parse, incl. nested `publish:` | `tst_deckmodel` |
+| x | `//`, `%%…%%`, `<!-- … -->` stripped — but not inside code fences | `tst_deckmodel` |
+| x | `// ---` drops the whole following slide | `tst_deckmodel` |
+| x | `--- {q}` binds; `--- {q, skip}` also leaves the linear flow | `tst_deckmodel` |
+| x | `sourceStartLine`/`EndLine` correct against the original file | `tst_deckmodel` |
 
 ## §4.2, §4.6, §4.7, §4.8 Renderer — `renderer` (T2)
 
@@ -49,7 +49,7 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | Spaces in paths, broken symlinks, missing root do not break it | `tst_assetindex` |
 | x | `\|600` and `\|main` size hints parse | `tst_assetindex` |
 | x | `shortestUniqueReference` for drag-and-drop | `tst_assetindex` |
-| ~ | Index off the UI thread; watcher survives a large vault | review 1 |
+| x | Index off the UI thread; watcher survives a large vault | review 1, verified |
 
 ## §6 Theme — `theme` (T3)
 
@@ -114,8 +114,8 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | x | `SKILL.md` + four references; safety line on publishing | read |
 | x | PKGBUILD deps correct, no yt-dlp, no bundled fonts | `bash -n`, read |
 | x | Welcome deck is a valid deck: 24 slides, frontmatter, clean separators | validator |
-| ~ | Welcome deck demonstrates **every** row of §4.2 (math missing) | review 1 |
-| ~ | Welcome deck inherits the live theme (`theme: default` must go) | review 1 |
+| x | Welcome deck demonstrates **every** row of §4.2 | review 1, verified |
+| x | Welcome deck inherits the live theme | review 1, verified |
 | x | `bin/check-skill-sync` passes in CI | CI |
 
 ## Cross-cutting — orchestrator
@@ -129,3 +129,25 @@ Status: `—` not started · `~` in progress · `x` done and verified
 | — | Fonts not bundled; system iA Writer S with a fallback stack | grep |
 | — | No network at runtime outside prefetch and publish | review |
 | — | Everything green end to end on a real deck | manual |
+
+## Verification log
+
+Things the orchestrator checked directly, rather than taking an agent's word:
+
+- **2026-08-27 — document model.** Built `DeckModel` standalone against a
+  hand-written edge-case file and read the output: 5 slides from a file
+  containing a Setext heading, `***`, `___`, `- - -`, `----`, and `---` inside
+  both ``` and `~~~` fences — none of which became a break. Frontmatter parsed
+  with the nested `publish:` map. `--- {q}` and `--- {z, skip}` bound correctly,
+  `// ---` dropped its slide without shifting the others, and line ranges
+  pointed into the original file. Comment stripping removed `//`, `%%…%%` and
+  `<!-- -->` outside fences while leaving `//` inside a ```cpp fence intact —
+  the case most implementations get wrong.
+- **2026-08-27 — welcome deck.** Parsed `welcome/welcome.md` with the §4.1 rules
+  independently: 25 slides, valid frontmatter, no malformed `---`. Confirmed
+  `theme: default` was removed (no such theme exists on this machine; the live
+  one is `gold-rush`) and that math is now demonstrated.
+- **2026-08-27 — asset index.** 23 cases green, including two same-named files
+  at different depths, a case-mismatched name, spaces in paths, and a broken
+  symlink. Follow-up review confirmed the walk moved to a `QThreadPool` worker
+  and the watcher now caps directories and checks `addPaths()` for failures.
