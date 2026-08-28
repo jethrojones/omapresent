@@ -105,6 +105,10 @@ public:
     // `error` set (spec §11).
     static CommandLine parseCommandLine(const QStringList &arguments);
     static QString usage();
+    // Opens a command-line deck through the same path as open(), but reports
+    // whether the complete read succeeded. The caller must stop the command on
+    // false so an old or empty document cannot be exported or published.
+    bool openCommandFile(const QString &filePath);
     // Runs a command that needs no window (export, publish) and emits
     // commandFinished() with the process exit code.
     void runCommand(const CommandLine &command);
@@ -188,6 +192,7 @@ signals:
     void commandFinished(int exitCode);
 
 private:
+    bool openLocalFile(const QUrl &url);
     void loadDocumentText(const QString &text);
     void setFileUrl(const QUrl &url);
     void setModified(bool modified);

@@ -420,7 +420,6 @@ private slots:
         QVERIFY2(vulnerable || safelyRejected,
                  qPrintable(QString::fromUtf8(result.standardOutput
                                               + result.standardError)));
-        QEXPECT_FAIL("", "SEC-006: the CLI publishes an empty deck after a directory fails to open.", Continue);
         QVERIFY(safelyRejected);
     }
 
@@ -458,7 +457,6 @@ private slots:
         QVERIFY2(vulnerable || safelyRejected,
                  qPrintable(QString::fromUtf8(result.standardOutput
                                               + result.standardError)));
-        QEXPECT_FAIL("", "SEC-006: the CLI publishes an empty deck after a file fails to open.", Continue);
         QVERIFY(safelyRejected);
     }
 
@@ -479,7 +477,6 @@ private slots:
         const bool escaped = QFileInfo(QDir(outside.path())
                                            .filePath(QStringLiteral("omapresent")))
                                  .isSymLink();
-        QEXPECT_FAIL("", "SEC-007: first run follows a symlinked skills directory.", Continue);
         QVERIFY2(!escaped, "First run created the skill link outside the agent directory.");
     }
 
@@ -561,7 +558,6 @@ private slots:
         const QByteArray patched = readBytes(path);
         QVERIFY(patched.contains("unknown_one = \"keep one\""));
         QVERIFY(patched.contains("unknown_two = \"keep two\""));
-        QEXPECT_FAIL("", "SEC-008: patchToml changes the shadowed key in the first duplicate table.", Continue);
         QCOMPARE(settings.stringValue(QStringLiteral("editor.theme")),
                  QStringLiteral("patched"));
     }

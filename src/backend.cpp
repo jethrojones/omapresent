@@ -62,6 +62,13 @@ static bool confirmPublishOnStdin(const QString &slug) {
     return answer == QStringLiteral("y") || answer == QStringLiteral("yes");
 }
 
+static bool pathIsInside(const QString &path, const QString &root) {
+    const QString relative = QDir(root).relativeFilePath(path);
+    return relative != QStringLiteral("..")
+        && !relative.startsWith(QStringLiteral("../"))
+        && !QDir::isAbsolutePath(relative);
+}
+
 QString Backend::normalizedLinkUrl(const QString &clipboardText) {
     QString candidate = clipboardText.trimmed();
     static const QRegularExpression lineBreakRe(QStringLiteral("[\\r\\n]"));
@@ -278,38 +285,68 @@ void Backend::openDialog() {
 }
 
 void Backend::open(const QUrl &url) {
+    openLocalFile(url);
+}
+
+bool Backend::openCommandFile(const QString &filePath) {
+    return openLocalFile(QUrl::fromLocalFile(QFileInfo(filePath).absoluteFilePath()));
+}
+
+bool Backend::openLocalFile(const QUrl &url) {
     if (!url.isLocalFile()) {
         setStatus(QStringLiteral("Only local files can be opened."));
-        return;
+        return false;
     }
 
-    const QString targetName = QFileInfo(url.toLocalFile()).fileName();
-    QFile file(url.toLocalFile());
+    const QString path = QFileInfo(url.toLocalFile()).absoluteFilePath();
+    const QFileInfo target(path);
+    if (!target.exists()) {
+        setStatus(QStringLiteral("No such file: %1").arg(path));
+        return false;
+    }
+    if (target.isDir()) {
+        setStatus(QStringLiteral("Could not open %1: it is a directory.").arg(path));
+        return false;
+    }
+    if (!target.isFile()) {
+        setStatus(QStringLiteral("Could not open %1: it is not a regular file.").arg(path));
+        return false;
+    }
+
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        setStatus(QStringLiteral("Could not open %1.").arg(targetName));
-        return;
+        setStatus(QStringLiteral("Could not open %1: %2.")
+                      .arg(path, file.errorString()));
+        return false;
+    }
+
+    const QByteArray contents = file.readAll();
+    if (file.error() != QFileDevice::NoError) {
+        setStatus(QStringLiteral("Could not read %1: %2.")
+                      .arg(path, file.errorString()));
+        return false;
     }
 
     writeSessionPosition();
     ensureDocument();
 
-    const QByteArray contents = file.readAll();
     loadDocumentText(QString::fromUtf8(contents));
     clearRecovery();
     m_lastKnownFileContents = contents;
     m_hasKnownFileContents = true;
-    setFileUrl(url);
+    setFileUrl(QUrl::fromLocalFile(path));
     watchCurrentFile();
     setModified(false);
     setStatus(QStringLiteral("Opened %1").arg(fileName()));
 
     // Image references and the video cache resolve against the deck's own
     // folder until `root:` says otherwise (spec §4.5).
-    const QString deckDir = QFileInfo(url.toLocalFile()).absolutePath();
+    const QString deckDir = target.absolutePath();
     m_assets.setDeckDir(deckDir);
     m_media.setDeckDir(deckDir);
     restoreSessionPosition();
     rebuildDeck();
+    return true;
 }
 
 void Backend::save() {
@@ -1129,13 +1166,11 @@ QString Backend::usage() {
 
 void Backend::runCommand(const CommandLine &command) {
     const QFileInfo deckFile(command.file);
-    if (!deckFile.exists()) {
-        QTextStream(stderr) << QStringLiteral("No such file: %1\n").arg(command.file);
+    if (!openCommandFile(command.file)) {
+        QTextStream(stderr) << status() << '\n';
         emit commandFinished(1);
         return;
     }
-
-    open(QUrl::fromLocalFile(deckFile.absoluteFilePath()));
 
     if (command.command == CommandLine::ExportPdf) {
         connect(&m_pdfExport, &PdfExport::finished, this,
@@ -1182,17 +1217,39 @@ QStringList Backend::agentSkillDirectories(const QString &homeDirectory) {
         QStringLiteral(".codex/skills"), QStringLiteral(".pi/agent/skills")};
 
     QStringList directories;
+    const QString canonicalHome = QFileInfo(homeDirectory).canonicalFilePath();
+    if (canonicalHome.isEmpty() || !QFileInfo(canonicalHome).isDir())
+        return directories;
+
     const QDir home(homeDirectory);
     for (const QString &relative : relativePaths) {
         const QString path = home.filePath(relative);
-        if (QFileInfo(path).isDir()) {
-            directories.append(path);
+        const QFileInfo target(path);
+        if (target.isSymLink())
+            continue;
+
+        if (target.exists()) {
+            const QString canonicalTarget = target.canonicalFilePath();
+            if (target.isDir() && pathIsInside(canonicalTarget, canonicalHome))
+                directories.append(path);
             continue;
         }
+
         // The agent is installed but keeps no skills yet. Making its skills
         // directory is fair; making a home for an agent that is not here is not.
-        if (QFileInfo(QFileInfo(path).path()).isDir() && QDir().mkpath(path))
+        const QFileInfo parent(target.absolutePath());
+        const QString canonicalParent = parent.canonicalFilePath();
+        if (parent.isSymLink() || !parent.isDir()
+            || !pathIsInside(canonicalParent, canonicalHome)
+            || !QDir().mkpath(path)) {
+            continue;
+        }
+
+        const QFileInfo created(path);
+        if (!created.isSymLink() && created.isDir()
+            && pathIsInside(created.canonicalFilePath(), canonicalHome)) {
             directories.append(path);
+        }
     }
     return directories;
 }
@@ -1205,6 +1262,12 @@ QStringList Backend::installAgentSkill(const QString &skillSource, const QString
         return links;
 
     for (const QString &directory : skillDirectories) {
+        const QFileInfo directoryInfo(directory);
+        if (directoryInfo.isSymLink() || !directoryInfo.isDir()) {
+            qWarning() << "Refusing unsafe agent skill directory" << directory;
+            continue;
+        }
+
         const QString link = QDir(directory).filePath(name);
         const QFileInfo existing(link);
 

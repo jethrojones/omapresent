@@ -105,7 +105,9 @@ The path is in `src/backend.cpp` in `open()` and `runCommand()`. The failed `ope
 
 The user must still confirm or pass `--yes`. The command can publish an empty deck instead of the named file and report success. It does not disclose the unreadable file because that file was never read.
 
-`SecurityTest::cliRejectsADirectoryBeforePublishing` and `SecurityTest::cliRejectsAnUnreadableFileBeforePublishing` pin both forms as expected failures.
+`Backend::openCommandFile()` now reports whether the complete file read succeeded. Export, present, and publish stop with a nonzero exit before they use a failed load. The error names the requested path and says whether it is missing, a directory, not a regular file, unreadable, or failed during the read.
+
+`SecurityTest::cliRejectsADirectoryBeforePublishing` and `SecurityTest::cliRejectsAnUnreadableFileBeforePublishing` now guard both fixed paths with normal assertions.
 
 ### SEC-007 — Low — First run follows a symlinked agent skills directory
 
@@ -121,7 +123,9 @@ The issue is in `src/backend.cpp` in `agentSkillDirectories()` and `installAgent
 
 This creates one known symlink in a directory that the user can already write. It does not replace an existing file, directory, or different symlink. The main risk is a surprising write outside the expected agent tree.
 
-`SecurityTest::firstRunRefusesASymlinkedSkillDirectory` pins this as an expected failure.
+First-run discovery now rejects a symlinked skills directory. It also checks that the canonical skills directory or its creation parent stays inside the canonical home directory. The installer checks the directory again before it creates the link.
+
+`SecurityTest::firstRunRefusesASymlinkedSkillDirectory` now guards the fixed behavior with a normal assertion.
 
 ### SEC-008 — Low — A duplicate settings key can make a patch report success without applying
 
@@ -136,7 +140,9 @@ Concrete reproduction:
 
 The patch preserves both unknown keys in the test. It does not make the malformed file less readable. The failure is that the requested change does not take effect even though the API reports success.
 
-`SecurityTest::settingsPatchAppliesWithADuplicateKnownKey` pins this as an expected failure.
+`Publisher::patchToml()` now scans all matching assignments and changes the last one. This matches the value that `parseToml()` uses. It still leaves unknown keys and the shadowed earlier assignment unchanged.
+
+`SecurityTest::settingsPatchAppliesWithADuplicateKnownKey` now guards the fixed behavior with a normal assertion.
 
 ## Checks that passed
 

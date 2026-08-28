@@ -96,8 +96,16 @@ int main(int argc, char *argv[]) {
 
     backend.setParentWindow(qobject_cast<QWindow *>(engine.rootObjects().constFirst()));
 
-    if (!command.file.isEmpty() && !backend.modified())
-        backend.open(QUrl::fromLocalFile(command.file));
+    if (!command.file.isEmpty()) {
+        if (command.command == Backend::CommandLine::Present) {
+            if (!backend.openCommandFile(command.file)) {
+                QTextStream(stderr) << backend.status() << '\n';
+                return 1;
+            }
+        } else if (!backend.modified()) {
+            backend.openCommandFile(command.file);
+        }
+    }
     backend.completeFirstRun();
 
     if (command.command == Backend::CommandLine::Present)

@@ -1861,6 +1861,9 @@ QString Publisher::patchToml(const QString &tomlText, const QString &dottedKey,
     bool inTargetTable = table.isEmpty();
     bool targetTableFound = table.isEmpty();
     qsizetype targetTableEnd = tomlText.size();
+    qsizetype replacementStart = -1;
+    qsizetype replacementLength = 0;
+    QString replacementLine;
     QRegularExpressionMatchIterator iterator = lineExpression.globalMatch(tomlText);
     while (iterator.hasNext()) {
         const QRegularExpressionMatch lineMatch = iterator.next();
@@ -1882,9 +1885,16 @@ QString Publisher::patchToml(const QString &tomlText, const QString &dottedKey,
             continue;
         const QString replacement = keyMatch.captured(1) + encodedValue
             + valueSuffix(keyMatch.captured(2));
+        // parseToml() keeps the last repeated key. Patch that effective value
+        // when a malformed file repeats a table or assignment.
+        replacementStart = lineMatch.capturedStart(1);
+        replacementLength = lineMatch.capturedLength(1);
+        replacementLine = replacement;
+    }
+
+    if (replacementStart >= 0) {
         QString result = tomlText;
-        result.replace(lineMatch.capturedStart(1), lineMatch.capturedLength(1),
-                       replacement);
+        result.replace(replacementStart, replacementLength, replacementLine);
         return result;
     }
 
