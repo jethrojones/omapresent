@@ -45,3 +45,6 @@ HEADERS += \
     ../src/settings.h \
     ../src/webbundle.h \
     ../src/markdownhighlighter.h
+
+# The app's resources, so a test can ask whether `qrc:/...` really resolves.
+RESOURCES += ../src/resources.qrc ../src/renderer/renderer.qrc

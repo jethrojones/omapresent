@@ -1,7 +1,10 @@
 #include <QtTest>
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
+#include <QXmlStreamReader>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -11,6 +14,9 @@
 #include "testrunner.h"
 #include "assetindex.h"
 #include "deckmodel.h"
+#include "omarchytheme.h"
+#include "presentation.h"
+#include "renderhost.h"
 #include "videocache.h"
 
 // End-to-end seams. Every other suite proves one component correct on its own;
@@ -91,6 +97,42 @@ QStringList sortedUnique(QStringList values)
     values.removeDuplicates();
     values.sort();
     return values;
+}
+
+// One entry of a .qrc: where the file lives on disk, and the path the running
+// app asks for.
+struct ResourceEntry {
+    QString diskPath;
+    QString resourcePath;
+};
+
+QVector<ResourceEntry> readQrc(const QString &qrcPath)
+{
+    QVector<ResourceEntry> entries;
+    QFile file(qrcPath);
+    if (!file.open(QIODevice::ReadOnly))
+        return entries;
+
+    const QString directory = QFileInfo(qrcPath).absolutePath();
+    QString prefix;
+    QXmlStreamReader xml(&file);
+    while (!xml.atEnd()) {
+        if (xml.readNext() != QXmlStreamReader::StartElement)
+            continue;
+        if (xml.name() == QLatin1String("qresource")) {
+            prefix = xml.attributes().value(QStringLiteral("prefix")).toString();
+        } else if (xml.name() == QLatin1String("file")) {
+            const QString alias = xml.attributes().value(QStringLiteral("alias")).toString();
+            const QString source = xml.readElementText().trimmed();
+            if (source.isEmpty())
+                continue;
+            const QString name = alias.isEmpty() ? source : alias;
+            entries.append(ResourceEntry{
+                QDir(directory).absoluteFilePath(source),
+                QDir::cleanPath(QStringLiteral(":/") + prefix + QLatin1Char('/') + name)});
+        }
+    }
+    return entries;
 }
 
 } // namespace
@@ -781,6 +823,190 @@ private slots:
         const QJsonObject counts = answer.value(QStringLiteral("slides")).toArray().at(0).toObject();
         QVERIFY(counts.value(QStringLiteral("screen")).toInt()
                     + counts.value(QStringLiteral("notes")).toInt() > 0);
+    }
+
+    // --- 4. Resources ------------------------------------------------------
+
+    void everyQrcPathNamedInCppResolves()
+    {
+        // AudienceWindow.qml and PresenterWindow.qml were written, unit-tested
+        // and never added to resources.qrc, so `qrc:/AudienceWindow.qml` failed
+        // at runtime and present mode silently opened nothing. Every suite was
+        // green. This is the test that catches it, for any resource.
+        const QString sourceDir = fixture(QStringLiteral("../src"));
+        QVERIFY(!sourceDir.isEmpty());
+
+        static const QRegularExpression reference(QStringLiteral("qrc:/[A-Za-z0-9_./-]+"));
+        QStringList missing;
+        QStringList checked;
+
+        const QStringList sources = QDir(sourceDir).entryList({QStringLiteral("*.cpp")},
+                                                              QDir::Files, QDir::Name);
+        for (const QString &name : sources) {
+            QFile file(QDir(sourceDir).absoluteFilePath(name));
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            const QString text = QString::fromUtf8(file.readAll());
+
+            QRegularExpressionMatchIterator matches = reference.globalMatch(text);
+            while (matches.hasNext()) {
+                const QString url = matches.next().captured();
+                const QString path = QStringLiteral(":") + url.mid(4);
+                checked.append(path);
+                if (!QFile::exists(path))
+                    missing.append(QStringLiteral("%1 (named in src/%2)").arg(url, name));
+            }
+        }
+
+        // A scan that finds nothing would pass for the wrong reason.
+        QVERIFY2(checked.size() >= 4, qPrintable(QStringLiteral("only found %1 qrc: references")
+                                                     .arg(checked.size())));
+        QVERIFY(sortedUnique(checked).contains(QStringLiteral(":/AudienceWindow.qml")));
+        QVERIFY(sortedUnique(checked).contains(QStringLiteral(":/PresenterWindow.qml")));
+        QVERIFY(sortedUnique(checked).contains(QStringLiteral(":/renderer/render.html")));
+        QCOMPARE(missing.join(QLatin1Char('\n')), QString());
+    }
+
+    void everyQrcEntryExistsOnDisk()
+    {
+        // The reverse mistake: a .qrc naming a file that was renamed or never
+        // added. qmake fails loudly on this, but only for the target that lists
+        // the .qrc, so it is worth asserting where it will be seen.
+        QStringList missing;
+        int entries = 0;
+
+        for (const QString &name : {QStringLiteral("../src/resources.qrc"),
+                                    QStringLiteral("../src/renderer/renderer.qrc")}) {
+            const QString qrcPath = fixture(name);
+            QVERIFY2(!qrcPath.isEmpty(), qPrintable(name));
+
+            const QVector<ResourceEntry> listed = readQrc(qrcPath);
+            QVERIFY2(!listed.isEmpty(), qPrintable(name));
+            entries += listed.size();
+
+            for (const ResourceEntry &entry : listed) {
+                if (!QFile::exists(entry.diskPath))
+                    missing.append(QStringLiteral("%1: no file at %2")
+                                       .arg(entry.resourcePath, entry.diskPath));
+                if (!QFile::exists(entry.resourcePath))
+                    missing.append(QStringLiteral("%1: not reachable as a resource")
+                                       .arg(entry.resourcePath));
+            }
+        }
+
+        QVERIFY(entries > 30); // the vendored renderer alone is bigger than this
+        QCOMPARE(missing.join(QLatin1Char('\n')), QString());
+    }
+
+    void everyQmlFileIsRegisteredAsAResource()
+    {
+        // The moment the original bug was introduced: a .qml written into src/
+        // and never listed. Loading QML from qrc: is the only way the app does
+        // it, so an unlisted file cannot be reached at all.
+        const QString sourceDir = fixture(QStringLiteral("../src"));
+        QVERIFY(!sourceDir.isEmpty());
+
+        // Negative control: if the resources were not linked into this binary at
+        // all, or QFile::exists answered yes to everything, the loop below
+        // would prove nothing.
+        QVERIFY(!QFile::exists(QStringLiteral(":/ThisWindowDoesNotExist.qml")));
+
+        QStringList unregistered;
+        const QStringList qmlFiles = QDir(sourceDir).entryList({QStringLiteral("*.qml")},
+                                                               QDir::Files, QDir::Name);
+        QVERIFY(qmlFiles.size() >= 9);
+
+        for (const QString &name : qmlFiles) {
+            if (!QFile::exists(QStringLiteral(":/") + name))
+                unregistered.append(QStringLiteral("src/%1 is not in src/resources.qrc").arg(name));
+        }
+
+        QCOMPARE(unregistered.join(QLatin1Char('\n')), QString());
+    }
+
+    // --- 5. The projector contrast floor, audience only --------------------
+
+    void onlyTheAudienceGetsTheContrastFloor()
+    {
+        // Spec §6: the floor exists because the audience is reading a
+        // washed-out projector across a room. Nudging the presenter's own
+        // screen would only stop their notes matching the theme they chose.
+        QJsonObject palette{
+            {QStringLiteral("mode"), QStringLiteral("dark")},
+            {QStringLiteral("background"), QStringLiteral("#3c3836")},
+            {QStringLiteral("foreground"), QStringLiteral("#504945")}, // far too close
+            {QStringLiteral("muted"), QStringLiteral("#4a4340")},
+            {QStringLiteral("accent"), QStringLiteral("#45403d")},
+            {QStringLiteral("dark_foreground"), QStringLiteral("#484341")},
+        };
+
+        const QString background = palette.value(QStringLiteral("background")).toString();
+        QVERIFY2(OmarchyTheme::contrastRatio(palette.value(QStringLiteral("foreground")).toString(),
+                                             background) < 4.5,
+                 "the fixture theme has to be one that needs nudging");
+
+        const QJsonObject audience =
+            OmarchyTheme::paletteForRole(palette, QStringLiteral("audience"));
+        QVERIFY(audience != palette);
+        for (const QString &key : {QStringLiteral("foreground"), QStringLiteral("muted"),
+                                   QStringLiteral("accent"), QStringLiteral("dark_foreground")}) {
+            QVERIFY2(OmarchyTheme::contrastRatio(audience.value(key).toString(), background) >= 4.5,
+                     qPrintable(key));
+        }
+        // The background itself is never moved: the deck keeps the theme's ground.
+        QCOMPARE(audience.value(QStringLiteral("background")).toString(), background);
+        QCOMPARE(audience.value(QStringLiteral("mode")).toString(), QStringLiteral("dark"));
+
+        // Every other surface gets the theme exactly as it was written.
+        for (const QString &role : {QStringLiteral("preview"), QStringLiteral("presenter"),
+                                    QStringLiteral("pdf"), QStringLiteral("web"),
+                                    QStringLiteral("export"), QStringLiteral("editor")}) {
+            QVERIFY2(OmarchyTheme::paletteForRole(palette, role) == palette, qPrintable(role));
+        }
+    }
+
+    void aThemeThatAlreadyClearsTheFloorIsUntouched()
+    {
+        const QJsonObject palette{
+            {QStringLiteral("mode"), QStringLiteral("dark")},
+            {QStringLiteral("background"), QStringLiteral("#1d2021")},
+            {QStringLiteral("foreground"), QStringLiteral("#ebdbb2")},
+            {QStringLiteral("muted"), QStringLiteral("#a89984")},
+            {QStringLiteral("accent"), QStringLiteral("#83a598")},
+            {QStringLiteral("dark_foreground"), QStringLiteral("#d5c4a1")},
+        };
+
+        QCOMPARE(OmarchyTheme::paletteForRole(palette, QStringLiteral("audience")), palette);
+    }
+
+    void presentationHandsTheAudienceItsOwnPalette()
+    {
+        // End to end: the deck the audience window is sent carries the nudged
+        // palette, the one everything else is sent carries the theme's own.
+        DeckModel model;
+        model.setSource(QStringLiteral("# One\n\n---\n\n# Two\n"));
+
+        const QJsonObject palette{
+            {QStringLiteral("mode"), QStringLiteral("dark")},
+            {QStringLiteral("background"), QStringLiteral("#3c3836")},
+            {QStringLiteral("foreground"), QStringLiteral("#504945")},
+        };
+        const QJsonObject deck = RenderHost::composeDeck(
+            QStringLiteral("present"), model.toJson(), {}, {}, palette, QString(), 1.0);
+
+        Presentation presentation;
+        presentation.setDeck(deck);
+
+        const QVariantMap exact = presentation.palette();
+        const QVariantMap audience = presentation.audiencePalette();
+        QCOMPARE(exact.value(QStringLiteral("foreground")).toString(),
+                 QStringLiteral("#504945"));
+        QVERIFY(audience.value(QStringLiteral("foreground")).toString()
+                != exact.value(QStringLiteral("foreground")).toString());
+        QVERIFY(OmarchyTheme::contrastRatio(
+                    audience.value(QStringLiteral("foreground")).toString(),
+                    QStringLiteral("#3c3836")) >= 4.5);
+        // Same deck, same slides — only the colours differ.
+        QCOMPARE(presentation.slideCount(), 2);
     }
 };
 
