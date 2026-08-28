@@ -112,6 +112,64 @@ QString localPathFor(const QString &value, const QString &deckDir)
     return QDir(deckDir).absoluteFilePath(trimmed);
 }
 
+QString expandedLocalRoot(const QString &value, const QString &deckDir)
+{
+    QString path = value.trimmed();
+    if (path == QStringLiteral("~")) {
+        path = QDir::homePath();
+    } else if (path.startsWith(QStringLiteral("~/"))) {
+        path = QDir::homePath() + path.mid(1);
+    }
+
+    static const QRegularExpression environment(
+        QStringLiteral(R"(\$\{([A-Za-z0-9_]+)\}|\$([A-Za-z0-9_]+))"));
+    QRegularExpressionMatchIterator matches = environment.globalMatch(path);
+    QList<QRegularExpressionMatch> found;
+    while (matches.hasNext())
+        found += matches.next();
+    for (qsizetype i = found.size(); i > 0; --i) {
+        const QRegularExpressionMatch &match = found.at(i - 1);
+        const QString name = match.captured(1).isEmpty()
+            ? match.captured(2)
+            : match.captured(1);
+        path.replace(match.capturedStart(), match.capturedLength(),
+                     qEnvironmentVariable(name.toLocal8Bit().constData()));
+    }
+
+    if (path.isEmpty())
+        path = deckDir;
+    else if (QDir::isRelativePath(path) && !deckDir.isEmpty())
+        path = QDir(deckDir).absoluteFilePath(path);
+    return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+}
+
+bool isWithinRoot(const QString &canonicalPath, const QString &canonicalRoot)
+{
+    const QString path = QDir::cleanPath(canonicalPath);
+    QString root = QDir::cleanPath(canonicalRoot);
+    if (path.isEmpty() || root.isEmpty())
+        return false;
+    if (path == root)
+        return true;
+    if (!root.endsWith(u'/'))
+        root += u'/';
+    return path.startsWith(root);
+}
+
+bool sourceIsInside(const QString &sourcePath, const QStringList &canonicalRoots)
+{
+    const QString target = QFileInfo(sourcePath).canonicalFilePath();
+    if (target.isEmpty())
+        return false;
+    // Deliberately allow a symlink when its canonical target stays inside an
+    // allowed root. Asset trees often use such links to organise shared media.
+    for (const QString &root : canonicalRoots) {
+        if (isWithinRoot(target, root))
+            return true;
+    }
+    return false;
+}
+
 // Marks a module specifier the loader has to point at a blob: URL. Nothing
 // else in a script can look like it, and it never survives into a running page.
 const char kModuleMarker[] = "omapresent:module/";
@@ -579,6 +637,8 @@ struct WebBundle::Private {
     QStringList createdDirs;
     // Absolute source path -> "media/<stable-name>".
     QMap<QString, QString> media;
+    // Canonical deck and asset roots. Media may come from either one.
+    QStringList mediaRoots;
     // Bundle-relative paths, in the order the pages must load them.
     QStringList styleSheets;
     QStringList classicScripts;
@@ -754,6 +814,12 @@ bool WebBundle::writeFile(const QString &relativePath, const QByteArray &data)
 
 bool WebBundle::copyFile(const QString &sourcePath, const QString &relativePath)
 {
+    if (relativePath.startsWith(QStringLiteral("media/"))
+        && !sourceIsInside(sourcePath, d->mediaRoots)) {
+        return fail(QStringLiteral(
+            "Refused to copy %1 because its target is outside the deck directory and asset root.")
+                        .arg(sourcePath));
+    }
     QFile source(sourcePath);
     if (!source.open(QIODevice::ReadOnly))
         return fail(QStringLiteral("Could not read %1: %2")
@@ -915,6 +981,8 @@ void WebBundle::collectMedia()
         const QFileInfo info(path);
         if (!info.isFile() || !info.isReadable())
             return;   // a stale or missing asset: the renderer draws the placeholder
+        if (!sourceIsInside(path, d->mediaRoots))
+            return;   // never hide an outside target behind an innocent asset name
         d->media.insert(path, QStringLiteral("media/") + mediaFileName(path));
     };
 
@@ -1127,6 +1195,7 @@ bool WebBundle::build(const QString &outputDir)
     d->createdDirs.clear();
     d->styleSheets.clear();
     d->classicScripts.clear();
+    d->mediaRoots.clear();
 
     if (m_deck.isEmpty())
         return fail(QStringLiteral("There is no deck to publish."));
@@ -1143,6 +1212,17 @@ bool WebBundle::build(const QString &outputDir)
                         .arg(d->outputRoot));
     if (!d->outputRootExisted)
         d->createdDirs += d->outputRoot;
+
+    auto addMediaRoot = [this](const QString &path) {
+        const QString canonical = QFileInfo(path).canonicalFilePath();
+        if (!canonical.isEmpty() && !d->mediaRoots.contains(canonical))
+            d->mediaRoots += canonical;
+    };
+    addMediaRoot(QFileInfo(m_deckDir).absoluteFilePath());
+    const QString configuredRoot =
+        m_deck.value(QStringLiteral("frontmatter")).toObject()
+            .value(QStringLiteral("root")).toString();
+    addMediaRoot(expandedLocalRoot(configuredRoot, m_deckDir));
 
     collectMedia();
 

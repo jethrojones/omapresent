@@ -6,8 +6,26 @@
 #include <QDir>
 #include <QUrl>
 
+#ifdef Q_OS_UNIX
+#include <unistd.h>
+#endif
+
 #include "testrunner.h"
 #include "assetindex.h"
+
+namespace {
+
+bool makeSymlink(const QString &target, const QString &linkPath)
+{
+#ifdef Q_OS_UNIX
+    return ::symlink(QFile::encodeName(target).constData(),
+                     QFile::encodeName(linkPath).constData()) == 0;
+#else
+    return QFile::link(target, linkPath) && QFileInfo(linkPath).isSymLink();
+#endif
+}
+
+} // namespace
 
 class AssetIndexTest : public QObject {
     Q_OBJECT
@@ -24,6 +42,8 @@ private slots:
     void resolveCaseInsensitiveRetry();
     void resolveSpacesInPaths();
     void resolveBrokenSymlink();
+    void resolveSymlinkInsideRoot();
+    void rejectSymlinkOutsideRoot();
     void resolveMissingReturnsEmpty();
     void resolveHttpUrlsUnchanged();
     void resolveAllBuildsJsonObject();
@@ -431,6 +451,54 @@ void AssetIndexTest::resolveBrokenSymlink()
     // Broken symlink must not resolve and must not crash
     QString resolved = index.resolve("broken_link.png");
     QVERIFY(resolved.isEmpty());
+}
+
+void AssetIndexTest::resolveSymlinkInsideRoot()
+{
+    QTemporaryDir tempRoot;
+    QVERIFY(tempRoot.isValid());
+
+    const QString target = tempRoot.path() + QStringLiteral("/actual.png");
+    const QString alias = tempRoot.path() + QStringLiteral("/cover.png");
+    QFile file(target);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write("INSIDE"), qint64(6));
+    file.close();
+    if (!makeSymlink(target, alias))
+        QSKIP("This filesystem cannot create symlinks.");
+
+    AssetIndex index;
+    index.setRoot(tempRoot.path());
+    index.waitForIndex();
+
+    // Links that resolve inside the asset root are a supported way to
+    // organise assets. Keep the alias path that the author referenced.
+    QCOMPARE(index.resolve(QStringLiteral("cover.png")), QDir::cleanPath(alias));
+}
+
+void AssetIndexTest::rejectSymlinkOutsideRoot()
+{
+    QTemporaryDir sandbox;
+    QVERIFY(sandbox.isValid());
+
+    const QDir base(sandbox.path());
+    const QString assetRoot = base.filePath(QStringLiteral("assets"));
+    const QString secret = base.filePath(QStringLiteral("outside/id_rsa"));
+    const QString alias = QDir(assetRoot).filePath(QStringLiteral("cover.png"));
+    QVERIFY(QDir().mkpath(assetRoot));
+    QVERIFY(QDir().mkpath(QFileInfo(secret).path()));
+    QFile file(secret);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QCOMPARE(file.write("PRIVATE-KEY-MATERIAL"), qint64(20));
+    file.close();
+    if (!makeSymlink(secret, alias))
+        QSKIP("This filesystem cannot create symlinks.");
+
+    AssetIndex index;
+    index.setRoot(assetRoot);
+    index.waitForIndex();
+
+    QVERIFY(index.resolve(QStringLiteral("cover.png")).isEmpty());
 }
 
 void AssetIndexTest::resolveMissingReturnsEmpty()

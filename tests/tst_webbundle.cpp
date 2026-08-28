@@ -9,6 +9,10 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#ifdef Q_OS_UNIX
+#include <unistd.h>
+#endif
+
 #include "testrunner.h"
 #include "webbundle.h"
 
@@ -120,6 +124,16 @@ QString fileUrl(const QString &path)
     return QUrl::fromLocalFile(path).toString();
 }
 
+bool makeSymlink(const QString &target, const QString &linkPath)
+{
+#ifdef Q_OS_UNIX
+    return ::symlink(QFile::encodeName(target).constData(),
+                     QFile::encodeName(linkPath).constData()) == 0;
+#else
+    return QFile::link(target, linkPath) && QFileInfo(linkPath).isSymLink();
+#endif
+}
+
 } // namespace
 
 class WebBundleTest : public QObject {
@@ -160,6 +174,7 @@ private:
                  {QStringLiteral("author"), QStringLiteral("Jethro Jones")},
                  {QStringLiteral("date"), QStringLiteral("2026-09-01")},
                  {QStringLiteral("font"), QStringLiteral("IBM Plex Sans")},
+                 {QStringLiteral("root"), QStringLiteral("..")},
                  {QStringLiteral("progress"), true},
              }},
             {QStringLiteral("slides"),
@@ -374,6 +389,66 @@ private slots:
                  QStringLiteral("first budget"));
         QCOMPARE(readText(QDir(outputDir()).filePath(second)),
                  QStringLiteral("second budget"));
+    }
+
+    void copiesMediaSymlinkWhoseTargetStaysInsideAssetRoot()
+    {
+        const QString target = sandbox(QStringLiteral("sources/pictures/actual.png"));
+        const QString alias = sandbox(QStringLiteral("sources/deck/cover.png"));
+        writeText(target, QStringLiteral("inside asset"));
+        QVERIFY(QDir().mkpath(QFileInfo(alias).path()));
+        if (!makeSymlink(target, alias))
+            QSKIP("This filesystem cannot create symlinks.");
+
+        QJsonObject deck = sampleDeck();
+        QJsonObject assets = deck.value(QStringLiteral("assets")).toObject();
+        assets.insert(QStringLiteral("cover.png"), fileUrl(alias));
+        deck.insert(QStringLiteral("assets"), assets);
+
+        WebBundle bundle;
+        bundle.setDeck(deck);
+        bundle.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        bundle.setRendererDir(sandbox(QStringLiteral("renderer")));
+        QVERIFY2(bundle.build(outputDir()), qPrintable(bundle.lastError()));
+
+        const QString bundled =
+            inlinedDeck(outputDir() + QStringLiteral("/index.html"))
+                .value(QStringLiteral("assets")).toObject()
+                .value(QStringLiteral("cover.png")).toString();
+        QVERIFY(bundled.startsWith(QStringLiteral("media/")));
+        QCOMPARE(readText(QDir(outputDir()).filePath(bundled)),
+                 QStringLiteral("inside asset"));
+    }
+
+    void rejectsMediaSymlinkWhoseTargetLeavesAssetRoot()
+    {
+        const QString secret = sandbox(QStringLiteral("outside/id_rsa"));
+        const QString alias = sandbox(QStringLiteral("sources/deck/cover.png"));
+        writeText(secret, QStringLiteral("PRIVATE-KEY-MATERIAL"));
+        QVERIFY(QDir().mkpath(QFileInfo(alias).path()));
+        if (!makeSymlink(secret, alias))
+            QSKIP("This filesystem cannot create symlinks.");
+
+        QJsonObject deck = sampleDeck();
+        QJsonObject assets = deck.value(QStringLiteral("assets")).toObject();
+        assets.insert(QStringLiteral("cover.png"), fileUrl(alias));
+        deck.insert(QStringLiteral("assets"), assets);
+
+        WebBundle bundle;
+        bundle.setDeck(deck);
+        bundle.setDeckDir(sandbox(QStringLiteral("sources/deck")));
+        bundle.setRendererDir(sandbox(QStringLiteral("renderer")));
+        QVERIFY2(bundle.build(outputDir()), qPrintable(bundle.lastError()));
+
+        QCOMPARE(inlinedDeck(outputDir() + QStringLiteral("/index.html"))
+                     .value(QStringLiteral("assets")).toObject()
+                     .value(QStringLiteral("cover.png")).toString(),
+                 QString());
+        for (const QString &relative : bundle.files()) {
+            if (relative.startsWith(QStringLiteral("media/")))
+                QVERIFY(readText(QDir(outputDir()).filePath(relative))
+                        != QStringLiteral("PRIVATE-KEY-MATERIAL"));
+        }
     }
 
     void unresolvedAndRemoteReferencesBecomePlaceholders()

@@ -806,3 +806,10 @@ so inserting one never moves anybody.
 **Tests:** not a unit-test change. Present mode was not exercised beyond the failed window create.
 **Next:** blocked on app-shell packing the two QML files.
 **NEEDS:** app-shell (`src/resources.qrc`): add `AudienceWindow.qml` and `PresenterWindow.qml` so `qrc:/AudienceWindow.qml` and `qrc:/PresenterWindow.qml` resolve. Present already creates them from those URLs (T9 worklog asked for this). Until that lands, `omapresent present` cannot open either present-mode window. Do not need a theme change for a first visual of the contrast floor — gold-rush already clears 4.5; pick a mid-grey theme later if you want a visible delta.
+
+### 2026-08-28 06:28 PT — root (Codex GPT-5.6 Sol)
+**Task:** SEC-001 asset-root symlink disclosure
+**Did:** Closed both trust points. AssetIndex filters canonical targets at scan time and resolve time. WebBundle accepts media only from the canonical deck or asset root and re-checks before copy. Symlinks that stay inside an allowed root remain supported.
+**Tests:** AssetIndexTest 26/26. WebBundleTest 26/26. SecurityTest SEC-001 passes after the reviewer removed its pin. `./bin/build && ./bin/test` passes. Autoreview found no in-scope issue.
+**Next:** Fix the generated long-read bundle typography with the renderer owner's read-mode CSS.
+**NEEDS:** nothing

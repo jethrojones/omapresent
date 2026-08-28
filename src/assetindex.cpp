@@ -17,6 +17,27 @@
 
 static constexpr int kMaxWatchedDirectories = 2048;
 
+static bool isWithinCanonicalRoot(const QString &canonicalPath,
+                                  const QString &canonicalRoot)
+{
+    const QString path = QDir::cleanPath(canonicalPath);
+    QString root = QDir::cleanPath(canonicalRoot);
+    if (path.isEmpty() || root.isEmpty())
+        return false;
+    if (path == root)
+        return true;
+    if (!root.endsWith(u'/'))
+        root += u'/';
+    return path.startsWith(root);
+}
+
+static bool hasTargetInsideRoot(const QFileInfo &file,
+                                const QString &canonicalRoot)
+{
+    const QString target = file.canonicalFilePath();
+    return !target.isEmpty() && isWithinCanonicalRoot(target, canonicalRoot);
+}
+
 struct AssetIndex::Private {
     QFileSystemWatcher *watcher = nullptr;
     QTimer *debounceTimer = nullptr;
@@ -24,6 +45,9 @@ struct AssetIndex::Private {
     quint64 generation = 0;
     bool scanInProgress = false;
     bool limitWarned = false;
+    // The canonical root that produced m_byName. It changes only when the
+    // replacement scan lands, so the old index remains usable during a scan.
+    QString indexedCanonicalRoot;
 };
 
 class AssetIndexScanWorker : public QRunnable {
@@ -43,6 +67,7 @@ public:
             QDir rootDir(m_rootPath);
             if (rootDir.exists()) {
                 const QString rootClean = QDir::cleanPath(rootDir.absolutePath());
+                const QString rootCanonical = QFileInfo(rootClean).canonicalFilePath();
                 allDirs.append(rootClean);
 
                 QDirIterator it(m_rootPath,
@@ -53,10 +78,14 @@ public:
                     it.next();
                     QFileInfo fi = it.fileInfo();
                     if (fi.isDir()) {
-                        if (fi.isReadable()) {
+                        if (fi.isReadable() && hasTargetInsideRoot(fi, rootCanonical)) {
                             allDirs.append(QDir::cleanPath(fi.absoluteFilePath()));
                         }
-                    } else if (fi.isFile() && fi.exists() && fi.isReadable()) {
+                    } else if (fi.isFile() && fi.exists() && fi.isReadable()
+                               && hasTargetInsideRoot(fi, rootCanonical)) {
+                        // A symlink to another file inside the root is allowed.
+                        // It is a normal way to organise an asset tree. A link
+                        // whose target leaves the root is never indexed.
                         const QString absPath = QDir::cleanPath(fi.absoluteFilePath());
                         const QString lowerName = fi.fileName().toLower();
                         newByName[lowerName].append(absPath);
@@ -142,6 +171,43 @@ static QString expandEnvironmentAndTilde(const QString &input)
     }
 
     return str;
+}
+
+static QString absoluteResolutionRoot(const QString &root, const QString &deckDir)
+{
+    QString expanded = expandEnvironmentAndTilde(root);
+    if (expanded.isEmpty())
+        return {};
+    if (QDir::isRelativePath(expanded) && !deckDir.isEmpty())
+        expanded = QDir(deckDir).absoluteFilePath(expanded);
+    return QDir::cleanPath(QFileInfo(expanded).absoluteFilePath());
+}
+
+static QStringList canonicalResolutionRoots(const QString &deckDir,
+                                            const QString &root)
+{
+    QStringList roots;
+    auto add = [&roots](const QString &path) {
+        const QString canonical = QFileInfo(path).canonicalFilePath();
+        if (!canonical.isEmpty() && !roots.contains(canonical))
+            roots += canonical;
+    };
+    if (!deckDir.isEmpty())
+        add(QFileInfo(deckDir).absoluteFilePath());
+    add(absoluteResolutionRoot(root, deckDir));
+    return roots;
+}
+
+static bool targetIsInAnyRoot(const QString &path, const QStringList &canonicalRoots)
+{
+    const QString target = QFileInfo(path).canonicalFilePath();
+    if (target.isEmpty())
+        return false;
+    for (const QString &root : canonicalRoots) {
+        if (isWithinCanonicalRoot(target, root))
+            return true;
+    }
+    return false;
 }
 
 // Blanks out inline code spans, keeping the line the same length so the match
@@ -316,9 +382,10 @@ void AssetIndex::rebuild()
     d->generation++;
     d->scanInProgress = true;
 
-    const QString rootPath = root();
+    const QString rootPath = absoluteResolutionRoot(root(), m_deckDir);
     if (rootPath.isEmpty()) {
         m_byName.clear();
+        d->indexedCanonicalRoot.clear();
         d->scanInProgress = false;
         if (d->watcher) {
             const QStringList currentWatched = d->watcher->directories();
@@ -333,6 +400,7 @@ void AssetIndex::rebuild()
     QDir rootDir(rootPath);
     if (!rootDir.exists()) {
         m_byName.clear();
+        d->indexedCanonicalRoot.clear();
         d->scanInProgress = false;
         if (d->watcher) {
             const QStringList currentWatched = d->watcher->directories();
@@ -356,6 +424,9 @@ void AssetIndex::applyScanResult(quint64 generation,
     }
 
     m_byName = std::move(newByName);
+    d->indexedCanonicalRoot = allDirs.isEmpty()
+        ? QString()
+        : QFileInfo(allDirs.constFirst()).canonicalFilePath();
     d->scanInProgress = false;
 
     if (d->watcher) {
@@ -418,10 +489,16 @@ QString AssetIndex::resolve(const QString &reference) const
         rawPath = QUrl(rawPath).toLocalFile();
     }
 
+    const QStringList canonicalRoots = canonicalResolutionRoots(m_deckDir, root());
+    const QStringList indexedRoots = d && !d->indexedCanonicalRoot.isEmpty()
+        ? QStringList{d->indexedCanonicalRoot}
+        : canonicalRoots;
+
     // Step 1: Exact path relative to the deck file's directory.
     if (!m_deckDir.isEmpty()) {
         QFileInfo fiDeck(QDir(m_deckDir).filePath(rawPath));
-        if (fiDeck.exists() && fiDeck.isFile() && fiDeck.isReadable()) {
+        if (fiDeck.exists() && fiDeck.isFile() && fiDeck.isReadable()
+            && targetIsInAnyRoot(fiDeck.absoluteFilePath(), canonicalRoots)) {
             return QDir::cleanPath(fiDeck.absoluteFilePath());
         }
     }
@@ -435,7 +512,8 @@ QString AssetIndex::resolve(const QString &reference) const
         }
     } else if (!m_deckDir.isEmpty()) {
         QFileInfo fiExpDeck(QDir(m_deckDir).filePath(expanded));
-        if (fiExpDeck.exists() && fiExpDeck.isFile() && fiExpDeck.isReadable()) {
+        if (fiExpDeck.exists() && fiExpDeck.isFile() && fiExpDeck.isReadable()
+            && targetIsInAnyRoot(fiExpDeck.absoluteFilePath(), canonicalRoots)) {
             return QDir::cleanPath(fiExpDeck.absoluteFilePath());
         }
     }
@@ -450,6 +528,8 @@ QString AssetIndex::resolve(const QString &reference) const
         if (rawPath.contains('/') || rawPath.contains('\\')) {
             const QString normRef = QDir::cleanPath(rawPath);
             for (const QString &cand : candidates) {
+                if (!targetIsInAnyRoot(cand, indexedRoots))
+                    continue;
                 if (cand.endsWith(normRef, Qt::CaseSensitive)) {
                     int prefixLen = cand.length() - normRef.length();
                     if (prefixLen == 0 || cand.at(prefixLen - 1) == '/' || cand.at(prefixLen - 1) == '\\') {
@@ -459,6 +539,8 @@ QString AssetIndex::resolve(const QString &reference) const
             }
         } else {
             for (const QString &cand : candidates) {
+                if (!targetIsInAnyRoot(cand, indexedRoots))
+                    continue;
                 if (QFileInfo(cand).fileName() == targetFileName) {
                     return cand;
                 }
@@ -469,6 +551,8 @@ QString AssetIndex::resolve(const QString &reference) const
         if (rawPath.contains('/') || rawPath.contains('\\')) {
             const QString normRef = QDir::cleanPath(rawPath);
             for (const QString &cand : candidates) {
+                if (!targetIsInAnyRoot(cand, indexedRoots))
+                    continue;
                 if (cand.endsWith(normRef, Qt::CaseInsensitive)) {
                     int prefixLen = cand.length() - normRef.length();
                     if (prefixLen == 0 || cand.at(prefixLen - 1) == '/' || cand.at(prefixLen - 1) == '\\') {
@@ -477,7 +561,10 @@ QString AssetIndex::resolve(const QString &reference) const
                 }
             }
         } else {
-            return candidates.first();
+            for (const QString &cand : candidates) {
+                if (targetIsInAnyRoot(cand, indexedRoots))
+                    return cand;
+            }
         }
     }
 
