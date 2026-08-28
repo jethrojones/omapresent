@@ -313,3 +313,13 @@ Things the orchestrator checked directly, rather than taking an agent's word:
   week; all four Claude agents out until 01:30; Grok hit its weekly limit and
   offered to upgrade or buy credits, which is the user's decision, so it was
   dismissed unselected. Three Codex agents remain and hold the open work.
+- **SEC-002 verified fixed, empirically.** Stood up a listening HTTP server on
+  127.0.0.1:8123, put `http://127.0.0.1:8123/clip.mp4` alone on one slide and a
+  YouTube URL on another, and rendered the deck. **Zero requests received.**
+  Before the fix the renderer created the `<video preload="metadata">` and the
+  embed `<iframe>` eagerly, so merely opening a deck contacted whatever host its
+  author chose. The replacement is better than a silent placeholder: a themed
+  play affordance captioned "Loads remote media", so a reader knows before
+  clicking that it will reach the network.
+- **SEC-001 verified fixed, independently.** See above — escaping symlink
+  refused, symlink inside the root still resolves.
