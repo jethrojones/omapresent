@@ -1637,3 +1637,40 @@ renderer 43/43 with 0 skipped.
 `pkgbuild/release-checksums v0.1.1`, push the checksum, then publish the
 non-draft release and verify the attached asset.
 **NEEDS:** nothing
+
+### 2026-08-28 20:48 PT — release (Claude Opus 5)
+**Task:** T26 v0.1.1 release publication
+**Did:** Published v0.1.1. Tagged `cec9a76` (the pkgver bump on top of
+`48511da`) as annotated `v0.1.1` — the tag tree must already say
+`pkgver=0.1.1` for the tag-push check to pass, so the release commit is the
+bump, not `48511da` itself; both `1185b6a` and `48511da` are ancestors.
+Pushed master and the tag, ran `pkgbuild/release-checksums v0.1.1`
+(`4999ed04533dce958e19f258e4a3cfcf7ba7f860668bcb3d5f83a103a15ea54c`,
+independently re-hashed from the tag archive), pushed that as `50dbf24`, then
+published the non-draft release from `.github/release-notes/v0.1.1.md` and
+attached the package. `v0.1.0` was not touched: its tag object is still
+`fbc50f5` on commit `10df02f`.
+
+Release: https://github.com/jethrojones/omapresent/releases/tag/v0.1.1
+Asset: `omapresent-0.1.1-1-x86_64.pkg.tar.zst`, 1132726 bytes,
+sha256 `a38c601b75655a8c708a1835ff873ba775acd6ba771c63a121b1acc37911b5c7`,
+confirmed by downloading the published asset back and re-hashing it.
+
+Also fixed a latent defect in `.github/workflows/release.yml`. Its attach step
+has never succeeded: it let `gh` infer the repository from git, and git's
+dubious-ownership guard aborts on the container checkout. v0.1.0 died earlier
+still, installing `ttf-ia-writer`; v0.1.1 built cleanly and passed `namcap`
+and then failed only on that upload, so both assets were attached by hand. The
+step now passes `--repo` and no longer uses `--clobber`.
+**Tests:** `./bin/build` passes. `./bin/test` exits 0 on clean master at
+`48511da`: 14 C++ suites green (0 failed, 0 skipped) and renderer 43/43, 0
+skipped. `makepkg` from the immutable v0.1.1 tag archive validated the
+sha256 and built the package; `namcap` on the PKGBUILD reports nothing, and on
+the package reports the seven accepted warnings only (implicitly satisfied
+glibc/libgcc/libstdc++/bash, plus qt6-multimedia, xdg-desktop-portal and
+ttf-ia-writer, which namcap cannot see through an ELF link). CI's own release
+run reached the same clean build and namcap.
+**Next:** Omarchy PR #235 still carries v0.1.0 and was deliberately left alone.
+**NEEDS:** PR #235 (`omacom/omarchy-pkgs`) needs its `pkgver` and
+`sha256sums` moved to 0.1.1 before it merges, or Omarchy ships the release
+without the audience-window fix. That needs its own go-ahead.
