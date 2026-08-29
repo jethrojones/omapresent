@@ -1811,3 +1811,17 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Tests:** `git diff --check` passes. README relative image path resolves. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes, including 43 renderer tests.
 **Next:** Stage T31 paths and worklog entries only, commit, push, wait for exact CI, then verify the raw image URL.
 **NEEDS:** nothing
+
+### 2026-08-29 16:07 PDT — readme-uninstall (Codex GPT-5)
+**Task:** T32 README uninstall directions
+**Did:** Started T32 after reading the project rules, README, `bin/install`, release instructions, package files, and uninstall-related references. Verified `omarchy pkg drop omapresent`, `sudo pacman -Rns omapresent`, the package-owned system paths, and the user settings path.
+**Tests:** Not run yet.
+**Next:** Run README path checks, `git diff --check`, and the desktop-safe full gate. Then stage only the T32-owned files and worklog hunks, inspect, commit, push, and verify master CI.
+**NEEDS:** nothing
+
+### 2026-08-29 16:10 PDT — readme-uninstall (Codex GPT-5)
+**Task:** T32 README uninstall directions
+**Did:** Added the Installation `Uninstall` section with the verified Omarchy and source-install removal commands. It states that package removal preserves Markdown decks and `~/.config/omapresent/settings.toml`.
+**Tests:** README paths and `git diff --check` pass. `sh -n bin/install` and `bash -n pkgbuild/PKGBUILD` pass. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: 520 C++ tests and 43 renderer tests, with no failures or skips.
+**Next:** Stage only `README.md`, `tasks/t32-readme-uninstall.md`, and the T32 worklog hunks; inspect, commit, push, and verify master CI and the GitHub README.
+**NEEDS:** nothing

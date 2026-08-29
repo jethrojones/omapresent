@@ -60,6 +60,24 @@ cd omapresent
 ./bin/install
 ```
 
+### Uninstall
+
+If Omarchy installed the package, run:
+
+```bash
+omarchy pkg drop omapresent
+```
+
+If you installed from this checkout with `./bin/install`, remove the package it
+created:
+
+```bash
+sudo pacman -Rns omapresent
+```
+
+These commands remove the Omapresent package. They preserve your Markdown decks
+and user settings in `~/.config/omapresent/settings.toml`.
+
 ### Dependencies
 - Runtime: `hicolor-icon-theme`, `qt6-base`, `qt6-declarative`,
   `qt6-webengine`, `qt6-webchannel`, `qt6-multimedia`,
