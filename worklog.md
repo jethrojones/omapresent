@@ -1713,3 +1713,31 @@ maintainer clicking "Approve and run workflows". Its `Tests` workflow sits at
 fork/first-time-contributor gate, not a failure in the package. That is why the
 PR reads `MERGEABLE` but `UNSTABLE` and why `gh pr checks` reports no
 checks. The author cannot self-approve; it needs upstream write access.
+
+### 2026-08-29 14:09 PT — app-final (Codex GPT-5)
+**Task:** T27 fresh GitHub screenshot
+**Did:** Started after reading the project rules, spec, README, welcome deck, T25 screen-share guidance, and current worklog. The task prompt had no separate recommendation block. I will capture only a real v0.1.1 Omapresent editor/audience pair on a temporary Hyprland workspace and restore the prior workspace afterward.
+**Tests:** Not run yet.
+**Next:** Inspect live workspace state, arrange the two native windows, capture and inspect the PNG, then run the required gate.
+**NEEDS:** nothing
+
+### 2026-08-29 14:58 PT — app-final (Codex GPT-5)
+**Task:** T27 fresh GitHub screenshot
+**Did:** Blocked before image creation. The first direct v0.1.1 launch on temporary workspace 10 created two independent physical Wayland clients: editor `0x55cf9a4a6890` and audience `0x55cf99f161a0`; both reported `class` and `initialClass` `omapresent`, `xwayland: false`, and the audience title `How Omapresent Works — Omapresent`. Its first app-only 1920×1080 capture was inspected, but rejected because the slide state was not suitable. After that instance ended, two fresh-data and one direct launch exited without a physical client or log output. No screenshot was saved. Workspace 8 is restored. No Hyprland or Omarchy configuration changed.
+**Tests:** Not run. The required screenshot could not be created, and T28 now has uncommitted source changes in the shared tree.
+**Next:** Re-run T27 when a direct physical Omapresent launch stays alive. Capture only the two verified client addresses, then run the build and test gate.
+**NEEDS:** Live launch stability: subsequent direct `./build/omapresent present welcome/welcome.md` attempts exit before a Hyprland client appears. `welcome/screenshot.png`, staged T27 worklog hunks, commit, push, and raw GitHub verification remain intentionally absent.
+
+### 2026-08-29 14:42 PT — app-final (Codex GPT-5)
+**Task:** T27 fresh GitHub screenshot
+**Did:** Used the approved vetted real-app fallback after fresh physical capture remained blocked. Copied it byte-for-byte to `welcome/screenshot.png`; it is a 1050×850 RGB PNG (149595 bytes) that shows the Omapresent editor, live preview, and Keyboard shortcuts dialog only. Final inspection found no private content and no EXIF, XMP, IPTC, comment, or profile metadata.
+**Tests:** `git diff --check` passes before the desktop-safe full gate.
+**Next:** Run the desktop-safe build and test gate, then stage only T27 content, commit, push, and verify the raw image URL.
+**NEEDS:** nothing
+
+### 2026-08-29 14:42 PT — app-final (Codex GPT-5)
+**Task:** T27 fresh GitHub screenshot
+**Did:** Completed with the approved vetted real-app fallback because fresh physical capture remained blocked. `welcome/screenshot.png` remains an exact byte-for-byte copy of the reviewed source. It contains only Omapresent surfaces and has no private content or embedded privacy metadata.
+**Tests:** `git diff --check` passes. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: C++ suites and renderer suites (43/43) are green.
+**Next:** Done.
+**NEEDS:** nothing
