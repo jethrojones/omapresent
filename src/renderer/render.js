@@ -540,14 +540,18 @@ function slideElement(slide, index, options = {}) {
     const content = document.createElement("div");
     content.className = "op-content";
     const contentBlocks = options.flowAllBlocks ? parsed.blocks : parsed.screenBlocks;
+    const blockElements = [];
     contentBlocks.forEach(block => {
         if (block.type === "note") {
             const note = document.createElement("aside");
             note.className = "op-notes is-flow-note";
             note.innerHTML = markdown.render(block.raw);
             content.append(note);
+            blockElements.push({ block, element: note });
         } else {
-            content.append(blockElement(block, layout));
+            const element = blockElement(block, layout);
+            content.append(element);
+            blockElements.push({ block, element });
         }
     });
     if (!parsed.screenBlocks.length)
@@ -566,10 +570,23 @@ function slideElement(slide, index, options = {}) {
     section.append(scroller);
     decorateSlide(section, slide, index);
     let fragmentIndex = 0;
-    section.querySelectorAll("li").forEach(item => {
-        fragmentIndex += 1;
-        item.classList.add("op-fragment");
-        item.dataset.fragment = String(fragmentIndex);
+    let headingCount = 0;
+    blockElements.forEach(({ block, element }) => {
+        if (block.type === "heading") {
+            headingCount += 1;
+            if (headingCount > 1) {
+                fragmentIndex += 1;
+                element.classList.add("op-fragment");
+                element.dataset.fragment = String(fragmentIndex);
+            }
+        }
+        if (block.type === "note")
+            return;
+        element.querySelectorAll("li").forEach(item => {
+            fragmentIndex += 1;
+            item.classList.add("op-fragment");
+            item.dataset.fragment = String(fragmentIndex);
+        });
     });
     if (options.showAllFragments)
         section.querySelectorAll(".op-fragment").forEach(item => item.dataset.revealed = "true");

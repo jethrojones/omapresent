@@ -53,6 +53,23 @@ test("fragments reveal in DOM order and report every state through the host call
     assert.equal(attribute(html, "data-host-last-fragment"), "0");
 });
 
+test("heading fragments reveal in order after prior bullets", {
+    skip: !(await hasChromium()),
+}, async () => {
+    const html = await fixtureDom("?metrics=heading-fragments");
+    const expected = [
+        "L1:0|L2:0|H3:0|L4:0|L5:0",
+        "L1:1|L2:0|H3:0|L4:0|L5:0",
+        "L1:1|L2:1|H3:0|L4:0|L5:0",
+        "L1:1|L2:1|H3:1|L4:0|L5:0",
+        "L1:1|L2:1|H3:1|L4:1|L5:0",
+        "L1:1|L2:1|H3:1|L4:1|L5:1",
+    ];
+    const steps = attribute(html, "data-heading-fragment-order").split(";");
+    assert.equal(steps.length, 6);
+    assert.deepEqual(steps, expected);
+});
+
 test("recall overlays preserve all fragments and restore moved underlying state after host goto", {
     skip: !(await hasChromium()),
 }, async () => {

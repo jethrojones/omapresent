@@ -391,7 +391,17 @@ function classifiedBlocks(markdown) {
 
 export function countFragments(input) {
     const blocks = Array.isArray(input) ? input : classifiedBlocks(input);
-    return blocks.reduce((count, block) => count + (block.fragmentCount ?? classifyBlock(block).fragmentCount), 0);
+    let headingCount = 0;
+    return blocks.reduce((count, block) => {
+        const blockFragments = block.fragmentCount ?? classifyBlock(block).fragmentCount;
+        let extraHeadingFragment = 0;
+        if (block.audience && block.type === "heading") {
+            headingCount += 1;
+            if (headingCount > 1)
+                extraHeadingFragment = 1;
+        }
+        return count + blockFragments + extraHeadingFragment;
+    }, 0);
 }
 
 export function parseSlide(markdown) {

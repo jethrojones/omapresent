@@ -131,6 +131,15 @@ test("fragment counting keeps a list attached directly to a heading", () => {
     assert.equal(countFragments(markdown), 2);
 });
 
+test("fragment counting counts later headings in reveal order", () => {
+    const markdown = "# First section\n- One\n- Two\n\n## Second section\n- Three\n- Four";
+    const parsed = parseSlide(markdown);
+
+    assert.deepEqual(parsed.screenBlocks.map(block => block.type), ["heading", "list", "heading", "list"]);
+    assert.equal(parsed.fragmentCount, 5);
+    assert.equal(countFragments(markdown), 5);
+});
+
 test("fragment counting ignores list-like lines inside code and notes", () => {
     const markdown = "```text\n- not a fragment\n```\n\nThis note has - punctuation.\n\n1. Real fragment";
     assert.equal(countFragments(markdown), 1);

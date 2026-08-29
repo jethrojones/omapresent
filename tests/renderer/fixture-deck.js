@@ -102,6 +102,16 @@ if (fixtureParams.get("metrics") === "recall") {
     ];
     globalThis.omapresentFixture.slides = recallDeck;
 }
+if (fixtureParams.get("metrics") === "heading-fragments") {
+    globalThis.omapresentFixture.slides = [
+        {
+            index: 0,
+            markdown: "# First section\n\n- One\n- Two\n\n## Second section\n- Three\n- Four",
+            recallKey: "",
+            skip: false,
+        },
+    ];
+}
 if (fixtureParams.get("metrics") === "interaction") {
     globalThis.omapresentHost = {
         state(payload) {
@@ -142,6 +152,25 @@ globalThis.addEventListener("load", () => setTimeout(() => {
         document.body.dataset.hostStateCount = String(fixtureHostPayloads.length);
         document.body.dataset.hostLastSlide = String(lastState.slideIndex);
         document.body.dataset.hostLastFragment = String(lastState.fragment);
+    }
+    if (fixtureParams.get("metrics") === "heading-fragments") {
+        const snapshotFragments = () => [...document.querySelectorAll(".op-fragment")]
+            .map(item => {
+                const kind = item.classList.contains("op-block-heading") ? "H" : "L";
+                const fragment = Number(item.dataset.fragment ?? 0);
+                const revealed = item.dataset.revealed === "true";
+                return { kind, fragment, revealed };
+            })
+            .sort((left, right) => left.fragment - right.fragment)
+            .map(item => `${item.kind}${item.fragment}:${item.revealed ? 1 : 0}`)
+            .join("|");
+
+        const steps = [snapshotFragments()];
+        for (let index = 0; index < 5; index += 1) {
+            globalThis.omapresent.next();
+            steps.push(snapshotFragments());
+        }
+        document.body.dataset.headingFragmentOrder = steps.join(";");
     }
     if (fixtureParams.get("metrics") === "recall") {
         const recallStates = [];

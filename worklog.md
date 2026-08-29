@@ -1825,3 +1825,22 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Tests:** README paths and `git diff --check` pass. `sh -n bin/install` and `bash -n pkgbuild/PKGBUILD` pass. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: 520 C++ tests and 43 renderer tests, with no failures or skips.
 **Next:** Stage only `README.md`, `tasks/t32-readme-uninstall.md`, and the T32 worklog hunks; inspect, commit, push, and verify master CI and the GitHub README.
 **NEEDS:** nothing
+### 2026-08-29 11:00 PT — renderer (Codex GPT-5)
+**Task:** T35 heading fragment order
+**Did:** Identified welcome slide 19 parsed as `# Presenter Mode & Multi-Monitor` with two headings and ordered reveal expectations: initial bullets hidden by list fragments, second heading appears only after final first-list bullet, then second-list bullets reveal in order.
+**Tests:** not run yet.
+**Next:** Implement parser and render sequencing fix plus regression in renderer tests.
+**NEEDS:** nothing
+### 2026-08-29 16:26 PT — renderer (Codex GPT-5)
+**Task:** T35 heading fragment order
+**Did:** Added renderer parser/render support so only non-initial headings are fragment targets. In `slideElement()` heading blocks after the first are now tagged as `op-fragment` in sequence with list-item fragments. Updated `countFragments()` to mirror that order. Added a focused `heading-fragments` fixture and DOM-order regression proving: the second heading stays hidden through first-list bullets, then appears, then later bullets reveal in order.
+**Tests:** `node --test tests/renderer/*.test.mjs` failed in this sandbox on `interaction` and `visual` because Chromium exits before DOM dump (`Failed to create a unique user data directory for headless`). `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` completed with known C++ socket/sandbox failures and the same renderer test-file failure mode; no C++ failures introduced by this patch.
+**Next:** Root will run desktop-capable Chromium; do not change this scope until that pass.
+**NEEDS:** nothing
+
+### 2026-08-29 16:21 PDT — app-final (Codex GPT-5)
+**Task:** T35 heading fragment order review and closeout
+**Did:** Reviewed and corrected the general document-order renderer loop. Later heading fragments now receive their indices while their content block is processed, after any prior list items. This fixes welcome slide 19 without slide-specific code: the second heading remains hidden through all first-section bullets, then appears before later list fragments.
+**Tests:** `node --test tests/renderer/deckparse.test.mjs` passes. The standalone Chromium interaction file exits before its test body in this shell, but the required desktop-safe gate passes and runs the DOM-order regression: 45 renderer tests pass.
+**Next:** Stage only T35 paths, commit, push, and wait for the exact CI run.
+**NEEDS:** nothing
