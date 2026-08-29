@@ -1674,3 +1674,42 @@ run reached the same clean build and namcap.
 **NEEDS:** PR #235 (`omacom/omarchy-pkgs`) needs its `pkgver` and
 `sha256sums` moved to 0.1.1 before it merges, or Omarchy ships the release
 without the audience-window fix. That needs its own go-ahead.
+
+### 2026-08-28 20:53 PT — release (Claude Opus 5)
+**Task:** Omarchy PR #235 moved to v0.1.1 (the go-ahead T26 said this needed)
+**Did:** Updated the existing PR head branch only —
+`jethrojones/omarchy-pkgs` `add-omapresent-package`, commit `63b57a7` on
+top of `86d5dd3`. One file changed, two lines: `pkgver=0.1.1` and
+`sha256sums=('4999ed04533dce958e19f258e4a3cfcf7ba7f860668bcb3d5f83a103a15ea54c')`.
+No new PR, no merge, no force push. The source URL needed no edit — it is
+`$url/archive/refs/tags/v$pkgver.tar.gz`, so the bump moves it to the v0.1.1
+tag on its own. The package tree on the branch is now byte-identical to
+`pkgbuild/omarchy-pkgs/omapresent/` at master `e0f66a6`: `omapresent.png`
+matches by blob sha `ab6f87c`, and the desktop entry and `package.json`
+match byte for byte.
+
+No `.SRCINFO` was generated. `omacom/omarchy-pkgs` carries zero `.SRCINFO`
+files across the whole tree — checked repo-wide on master, and against
+`omawrite`, `omasnap`, `omacut`, `omacalc`, `omatrack` and `walker`
+individually. Its README also records that `bin/sync-aur` deletes AUR-only
+`.SRCINFO` before writing a package back. Adding one would be drift, not
+regeneration.
+
+The PR body was left alone: it names no version and no release link, so it
+stays accurate for v0.1.1. Nothing in it said v0.1.0.
+**Tests:** The repository's own required suites, run on the PR branch:
+`bin/sync-upstream self-test`, `bin/omarchy-pkgs self-test` and
+`bin/omarchy-release self-test` all pass — those three are exactly what its
+`.github/workflows/test.yml` runs. `bin/list-packages` reads the package as
+`0.1.1-1`. `makepkg` from the PR branch's own PKGBUILD validated the source
+sha256 against the immutable tag archive and built
+`omapresent-0.1.1-1-x86_64.pkg.tar.zst`; `namcap` reports nothing on the
+PKGBUILD and only the seven accepted warnings on the package.
+**Next:** Upstream approval. Nothing further is actionable from this side.
+**NEEDS:** PR #235 cannot go green without an `omacom/omarchy-pkgs`
+maintainer clicking "Approve and run workflows". Its `Tests` workflow sits at
+`conclusion=action_required` with **zero jobs executed** on both heads
+(`33210750360` for `86d5dd3`, `33232466964` for `63b57a7`) — GitHub's
+fork/first-time-contributor gate, not a failure in the package. That is why the
+PR reads `MERGEABLE` but `UNSTABLE` and why `gh pr checks` reports no
+checks. The author cannot self-approve; it needs upstream write access.
