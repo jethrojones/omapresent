@@ -112,7 +112,18 @@ jobs:
           namcap /tmp/build/PKGBUILD
           namcap /tmp/build/*.pkg.tar.zst
 
+      # --repo, not the working directory: gh otherwise infers the repository
+      # from git, and the checkout is owned by a different uid than the step
+      # runs as, so git's dubious-ownership guard aborts before the upload. That
+      # is what failed on both v0.1.0 and v0.1.1 after a successful build.
+      #
+      # No --clobber. An asset published under a release is something people
+      # have already downloaded and checksummed; replacing one silently is
+      # worse than a red build telling you it is already there.
       - name: Attach the package to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" /tmp/build/*.pkg.tar.zst --clobber
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            /tmp/build/*.pkg.tar.zst \
+            --repo "${{ github.repository }}"
