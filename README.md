@@ -8,7 +8,7 @@ A dead-simple, Markdown-only presentation app for Omarchy. Open any Markdown fil
 
 <!-- Screenshot placeholder -->
 <p align="center">
-  <img src="welcome/screenshot.png" alt="Omapresent editor with live preview and keyboard shortcuts" width="800" onerror="this.style.display='none'"/>
+  <img src="welcome/screenshot.png" alt="Omapresent editor with a Video and Interactive Embeds slide and live audience preview" width="800" onerror="this.style.display='none'"/>
 </p>
 
 ## Start a presentation

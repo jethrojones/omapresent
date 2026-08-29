@@ -1797,3 +1797,17 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Tests:** Raw screenshot URL returns HTTP 200. The exact `34306d8` CI run `33277564262` passed. The desktop-safe gate passed: 521 C++ tests and 43 renderer tests.
 **Next:** Commit and push only the T30 task and worklog entries, then wait for the final T30 CI run.
 **NEEDS:** PR #235 is present at head `63b57a7`; GitHub reported mergeability `UNKNOWN` during this check.
+
+### 2026-08-29 15:18 PDT — app-final (Codex GPT-5)
+**Task:** T31 replace GitHub screenshot
+**Did:** Started after reading the project rules, README, T27 record, and T30 worklog end. Inspected the user-approved source PNG: 1881×1003 RGB, 443186 bytes, with only the Omapresent editor and audience preview visible.
+**Tests:** Not run yet.
+**Next:** Copy the approved pixels, update only the README image alt text, inspect the final asset, then run the required gate.
+**NEEDS:** nothing
+
+### 2026-08-29 15:19 PDT — app-final (Codex GPT-5)
+**Task:** T31 replace GitHub screenshot
+**Did:** Replaced `welcome/screenshot.png` with the user-approved real-app source. The final PNG is byte-identical to the source: 1881×1003 RGB, 443186 bytes, SHA-256 `38baabb5ea0c5b9bfafbaedd27aa37d3b40af96d6b0af290972ff58785eaba32`. It has no EXIF, XMP, IPTC, comment, or profile metadata. Updated only the README image alt text to describe the Video and Interactive Embeds editor and live audience preview.
+**Tests:** `git diff --check` passes. README relative image path resolves. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes, including 43 renderer tests.
+**Next:** Stage T31 paths and worklog entries only, commit, push, wait for exact CI, then verify the raw image URL.
+**NEEDS:** nothing
