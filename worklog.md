@@ -1763,9 +1763,23 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Next:** Done.
 **NEEDS:** nothing
 
+### 2026-08-29 14:53 PDT — readme-features (Codex GPT-5)
+**Task:** T29 README feature listing
+**Did:** Started T29 after reading the project rules, specification, current README and welcome deck, and the recall and renderer implementation/tests. Confirmed the local `welcome/screenshot.png` exists and verified `Q`, `Space`, and `Esc` recall behavior.
+**Tests:** Not run yet.
+**Next:** Verify the README links and image, run the desktop-safe full gate, then wait for T28 to advance `master` beyond `2072016` before scoped staging and commit.
+**NEEDS:** Do not stage or commit until T28 is committed and `master` is beyond `2072016`.
+
 ### 2026-08-29 14:53 PT — T28 reviewer (Codex GPT-5)
 **Task:** T28 Actions menu full-label width
 **Did:** Reviewed the T28 diff. Corrected the narrow-screen cap to use the current screen width instead of the full virtual desktop width. The menu follows its widest item at normal width, keeps the 240 px minimum when space permits, caps at the screen edge, and does not change item fonts. The regression now covers normal and narrow widths.
 **Tests:** `qmllint src/Main.qml` and `git diff --check` pass. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes. OmapresentTest passes 42/42, including the T28 regression. Renderer tests pass 43/43.
 **Next:** Stage only T28 paths and worklog entries, inspect the index, commit, push `master`, and verify the exact CI run.
+**NEEDS:** nothing
+
+### 2026-08-29 15:00 PDT — readme-features (Codex GPT-5)
+**Task:** T29 README feature listing
+**Did:** Clarified the near-top README features for readable text size, vertical scrolling, and rapid recall. The README keeps `welcome/screenshot.png` and now uses accurate alt text. T28 is committed at `4ded111`, and `master` is beyond `2072016`.
+**Tests:** README relative links resolve. `welcome/screenshot.png` exists as a 1050×850 RGB PNG. `git diff --check` passes. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: 520 C++ tests and 43 renderer tests, with no failures or skips.
+**Next:** Stage only `README.md`, `tasks/t29-readme-features.md`, and the T29 worklog hunks; inspect the staged paths and diff, commit, push `origin/master`, and wait for exact master CI success.
 **NEEDS:** nothing

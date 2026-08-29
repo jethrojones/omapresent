@@ -8,7 +8,7 @@ A dead-simple, Markdown-only presentation app for Omarchy. Open any Markdown fil
 
 <!-- Screenshot placeholder -->
 <p align="center">
-  <img src="welcome/screenshot.png" alt="Omapresent Presentation and Presenter Displays" width="800" onerror="this.style.display='none'"/>
+  <img src="welcome/screenshot.png" alt="Omapresent editor with live preview and keyboard shortcuts" width="800" onerror="this.style.display='none'"/>
 </p>
 
 ## Start a presentation
@@ -35,10 +35,11 @@ For a call or recording, share the audience window. If presentation is already r
 - **Writing structure = slide structure.**
   - Headings, indented outlines, lists, code, tables, block quotes, math, and media are what the **audience** sees.
   - Plain paragraph prose is automatically extracted as **speaker notes** (visible only in the presenter view and web subtitles).
-- **Never shrink to fit.** Text preserves its typography. Content exceeding display height becomes a smooth scroll surface, mirrored live between presenter and audience screens.
+- **Readable text stays readable.** Omapresent keeps your chosen text size. It does not shrink a crowded slide to fit.
+- **Tall slides scroll.** If a slide is taller than the audience window, that slide gets vertical scrolling. The audience mirrors the presenter's scroll position.
 - **Bento layouts & rich media.** Consecutive images automatically tile into CSS Bento grids. Bare video URLs (YouTube, Vimeo, etc.) become interactive players; other bare URLs become scannable QR codes with captions.
 - **Dual-window present mode.** Automatically routes the audience view fullscreen to external monitors while giving you a dedicated presenter cockpit (notes, timer, clock, next-slide preview, recall keys).
-- **Recall slides.** Tag a separator (`--- {q}`) to pop that slide over your talk at any moment by pressing `Q`.
+- **Rapid recall uses QWERTY keys.** Tag a separator (`--- {q}`) to bind the next slide to `Q`. Press `Q` to show it. Press `Q` again, `Space`, or `Esc` to return to the exact slide, fragment, and scroll position.
 - **Export & Pluggable Publish.** Export pixel-identical PDFs (`Ctrl+E`) or publish static web bundles (`Ctrl+Shift+P`) with both interactive slide and long-read article formats via `here.now`, S3/B2, or custom shell commands.
 
 ---
