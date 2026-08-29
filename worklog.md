@@ -1844,3 +1844,24 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Tests:** `node --test tests/renderer/deckparse.test.mjs` passes. The standalone Chromium interaction file exits before its test body in this shell, but the required desktop-safe gate passes and runs the DOM-order regression: 45 renderer tests pass.
 **Next:** Stage only T35 paths, commit, push, and wait for the exact CI run.
 **NEEDS:** nothing
+
+### 2026-08-29 17:00 PDT — t33-recovery (Codex GPT-5)
+**Task:** T33 recovered image assets
+**Did:** Started implementation after confirming recovery restored the local file URL without restoring the asset or media deck directory.
+**Tests:** Not run yet.
+**Next:** Restore both bases, add the spaced-relative-image recovery regression, run the requested focused and full gates.
+**NEEDS:** nothing
+
+### 2026-08-29 17:24 PDT — t33-recovery (Codex GPT-5)
+**Task:** T33 recovered image assets
+**Did:** Restored asset and media deck directories from recovered local Markdown URLs. Added recovery coverage for a relative image path containing spaces and verified preview and audience asset maps use the expected file URL.
+**Tests:** Focused regression passes: `OmapresentTest::recoveredDeckRestoresRelativeImageAssets()`. `git diff --check` passes. `./bin/build` passes. The desktop-safe full gate is blocked by loopback bind failures and QtWebEngine sandbox crashes (`sandbox_host_linux.cc:41`, `Operation not permitted`); renderer interaction/visual tests also fail in this environment.
+**Next:** Host-capable reviewer must rerun the full gate, then inspect and commit the scoped T33 files. Changes remain unstaged.
+**NEEDS:** A host-capable QtWebEngine and loopback-enabled environment for the full gate.
+
+### 2026-08-29 16:31 PDT — T33 reviewer (Codex GPT-5)
+**Task:** T33 recovered image assets review and closeout
+**Did:** Independently reviewed the recovery fix. Recovered local files now restore the image and media bases. Expanded the regression to prove spaced relative image and video paths, matching preview and audience file URLs, replacement of recovered identity by a later open, and unchanged untitled file-free recovery.
+**Tests:** Focused T33 selection passes 4/4. `git diff --check` passes. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: OmapresentTest 44/44 and renderer tests 45/45. Final Autoreview is clean.
+**Next:** Stage only T33 paths and worklog entries, inspect, commit, push `master`, and verify the exact CI run.
+**NEEDS:** nothing

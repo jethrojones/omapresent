@@ -19,6 +19,7 @@
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QScreen>
+#include <QStandardPaths>
 #include <QTcpServer>
 #include <QTcpSocket>
 
@@ -43,6 +44,26 @@ public:
             qputenv("XDG_CONFIG_HOME", previous);
         else
             qunsetenv("XDG_CONFIG_HOME");
+    }
+
+private:
+    bool wasSet;
+    QByteArray previous;
+};
+
+class ScopedDataHome {
+public:
+    explicit ScopedDataHome(const QString &path)
+        : wasSet(qEnvironmentVariableIsSet("XDG_DATA_HOME")),
+          previous(qgetenv("XDG_DATA_HOME")) {
+        qputenv("XDG_DATA_HOME", path.toUtf8());
+    }
+
+    ~ScopedDataHome() {
+        if (wasSet)
+            qputenv("XDG_DATA_HOME", previous);
+        else
+            qunsetenv("XDG_DATA_HOME");
     }
 
 private:
@@ -868,6 +889,140 @@ private slots:
         Backend unseen;
         unseen.open(QUrl::fromLocalFile(deckPath));
         QVERIFY(!unseen.previewRenderScript().contains(QStringLiteral(".goto(")));
+    }
+
+    void recoveredDeckRestoresRelativeImageAssets() {
+        QTemporaryDir dataDirectory;
+        QTemporaryDir deckDirectory;
+        QTemporaryDir replacementDirectory;
+        QVERIFY(dataDirectory.isValid() && deckDirectory.isValid()
+                && replacementDirectory.isValid());
+        ScopedDataHome dataHome(dataDirectory.path());
+
+        const QString deckPath = deckDirectory.filePath(QStringLiteral("deck.md"));
+        const QString imagePath = deckDirectory.filePath(QStringLiteral("image with spaces.png"));
+        const QString videoPath = deckDirectory.filePath(QStringLiteral("clip with spaces.webm"));
+        QFile image(imagePath);
+        QVERIFY(image.open(QIODevice::WriteOnly));
+        QVERIFY(image.write("not a real image") > 0);
+        image.close();
+        QFile video(videoPath);
+        QVERIFY(video.open(QIODevice::WriteOnly));
+        QVERIFY(video.write("not a real video") > 0);
+        video.close();
+
+        const QString deckText = QStringLiteral(
+            "# Recovered\n\n![[image with spaces.png]]\n\nclip with spaces.webm\n");
+        const QString appDataDirectory =
+            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        QVERIFY(QDir().mkpath(appDataDirectory));
+        QFile recovery(QDir(appDataDirectory).filePath(QStringLiteral("recovery-0.json")));
+        QVERIFY(recovery.open(QIODevice::WriteOnly | QIODevice::Text));
+        const QJsonObject snapshot{
+            {QStringLiteral("fileUrl"), QUrl::fromLocalFile(deckPath).toString()},
+            {QStringLiteral("text"), deckText}};
+        QVERIFY(recovery.write(QJsonDocument(snapshot).toJson(QJsonDocument::Compact)) > 0);
+        recovery.close();
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *editor = window->findChild<QObject *>(QStringLiteral("sourceEditor"));
+        QVERIFY(editor);
+        QCOMPARE(backend.fileUrl(), QUrl::fromLocalFile(deckPath));
+        QCOMPARE(backend.assets()->deckDir(), deckDirectory.path());
+
+        QSignalSpy previewSpy(&backend, &Backend::previewUpdate);
+        editor->setProperty("text", deckText + QStringLiteral("\n"));
+        QTRY_VERIFY(previewSpy.count() > 0);
+
+        const QString expectedUrl = QUrl::fromLocalFile(imagePath).toString();
+        const QString expectedVideoUrl =
+            QUrl::fromLocalFile(videoPath).toString(QUrl::FullyEncoded);
+        QVERIFY(previewSpy.constLast().constFirst().toString().contains(expectedUrl));
+        QVERIFY(previewSpy.constLast().constFirst().toString().contains(expectedVideoUrl));
+        const QJsonObject audienceDeck =
+            backend.presentation()->deckForRole(QStringLiteral("audience"));
+        QCOMPARE(audienceDeck.value(QStringLiteral("assets")).toObject().value(
+                     QStringLiteral("image with spaces.png"))
+                     .toString(),
+                 expectedUrl);
+        QCOMPARE(audienceDeck.value(QStringLiteral("media")).toObject().value(
+                     QStringLiteral("clip with spaces.webm")).toObject().value(
+                     QStringLiteral("cachedFile")).toString(),
+                 expectedVideoUrl);
+
+        const QString replacementDeckPath =
+            replacementDirectory.filePath(QStringLiteral("replacement.md"));
+        const QString replacementImagePath =
+            replacementDirectory.filePath(QStringLiteral("image with spaces.png"));
+        const QString replacementVideoPath =
+            replacementDirectory.filePath(QStringLiteral("clip with spaces.webm"));
+        QFile replacementDeckFile(replacementDeckPath);
+        QVERIFY(replacementDeckFile.open(QIODevice::WriteOnly));
+        QVERIFY(replacementDeckFile.write(deckText.toUtf8()) > 0);
+        replacementDeckFile.close();
+        QFile replacementImage(replacementImagePath);
+        QVERIFY(replacementImage.open(QIODevice::WriteOnly));
+        QVERIFY(replacementImage.write("replacement image") > 0);
+        replacementImage.close();
+        QFile replacementVideo(replacementVideoPath);
+        QVERIFY(replacementVideo.open(QIODevice::WriteOnly));
+        QVERIFY(replacementVideo.write("replacement video") > 0);
+        replacementVideo.close();
+
+        backend.open(QUrl::fromLocalFile(replacementDeckPath));
+        QCOMPARE(backend.fileUrl(), QUrl::fromLocalFile(replacementDeckPath));
+        QCOMPARE(backend.assets()->deckDir(), replacementDirectory.path());
+        const QJsonObject replacementDeck =
+            backend.presentation()->deckForRole(QStringLiteral("audience"));
+        QCOMPARE(replacementDeck.value(QStringLiteral("assets")).toObject().value(
+                     QStringLiteral("image with spaces.png")).toString(),
+                 QUrl::fromLocalFile(replacementImagePath).toString());
+        QCOMPARE(replacementDeck.value(QStringLiteral("media")).toObject().value(
+                     QStringLiteral("clip with spaces.webm")).toObject().value(
+                     QStringLiteral("cachedFile")).toString(),
+                 QUrl::fromLocalFile(replacementVideoPath).toString(QUrl::FullyEncoded));
+    }
+
+    void fileFreeRecoveryKeepsUntitledIdentity() {
+        QTemporaryDir dataDirectory;
+        QVERIFY(dataDirectory.isValid());
+        ScopedDataHome dataHome(dataDirectory.path());
+
+        const QString appDataDirectory =
+            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        QVERIFY(QDir().mkpath(appDataDirectory));
+        QFile recovery(QDir(appDataDirectory).filePath(QStringLiteral("recovery-0.json")));
+        QVERIFY(recovery.open(QIODevice::WriteOnly | QIODevice::Text));
+        const QJsonObject snapshot{
+            {QStringLiteral("fileUrl"), QString()},
+            {QStringLiteral("text"), QStringLiteral("# File-free recovery\n")}};
+        QVERIFY(recovery.write(QJsonDocument(snapshot).toJson(QJsonDocument::Compact)) > 0);
+        recovery.close();
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QVERIFY(backend.fileUrl().isEmpty());
+        QCOMPARE(backend.fileName(), QStringLiteral("Untitled.md"));
+        QVERIFY(backend.assets()->deckDir().isEmpty());
+        QVERIFY(backend.media()->cacheDir().isEmpty());
+        QSignalSpy saveDialogSpy(&backend, &Backend::saveDialogRequested);
+        backend.save();
+        QCOMPARE(saveDialogSpy.count(), 1);
     }
 
     void settingsReachTheRunningApplication() {

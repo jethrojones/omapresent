@@ -958,6 +958,11 @@ void Backend::restoreRecovery() {
         m_hasKnownFileContents = false;
     }
     setFileUrl(recoveredUrl);
+    if (recoveredUrl.isLocalFile()) {
+        const QString deckDir = QFileInfo(recoveredUrl.toLocalFile()).absolutePath();
+        m_assets.setDeckDir(deckDir);
+        m_media.setDeckDir(deckDir);
+    }
     setModified(true);
     setStatus(QStringLiteral("Recovered unsaved changes"));
 }
