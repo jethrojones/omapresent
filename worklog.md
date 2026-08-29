@@ -1783,3 +1783,17 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Tests:** README relative links resolve. `welcome/screenshot.png` exists as a 1050×850 RGB PNG. `git diff --check` passes. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: 520 C++ tests and 43 renderer tests, with no failures or skips.
 **Next:** Stage only `README.md`, `tasks/t29-readme-features.md`, and the T29 worklog hunks; inspect the staged paths and diff, commit, push `origin/master`, and wait for exact master CI success.
 **NEEDS:** nothing
+
+### 2026-08-29 15:07 PDT — acceptance (Codex GPT-5)
+**Task:** T30 final GitHub listing and Actions menu acceptance
+**Did:** Started T30. Reviewed the specification, T27–T29 briefs, README, current Actions menu code, regression tests, screenshot, v0.1.1, and PR #235.
+**Tests:** Exact CI for commit `34306d8` completed successfully as run `33277564262`. Local `qmllint` passed. The desktop-safe full gate is next.
+**Next:** Create the T30 record, inspect the staged task and log hunks, commit and push `master`, then wait for the final T30 CI run.
+**NEEDS:** nothing
+
+### 2026-08-29 15:08 PDT — acceptance (Codex GPT-5)
+**Task:** T30 final GitHub listing and Actions menu acceptance
+**Did:** Verified the tracked screenshot, README feature claims, Actions menu sizing policy, regression coverage, v0.1.1 release, and PR #235 without changing external state.
+**Tests:** Raw screenshot URL returns HTTP 200. The exact `34306d8` CI run `33277564262` passed. The desktop-safe gate passed: 521 C++ tests and 43 renderer tests.
+**Next:** Commit and push only the T30 task and worklog entries, then wait for the final T30 CI run.
+**NEEDS:** PR #235 is present at head `63b57a7`; GitHub reported mergeability `UNKNOWN` during this check.
