@@ -1617,3 +1617,23 @@ live run when those checks can be made without changing the user's baseline.
 **Tests:** Local Markdown links resolve. `git diff --check` passes. `./bin/check-skill-sync` passes. `./bin/build` passes. `./bin/test` exits 1 in the shared headless Chromium environment; the renderer suite reports a generic failure. `namcap` was not run because it is not installed.
 **Next:** Commit the T25 task file and three owned help files.
 **NEEDS:** none
+
+### 2026-08-28 20:41 PT — release (Claude Opus 5)
+**Task:** T26 v0.1.1 release publication
+**Did:** Opened the patch release for the two post-0.1.0 screen-share fixes,
+`1185b6a` (audience as an independent Wayland top-level) and `48511da`
+(README, welcome deck and skill guidance for picking the audience window).
+Wrote `tasks/T26-v0.1.1-release.md` and `.github/release-notes/v0.1.1.md`,
+and bumped `pkgver` to 0.1.1 in `pkgbuild/PKGBUILD` and the staged
+`pkgbuild/omarchy-pkgs/omapresent/PKGBUILD`, resetting both checksums to the
+zero placeholder. That ordering is required, not cosmetic: a tag archive
+contains the PKGBUILD that would hash it, so the real checksum can only land
+after the tag exists. v0.1.0 shipped the same way (`10df02f` tagged, then
+`77cc675` recorded the checksum). v0.1.0 has not been touched.
+**Tests:** Clean master at `48511da`. `./bin/build` passes. `./bin/test`
+exits 0: 14 C++ suites all green (520 assertions, 0 failed, 0 skipped) and
+renderer 43/43 with 0 skipped.
+**Next:** Tag v0.1.1 on the bump commit, push, run
+`pkgbuild/release-checksums v0.1.1`, push the checksum, then publish the
+non-draft release and verify the attached asset.
+**NEEDS:** nothing
