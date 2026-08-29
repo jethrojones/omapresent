@@ -16,7 +16,9 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickWindow>
 #include <QQuickStyle>
+#include <QScreen>
 #include <QTcpServer>
 #include <QTcpSocket>
 
@@ -1358,6 +1360,65 @@ private slots:
         QFile original(welcome);
         QVERIFY(original.open(QIODevice::ReadOnly));
         QCOMPARE(original.readAll(), before);
+    }
+
+    void actionsMenuUsesTheFullLabelWidth() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *menu = window->findChild<QObject *>(QStringLiteral("actionsMenu"));
+        QVERIFY(menu);
+        QQuickWindow *quickWindow = qobject_cast<QQuickWindow *>(window.data());
+        QVERIFY(quickWindow);
+        QVERIFY(quickWindow->screen());
+        QCOMPARE(menu->property("actionMenuScreenWidth").toReal(),
+                 qreal(quickWindow->screen()->size().width()));
+
+        const QStringList itemNames{
+            QStringLiteral("exportPdfItem"), QStringLiteral("prepareOfflineItem"),
+            QStringLiteral("publishItem"), QStringLiteral("publishPreferencesItem"),
+            QStringLiteral("howItWorksItem"), QStringLiteral("editWelcomeCopyItem"),
+            QStringLiteral("shortcutsItem")};
+        qreal widestItem = 0;
+        QHash<QString, QFont> originalFonts;
+        for (const QString &name : itemNames) {
+            QObject *item = window->findChild<QObject *>(name);
+            QVERIFY2(item, qPrintable(name));
+            widestItem = qMax(widestItem, item->property("implicitWidth").toReal());
+            originalFonts.insert(name, item->property("font").value<QFont>());
+        }
+
+        const qreal minimumWidth = menu->property("actionMenuMinimumWidth").toReal();
+        const qreal maximumWidth = menu->property("actionMenuMaximumWidth").toReal();
+        const qreal actualWidth = menu->property("width").toReal();
+        const qreal expectedWidth = qMin(qMax(minimumWidth, widestItem), maximumWidth);
+        QCOMPARE(actualWidth, expectedWidth);
+
+        // The normal offscreen screen is wide enough for every current English
+        // label. A menu that is narrower than its widest item elides that label.
+        QVERIFY(maximumWidth >= widestItem);
+        QVERIFY(actualWidth >= widestItem);
+
+        // On a narrow screen, the screen edge wins over both the useful minimum
+        // and the widest label. The text keeps its normal font size.
+        const qreal edgeInset = menu->property("actionMenuEdgeInset").toReal();
+        const qreal narrowMaximum = minimumWidth - 1;
+        QVERIFY(menu->setProperty("actionMenuScreenWidth",
+                                  narrowMaximum + edgeInset * 2));
+        QCOMPARE(menu->property("actionMenuMaximumWidth").toReal(), narrowMaximum);
+        QCOMPARE(menu->property("width").toReal(), narrowMaximum);
+        for (const QString &name : itemNames) {
+            QObject *item = window->findChild<QObject *>(name);
+            QCOMPARE(item->property("font").value<QFont>(), originalFonts.value(name));
+        }
     }
 
     void everyNewControlIsReachableAndWired() {

@@ -811,11 +811,13 @@ ApplicationWindow {
         objectName: "actionsMenu"
 
         MenuItem {
+            id: exportPdfItem
             objectName: "exportPdfItem"
             text: "Export PDF…"
             onTriggered: backend.exportPdfDialog()
         }
         MenuItem {
+            id: prepareOfflineItem
             objectName: "prepareOfflineItem"
             text: "Prepare for offline…"
             enabled: !backend.offlinePrefetchRunning
@@ -825,11 +827,13 @@ ApplicationWindow {
         MenuSeparator {}
 
         MenuItem {
+            id: publishItem
             objectName: "publishItem"
             text: "Publish…"
             onTriggered: publishDialog.open()
         }
         MenuItem {
+            id: publishPreferencesItem
             objectName: "publishPreferencesItem"
             text: "Publish preferences…"
             onTriggered: win.openPublishPreferences()
@@ -838,20 +842,43 @@ ApplicationWindow {
         MenuSeparator {}
 
         MenuItem {
+            id: howItWorksItem
             objectName: "howItWorksItem"
             text: "How Omapresent works"
             onTriggered: backend.openWelcomeDeck()
         }
         MenuItem {
+            id: editWelcomeCopyItem
             objectName: "editWelcomeCopyItem"
             text: "Edit a copy of the welcome deck"
             onTriggered: welcomeCopyDialog.open()
         }
         MenuItem {
+            id: shortcutsItem
             objectName: "shortcutsItem"
             text: "Keyboard shortcuts"
             onTriggered: shortcutsDialog.open()
         }
+
+        // Qt Quick Controls Material gives a Menu a fixed 200 px background.
+        // Its ListView does not widen that background for the delegates, so
+        // labels longer than 200 px elide. Use each item's unelided implicit
+        // width, while retaining a compact minimum and room at screen edges.
+        readonly property real actionMenuMinimumWidth: win.scaledSize(240)
+        readonly property real actionMenuEdgeInset: win.scaledSize(16)
+        property real actionMenuScreenWidth: win.Screen.width
+        readonly property real actionMenuMaximumWidth: Math.max(
+            win.scaledSize(1), actionMenuScreenWidth - actionMenuEdgeInset * 2)
+        readonly property real widestActionItemWidth: Math.max(
+            exportPdfItem.implicitWidth,
+            prepareOfflineItem.implicitWidth,
+            publishItem.implicitWidth,
+            publishPreferencesItem.implicitWidth,
+            howItWorksItem.implicitWidth,
+            editWelcomeCopyItem.implicitWidth,
+            shortcutsItem.implicitWidth)
+        width: Math.min(Math.max(actionMenuMinimumWidth, widestActionItemWidth),
+                        actionMenuMaximumWidth)
     }
 
     Item {

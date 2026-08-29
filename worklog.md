@@ -1721,6 +1721,27 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Next:** Inspect live workspace state, arrange the two native windows, capture and inspect the PNG, then run the required gate.
 **NEEDS:** nothing
 
+### 2026-08-29 14:30 PT — app-shell (Codex GPT-5)
+**Task:** T28 Actions menu full-label width
+**Did:** Started after inspecting the supplied screenshot and current QML. The Material menu keeps its 200 px implicit background because its list does not adopt the widest menu item width. Created the narrow ownership task and repo-supported product context. `DESIGN.md` remains optional and is not needed for this component fix.
+**Tests:** Not run yet.
+**Next:** Bind the popup width to its widest action item, cap it at the available screen width, add regression coverage, and verify.
+**NEEDS:** nothing
+
+### 2026-08-29 14:36 PT — app-shell (Codex GPT-5)
+**Task:** T28 Actions menu full-label width
+**Did:** The Actions menu now uses the widest current `MenuItem.implicitWidth`, with a 240 px minimum and the available screen width minus 32 px as its maximum. Added IDs only for this local width binding. The regression verifies that no current English label has less width than its unelided menu item.
+**Tests:** `qmllint src/Main.qml` and `git diff --check` pass. The focused Omapresent target passes (3/3); the shared runner then reports the selected name as unknown in other suites. `./bin/build` passes. The full gate reaches the new test, but local server binding and Chromium sandbox failures keep `./bin/test` red.
+**Next:** T28 implementation is complete pending scoped commit and push.
+**NEEDS:** Autoreview could not start because its sandbox client needs a writable runtime path. Full-gate failures are outside T28: local HTTP listeners cannot bind, and Chromium exits on its sandbox shutdown.
+
+### 2026-08-29 14:36 PT — app-shell (Codex GPT-5)
+**Task:** T28 Actions menu full-label width
+**Did:** Scoped staging was attempted for only `PRODUCT.md`, `tasks/t28-actions-menu-width.md`, `src/Main.qml`, and `tests/tst_omapresent.cpp`. Git could not create `.git/index.lock` because the repository filesystem is read-only. No path was staged, no commit was created, and no push was attempted.
+**Tests:** No additional tests run after the final T28 entry.
+**Next:** The orchestrator must stage the owned files and the two T28 worklog entries, inspect the staged diff, commit, and push `master`.
+**NEEDS:** `.git/index.lock`: `Read-only file system`.
+
 ### 2026-08-29 14:58 PT — app-final (Codex GPT-5)
 **Task:** T27 fresh GitHub screenshot
 **Did:** Blocked before image creation. The first direct v0.1.1 launch on temporary workspace 10 created two independent physical Wayland clients: editor `0x55cf9a4a6890` and audience `0x55cf99f161a0`; both reported `class` and `initialClass` `omapresent`, `xwayland: false`, and the audience title `How Omapresent Works — Omapresent`. Its first app-only 1920×1080 capture was inspected, but rejected because the slide state was not suitable. After that instance ended, two fresh-data and one direct launch exited without a physical client or log output. No screenshot was saved. Workspace 8 is restored. No Hyprland or Omarchy configuration changed.
@@ -1740,4 +1761,11 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Did:** Completed with the approved vetted real-app fallback because fresh physical capture remained blocked. `welcome/screenshot.png` remains an exact byte-for-byte copy of the reviewed source. It contains only Omapresent surfaces and has no private content or embedded privacy metadata.
 **Tests:** `git diff --check` passes. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: C++ suites and renderer suites (43/43) are green.
 **Next:** Done.
+**NEEDS:** nothing
+
+### 2026-08-29 14:53 PT — T28 reviewer (Codex GPT-5)
+**Task:** T28 Actions menu full-label width
+**Did:** Reviewed the T28 diff. Corrected the narrow-screen cap to use the current screen width instead of the full virtual desktop width. The menu follows its widest item at normal width, keeps the 240 px minimum when space permits, caps at the screen edge, and does not change item fonts. The regression now covers normal and narrow widths.
+**Tests:** `qmllint src/Main.qml` and `git diff --check` pass. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes. OmapresentTest passes 42/42, including the T28 regression. Renderer tests pass 43/43.
+**Next:** Stage only T28 paths and worklog entries, inspect the index, commit, push `master`, and verify the exact CI run.
 **NEEDS:** nothing
