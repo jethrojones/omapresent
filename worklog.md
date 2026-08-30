@@ -1947,3 +1947,24 @@ below. Renderer suite 45/45, three consecutive clean runs.
 **Did:** Corrected the settings default comment to say video prefetch is on by default. The deferred-poster DOM test now uses the standard explicit Chromium skip and has no early-return pass path.
 **Tests:** `node tests/renderer/embed.test.mjs` passes 10/10 with 0 skips. The SettingsTest shares one C++ runner and has no isolated suite command. `git diff --check` passes.
 **NEEDS:** nothing
+
+### 2026-08-29 17:45 PDT - t36-images (Codex GPT-5)
+**Task:** T36 renderer local image transport
+**Did:** Started after confirming QtWebEngine rejects `file://` image and background URLs from the `qrc:` renderer origin.
+**Tests:** Not run yet.
+**Next:** Add secure content-aware data URL conversion in RenderHost and focused parity tests.
+**NEEDS:** nothing
+
+### 2026-08-29 21:15 PDT - t36-images (Codex GPT-5)
+**Task:** T36 renderer local image transport
+**Did:** Added content-aware data URL transport for approved local image assets, backgrounds, and media posters in non-web deck composition. Preserved cached video files, remote/data URLs, and WebBundle file URLs; invalid local files become empty.
+**Tests:** `./bin/build` passes. Focused T36 and T33 image regressions pass. The exact desktop-safe full gate returns 1 because loopback tests cannot bind and QtWebEngine export tests crash at `sandbox_host_linux.cc:41` with `Operation not permitted`; renderer browser tests also fail in this environment.
+**Next:** Host-capable reviewer reruns the full gate. Changes remain uncommitted and unpushed.
+**NEEDS:** Host-capable loopback and QtWebEngine sandbox environment.
+
+### 2026-08-29 21:35 PDT - t36-images (Codex GPT-5)
+**Task:** T36 renderer local image transport follow-up
+**Did:** Fixed non-web background classification so existing `data:` values remain unchanged. Added direct data-background and data-poster regressions.
+**Tests:** T36 regression passes. `./bin/build` passes. `git diff --check` passes. The focused shared runner also reports unrelated loopback bind failures.
+**Next:** No further T36 work in this environment.
+**NEEDS:** nothing

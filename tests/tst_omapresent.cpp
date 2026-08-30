@@ -331,7 +331,7 @@ private slots:
 
         QTRY_COMPARE(backend.themeAccent(), QStringLiteral("#a1b2c3"));
         QVERIFY(!colorsSpy.isEmpty());
-        QVERIFY(backend.previewRenderScript().contains(
+        QVERIFY(!backend.previewRenderScript().contains(
             QUrl::fromLocalFile(backgroundPath).toString()));
     }
 
@@ -736,8 +736,8 @@ private slots:
         // what tells the renderer to draw the placeholder.
         QVERIFY(deck.value(QStringLiteral("assets")).toObject()
                     .contains(QStringLiteral("missing.png")));
-        QCOMPARE(deck.value(QStringLiteral("backgroundImage")).toString(),
-                 QStringLiteral("file:///home/jethro/.local/state/omarchy/current/background"));
+        QVERIFY(deck.value(QStringLiteral("backgroundImage")).toString()
+                    .startsWith(QStringLiteral("data:image/")));
         QCOMPARE(deck.value(QStringLiteral("textScale")).toDouble(), 1.25);
 
         // A deck built before anything has been parsed still has to render.
@@ -747,6 +747,100 @@ private slots:
         QVERIFY(empty.value(QStringLiteral("slides")).isArray());
         QVERIFY(empty.value(QStringLiteral("slides")).toArray().isEmpty());
         QVERIFY(empty.value(QStringLiteral("backgroundImage")).toString().isEmpty());
+    }
+
+    void transportsApprovedLocalImagesForRendererModes() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+
+        const QByteArray png = QByteArray::fromHex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c6360f8cfc000000301010018dd8db40000000049454e44ae426082");
+        const QString imagePath = directory.path()
+            + QStringLiteral("/Dropbox/Screenshots & screen recording/"
+                             "CleanShot 2026-08-25 at 15.37.24@2x.png");
+        const QString backgroundPath = directory.path() + QStringLiteral("/background");
+        const QString textPath = directory.path() + QStringLiteral("/not-an-image.txt");
+        QVERIFY(QDir().mkpath(QFileInfo(imagePath).absolutePath()));
+        for (const auto &entry : {qMakePair(imagePath, png),
+                                  qMakePair(backgroundPath, png),
+                                  qMakePair(textPath, QByteArray("plain text"))}) {
+            QFile file(entry.first);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(entry.second), qint64(entry.second.size()));
+        }
+
+        const QString wikiReference =
+            QStringLiteral("~/Dropbox/Screenshots & screen recording/"
+                           "CleanShot 2026-08-25 at 15.37.24@2x.png");
+        const QString imageUrl = QUrl::fromLocalFile(imagePath).toString();
+        const QString backgroundUrl = QUrl::fromLocalFile(backgroundPath).toString();
+        const QString videoUrl = QUrl::fromLocalFile(directory.path()
+                                                      + QStringLiteral("/clip.mp4"))
+                                     .toString();
+        const QJsonObject assets{
+            {wikiReference, imageUrl},
+            {QStringLiteral("invalid.png"), QUrl::fromLocalFile(textPath).toString()},
+            {QStringLiteral("remote.png"), QStringLiteral("https://example.com/image.png")},
+            {QStringLiteral("inline.png"), QStringLiteral("data:image/png;base64,AA==")},
+            {QStringLiteral("empty.png"), QString()}};
+        const QJsonObject media{
+            {QStringLiteral("clip.mp4"), QJsonObject{
+                {QStringLiteral("cachedFile"), videoUrl},
+                {QStringLiteral("poster"), imageUrl}}},
+            {QStringLiteral("remote.mp4"), QJsonObject{
+                {QStringLiteral("poster"), QStringLiteral("data:image/png;base64,AA==")}}}};
+        const QJsonObject parsed{
+            {QStringLiteral("slides"), QJsonArray{QJsonObject{
+                {QStringLiteral("markdown"), QStringLiteral("![[%1]]").arg(wikiReference)}}}}};
+
+        const auto compose = [&](const QString &mode) {
+            return RenderHost::composeDeck(mode, parsed, assets, media, QJsonObject(),
+                                           backgroundPath, 1.0);
+        };
+        const QJsonObject preview = compose(QStringLiteral("preview"));
+        const QJsonObject presenter = compose(QStringLiteral("presenter"));
+        const QJsonObject audience = compose(QStringLiteral("present"));
+        const QJsonObject pdf = compose(QStringLiteral("pdf"));
+        const QJsonObject web = compose(QStringLiteral("web"));
+        const QString dataBackground = QStringLiteral("data:image/png;base64,AA==");
+        const QJsonObject dataBackgroundDeck = RenderHost::composeDeck(
+            QStringLiteral("present"), parsed, assets, media, QJsonObject(),
+            dataBackground, 1.0);
+
+        const QString expectedPrefix = QStringLiteral("data:image/png;base64,");
+        const QJsonObject previewAssets = preview.value(QStringLiteral("assets")).toObject();
+        QVERIFY(previewAssets.value(wikiReference).toString().startsWith(expectedPrefix));
+        QCOMPARE(QByteArray::fromBase64(
+                     previewAssets.value(wikiReference).toString().mid(expectedPrefix.size())
+                         .toLatin1()), png);
+        QCOMPARE(previewAssets.value(QStringLiteral("invalid.png")).toString(), QString());
+        QCOMPARE(previewAssets.value(QStringLiteral("remote.png")).toString(),
+                 QStringLiteral("https://example.com/image.png"));
+        QCOMPARE(previewAssets.value(QStringLiteral("inline.png")).toString(),
+                 QStringLiteral("data:image/png;base64,AA=="));
+        QCOMPARE(previewAssets.value(QStringLiteral("empty.png")).toString(), QString());
+        QVERIFY(preview.value(QStringLiteral("backgroundImage")).toString()
+                    .startsWith(expectedPrefix));
+        QCOMPARE(preview.value(QStringLiteral("media")).toObject().value(QStringLiteral("clip.mp4"))
+                     .toObject().value(QStringLiteral("cachedFile")).toString(), videoUrl);
+        QVERIFY(preview.value(QStringLiteral("media")).toObject().value(QStringLiteral("clip.mp4"))
+                    .toObject().value(QStringLiteral("poster")).toString()
+                    .startsWith(expectedPrefix));
+        QCOMPARE(preview.value(QStringLiteral("media")).toObject().value(QStringLiteral("remote.mp4"))
+                     .toObject().value(QStringLiteral("poster")).toString(),
+                 QStringLiteral("data:image/png;base64,AA=="));
+
+        QCOMPARE(presenter.value(QStringLiteral("assets")), preview.value(QStringLiteral("assets")));
+        QCOMPARE(audience.value(QStringLiteral("assets")), preview.value(QStringLiteral("assets")));
+        QCOMPARE(pdf.value(QStringLiteral("assets")), preview.value(QStringLiteral("assets")));
+        QCOMPARE(pdf.value(QStringLiteral("backgroundImage")),
+                 preview.value(QStringLiteral("backgroundImage")));
+        QCOMPARE(dataBackgroundDeck.value(QStringLiteral("backgroundImage")).toString(),
+                 dataBackground);
+        QCOMPARE(web.value(QStringLiteral("assets")).toObject().value(wikiReference).toString(),
+                 imageUrl);
+        QCOMPARE(web.value(QStringLiteral("backgroundImage")).toString(), backgroundUrl);
     }
 
     void wrapsTheDeckInASafeJavaScriptCall() {
@@ -902,9 +996,12 @@ private slots:
         const QString deckPath = deckDirectory.filePath(QStringLiteral("deck.md"));
         const QString imagePath = deckDirectory.filePath(QStringLiteral("image with spaces.png"));
         const QString videoPath = deckDirectory.filePath(QStringLiteral("clip with spaces.webm"));
+        const QByteArray png = QByteArray::fromHex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+            "0000000d49444154789c6360f8cfc000000301010018dd8db40000000049454e44ae426082");
         QFile image(imagePath);
         QVERIFY(image.open(QIODevice::WriteOnly));
-        QVERIFY(image.write("not a real image") > 0);
+        QCOMPARE(image.write(png), qint64(png.size()));
         image.close();
         QFile video(videoPath);
         QVERIFY(video.open(QIODevice::WriteOnly));
@@ -942,7 +1039,8 @@ private slots:
         editor->setProperty("text", deckText + QStringLiteral("\n"));
         QTRY_VERIFY(previewSpy.count() > 0);
 
-        const QString expectedUrl = QUrl::fromLocalFile(imagePath).toString();
+        const QString expectedUrl = QStringLiteral("data:image/png;base64,%1")
+            .arg(QString::fromLatin1(png.toBase64()));
         const QString expectedVideoUrl =
             QUrl::fromLocalFile(videoPath).toString(QUrl::FullyEncoded);
         QVERIFY(previewSpy.constLast().constFirst().toString().contains(expectedUrl));
@@ -984,7 +1082,7 @@ private slots:
             backend.presentation()->deckForRole(QStringLiteral("audience"));
         QCOMPARE(replacementDeck.value(QStringLiteral("assets")).toObject().value(
                      QStringLiteral("image with spaces.png")).toString(),
-                 QUrl::fromLocalFile(replacementImagePath).toString());
+                 QString());
         QCOMPARE(replacementDeck.value(QStringLiteral("media")).toObject().value(
                      QStringLiteral("clip with spaces.webm")).toObject().value(
                      QStringLiteral("cachedFile")).toString(),

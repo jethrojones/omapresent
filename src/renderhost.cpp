@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLibraryInfo>
+#include <QMimeDatabase>
 #include <QUrl>
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
@@ -23,6 +24,55 @@ const QString readyProbe = QStringLiteral(
 // seconds at 100ms a look, then print whatever is on the page.
 constexpr int settleIntervalMs = 100;
 constexpr int maxSettleAttempts = 50;
+
+QString imageDataUrl(const QString &value)
+{
+    const QUrl url(value);
+    if (!url.isLocalFile())
+        return value;
+
+    const QString path = url.toLocalFile();
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+
+    const QMimeType mime = QMimeDatabase().mimeTypeForFile(
+        path, QMimeDatabase::MatchContent);
+    if (!mime.name().startsWith(QStringLiteral("image/")))
+        return {};
+
+    return QStringLiteral("data:%1;base64,%2")
+        .arg(mime.name(), QString::fromLatin1(file.readAll().toBase64()));
+}
+
+QJsonObject rendererAssets(const QString &mode, const QJsonObject &assets)
+{
+    if (mode == QStringLiteral("web"))
+        return assets;
+
+    QJsonObject result = assets;
+    for (const QString &key : assets.keys())
+        result.insert(key, imageDataUrl(assets.value(key).toString()));
+    return result;
+}
+
+QJsonObject rendererMedia(const QString &mode, const QJsonObject &media)
+{
+    if (mode == QStringLiteral("web"))
+        return media;
+
+    QJsonObject result = media;
+    for (const QString &key : media.keys()) {
+        QJsonObject description = media.value(key).toObject();
+        if (description.contains(QStringLiteral("poster"))) {
+            description.insert(QStringLiteral("poster"),
+                               imageDataUrl(description.value(QStringLiteral("poster"))
+                                                .toString()));
+        }
+        result.insert(key, description);
+    }
+    return result;
+}
 
 QString webChannelClient() {
     // Some Qt builds compile the client into a resource; a distribution build
@@ -61,15 +111,19 @@ QJsonObject RenderHost::composeDeck(const QString &mode, const QJsonObject &deck
                                     const QJsonObject &palette,
                                     const QString &backgroundImagePath, qreal textScale) {
     QString backgroundImage = backgroundImagePath;
-    if (!backgroundImage.isEmpty() && !backgroundImage.contains(QStringLiteral("://")))
+    if (!backgroundImage.isEmpty()
+        && !backgroundImage.startsWith(QStringLiteral("data:"), Qt::CaseInsensitive)
+        && !backgroundImage.contains(QStringLiteral("://")))
         backgroundImage = QUrl::fromLocalFile(backgroundImage).toString();
+    if (mode != QStringLiteral("web"))
+        backgroundImage = imageDataUrl(backgroundImage);
 
     return QJsonObject{
         {QStringLiteral("mode"), mode},
         {QStringLiteral("frontmatter"), deck.value(QStringLiteral("frontmatter")).toObject()},
         {QStringLiteral("slides"), deck.value(QStringLiteral("slides")).toArray()},
-        {QStringLiteral("assets"), assets},
-        {QStringLiteral("media"), media},
+        {QStringLiteral("assets"), rendererAssets(mode, assets)},
+        {QStringLiteral("media"), rendererMedia(mode, media)},
         {QStringLiteral("palette"), palette},
         {QStringLiteral("backgroundImage"), backgroundImage},
         {QStringLiteral("textScale"), textScale}};
