@@ -1,6 +1,10 @@
 import { parseSlide, headingText, slidesForRender } from "./deckparse.js";
 import { fitDecision, layoutForBlocks, scrollTopForFraction } from "./layout.js";
-import { mediaDecision } from "./media.js";
+import { mediaDecision, youtubeVideoId } from "./media.js";
+import {
+    createShimRegistry, embedStrategy, isFromShim, needsEmbedOrigin,
+    playerMessage, resolveEmbedBase, shimEmbedUrl,
+} from "./embed.js";
 import ir from "./vendor/markdown-it.mjs";
 import katex from "./vendor/katex.mjs";
 import qrcode from "./vendor/qrcode.mjs";
@@ -9,6 +13,7 @@ const root = document.getElementById("deck");
 const roleValues = new Set(["audience", "presenter", "editor", "export", "web"]);
 const scrollPositions = new Map();
 const deferredPlayers = new WeakMap();
+const shimListeners = createShimRegistry();
 
 let deck = { mode: "preview", slides: [] };
 let slides = [];
@@ -316,6 +321,11 @@ function qrElement(value) {
 }
 
 function sendEmbedPlayback(player, playing) {
+    if (player.classList.contains("op-player-shim")) {
+        player.contentWindow?.postMessage({ op: playing ? "play" : "pause" }, "*");
+        player.dataset.playing = playing ? "true" : "false";
+        return;
+    }
     const message = player.dataset.host === "youtube"
         ? JSON.stringify({ event: "command", func: playing ? "playVideo" : "pauseVideo", args: [] })
         : { method: playing ? "play" : "pause" };
@@ -370,10 +380,144 @@ function playerElement(decision, allowRemote = false, requestPlayback = false) {
     return player;
 }
 
+// True when a host is present to ask. A published bundle has no bridge, and
+// must decide what to build in the same turn as the click.
+function hasEmbedBridge() {
+    const host = globalThis.omapresentHost;
+    return Boolean(host && typeof host.embedBase === "function");
+}
+
+// Spec §4.8's last resort: the video will not play here, so show where it is.
+function embedFallbackElement(decision) {
+    const container = qrElement(decision.value);
+    container.classList.add("op-media-fallback");
+    const link = document.createElement("a");
+    link.className = "op-media-fallback-link";
+    link.href = decision.value;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Open in browser";
+    container.append(link);
+    return container;
+}
+
+function replaceWithFallback(node, decision) {
+    const fallback = embedFallbackElement(decision);
+    node.replaceWith(fallback);
+    emitState();
+    return fallback;
+}
+
+// The shim reports the player's own events up. Any page can post a message, so
+// both the sender and the origin are checked before the shape is, and the
+// listener goes away as soon as the frame it belongs to does.
+function watchShim(frame, decision, base) {
+    const stop = () => window.removeEventListener("message", listener);
+    const listener = event => {
+        // A frame that has been replaced or detached has nothing more to say,
+        // and its listener has no reason to outlive it.
+        if (!frame.isConnected) {
+            stop();
+            return;
+        }
+        if (!isFromShim(event, frame, base))
+            return;
+        const message = playerMessage(event.data);
+        if (!message)
+            return;
+        if (message.op === "error") {
+            stop();
+            replaceWithFallback(frame, decision);
+        } else if (message.op === "state") {
+            frame.dataset.playing = message.state === 1 ? "true" : "false";
+            if (message.state === 0) {
+                frame.dataset.ended = "true";
+                emitState();
+            }
+        }
+    };
+    window.addEventListener("message", listener);
+    shimListeners.watch(frame, stop);
+}
+
+// Rendering a new slide, or dropping an overlay, throws that DOM away; the
+// listeners that belonged to it go too rather than accumulating for the life of
+// the page.
+function releaseShimListeners(within) {
+    return shimListeners.release(within);
+}
+
+function shimFrameElement(decision, url, base) {
+    const frame = document.createElement("iframe");
+    frame.src = url;
+    frame.className = "op-player op-player-shim";
+    frame.tabIndex = 0;
+    frame.dataset.host = decision.host;
+    frame.dataset.playing = "true";
+    frame.allow = "autoplay; fullscreen; picture-in-picture";
+    frame.title = decision.title || `${decision.host} video`;
+    watchShim(frame, decision, base);
+    return frame;
+}
+
 function activateDeferredPlayer(loader) {
     const decision = deferredPlayers.get(loader);
     if (!decision)
         return null;
+
+    // A hosted player needs an origin it will accept. In the app that is the
+    // loopback shim; a published page already served over http(s) can embed
+    // directly; from a folder there is neither, so rather than a frame that is
+    // certain to fail with "Error 153", offer the link (spec §4.8).
+    const strategyFor = base => embedStrategy({
+        host: decision.host,
+        player: decision.player,
+        protocol: window.location.protocol,
+        embedBase: base,
+    });
+
+    const buildShim = base => {
+        const url = shimEmbedUrl(base, youtubeVideoId(decision.value), decision.title);
+        if (!url)
+            return replaceWithFallback(loader, decision);
+        const frame = shimFrameElement(decision, url, base);
+        loader.replaceWith(frame);
+        frame.focus({ preventScroll: true });
+        emitState();
+        return frame;
+    };
+
+    // Only a hosted embed needs an origin, and only the app has a host to ask.
+    // Everything else — a cached file, a local file, a direct video URL, another
+    // provider's embed — is decided in this turn and never starts the server.
+    if (needsEmbedOrigin(decision) && hasEmbedBridge()) {
+        if (loader.dataset.pending === "true")
+            return null;
+        loader.dataset.pending = "true";
+        resolveEmbedBase(globalThis.omapresentHost).then(base => {
+            if (!loader.isConnected)
+                return;
+            loader.dataset.pending = "false";
+            const strategy = strategyFor(base);
+            if (strategy === "shim")
+                buildShim(base);
+            else if (strategy === "fallback")
+                replaceWithFallback(loader, decision);
+            else
+                finishDeferredPlayer(loader, decision);
+        });
+        return null;
+    }
+
+    if (strategyFor("") === "fallback")
+        return replaceWithFallback(loader, decision);
+
+    return finishDeferredPlayer(loader, decision);
+}
+
+// The direct player: a cached or local file, a direct video URL, or a hosted
+// embed on a page whose own origin the player already accepts.
+function finishDeferredPlayer(loader, decision) {
     const player = playerElement(decision, true, true);
     loader.replaceWith(player);
     player.focus({ preventScroll: true });
@@ -395,6 +539,21 @@ function deferredPlayerElement(decision) {
     loader.className = "op-player op-media-loader";
     loader.dataset.host = decision.host;
     loader.setAttribute("aria-label", `Play ${decision.host || "remote"} video`);
+    // The video cache downloads a thumbnail for a hosted video even when the
+    // media itself cannot be cached. Showing it makes the affordance look like
+    // the video it will play; a remote one is not fetched, which is the point.
+    if (decision.poster && !isRemoteSource(decision.poster)) {
+        loader.classList.add("has-poster");
+        // Styled here rather than in deck.css: the poster is per-video, and the
+        // stylesheet has no business carrying a rule that only ever matches
+        // when one happens to be cached. Darkened with the theme's own colour
+        // so the label stays legible over any frame.
+        loader.style.backgroundImage = `url(${JSON.stringify(decision.poster)})`;
+        loader.style.backgroundSize = "cover";
+        loader.style.backgroundPosition = "center";
+        loader.style.backgroundColor = "var(--op-dark-background)";
+        loader.style.backgroundBlendMode = "multiply";
+    }
     const mark = document.createElement("span");
     mark.className = "op-media-loader-mark";
     mark.textContent = "▶";
@@ -658,7 +817,13 @@ function renderOverview() {
 
 function renderCurrent() {
     const token = ++renderToken;
-    document.querySelectorAll(".op-blank-overlay, .op-recall-overlay").forEach(element => element.remove());
+    // A recall overlay carries a whole slide, so it can carry a shim frame too.
+    // Its listeners go when it does, rather than outliving the element.
+    document.querySelectorAll(".op-blank-overlay, .op-recall-overlay").forEach(element => {
+        releaseShimListeners(element);
+        element.remove();
+    });
+    releaseShimListeners(root);
     root.replaceChildren();
     if (!slides.length) {
         const empty = document.createElement("section");
@@ -693,7 +858,12 @@ function renderCurrent() {
 }
 
 function renderOverlays() {
-    document.querySelectorAll(".op-blank-overlay, .op-recall-overlay").forEach(element => element.remove());
+    // A recall overlay carries a whole slide, so it can carry a shim frame too.
+    // Its listeners go when it does, rather than outliving the element.
+    document.querySelectorAll(".op-blank-overlay, .op-recall-overlay").forEach(element => {
+        releaseShimListeners(element);
+        element.remove();
+    });
     if (recall) {
         const recalled = recallSlides().get(recall);
         if (recalled) {

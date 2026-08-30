@@ -92,11 +92,45 @@ every state change with:
   "recallKeys": ["q", "1"], "mediaCount": 0 }
 ```
 
+### `omapresentHost.embedBase(callback)` — added for T34
+
+The bridge object also answers one question, and only when asked:
+
+```js
+window.omapresentHost.embedBase(base => { /* "http://127.0.0.1:<port>/<token>/" */ });
+```
+
+`base` is a loopback origin the host serves one bundled page from, or `""` when
+it has none. A hosted video player refuses to configure when the page embedding
+it has an opaque origin — `qrc:` and `file:` both are — and answers "Error 153"
+instead, so the renderer builds that player inside a frame served from `base`.
+
+Two properties matter and are tested:
+
+- It is a **method, not a property**. A WebChannel sends every property at
+  handshake, which would start the host's server when a deck opens. A method is
+  answered only when the renderer asks, and it asks only after the reader has
+  clicked Play — so spec §4.8's "nothing autoplays" and finding SEC-002's "no
+  request on open" both still hold.
+- It answers **asynchronously, through the callback**. A WebChannel method does
+  not return its value.
+
+The renderer asks only for a hosted embed (`media[url].status` "embed" on a
+recognised host). Cached files, local files, direct video URLs and other
+providers are built without asking, and never start the server. When `base` is
+empty and the page's own origin is not `http(s)`, the renderer draws a QR code
+and a link instead (spec §4.8's last fallback).
+
+This is additive: `state(QString json)` remains the slot the renderer calls
+after every state change, and nothing about it changes.
+
 C++ receives it through `QWebEngineScript` / `runJavaScript`; the host wires
 `onState` to a `qt.webChannelTransport`-free callback via
 `page->runJavaScript()` polling is NOT acceptable — use a `QWebChannel` object
-registered as `omapresentHost` with a single slot `state(QString json)`, and
+registered as `omapresentHost` whose slot for this is `state(QString json)`, and
 the renderer calls `omapresentHost.state(JSON.stringify(s))` when it exists.
+That object answers one further call, `embedBase(callback)`, described in §2a;
+`state` remains the only slot the renderer pushes state through.
 
 ## 3. Screen vs. notes
 

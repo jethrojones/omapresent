@@ -48,6 +48,17 @@ public:
     // Unparsable values fall back to 16:9.
     static QPageLayout pageLayoutFor(const QString &aspect);
 
+    // The loopback base the renderer builds a hosted-video frame on, ending in
+    // a slash: "http://127.0.0.1:<port>/<token>/". Empty when the socket cannot
+    // be bound, and the renderer then falls back to a QR code and a link.
+    //
+    // Deliberately a method and not a property. A WebChannel sends every
+    // property at handshake, which would start the server when a deck opens;
+    // a method is only answered when the renderer asks, and it only asks after
+    // the reader has clicked Play. That is SEC-002's guarantee, and
+    // tst_embedserver.cpp asserts nothing listens until this is called.
+    Q_INVOKABLE QString embedBase() const;
+
     // The script the host injects into every renderer page: the Qt WebChannel
     // client, plus the `onState` hook the contract §2 says the host assigns.
     // Empty when the WebChannel client cannot be found, which only costs us

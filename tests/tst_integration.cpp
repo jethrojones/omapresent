@@ -409,7 +409,7 @@ private slots:
             urls += VideoCache::extractUrls(slide.markdown);
 
         QCOMPARE(urls, QStringList({
-            QStringLiteral("https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+            QStringLiteral("https://www.youtube.com/watch?v=aqz-KE-bpKQ"),
             QStringLiteral("https://omapresent.com"),
         }));
 

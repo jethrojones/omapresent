@@ -33,8 +33,8 @@ private slots:
         QCOMPARE(settings.boolValue(QStringLiteral("presentation.do_not_disturb")), true);
         QCOMPARE(settings.stringValue(QStringLiteral("presentation.default_aspect")), QStringLiteral("16:9"));
         QCOMPARE(settings.boolValue(QStringLiteral("presentation.single_monitor_notes")), false);
-        // Off by default: saving a deck must not reach the network on its own.
-        QCOMPARE(settings.boolValue(QStringLiteral("presentation.auto_prefetch_video")), false);
+        // Prefetch is on by default: an explicit save prepares the deck's video cache.
+        QCOMPARE(settings.boolValue(QStringLiteral("presentation.auto_prefetch_video")), true);
 
         // Export defaults
         QCOMPARE(settings.stringValue(QStringLiteral("export.pdf_aspect")), QStringLiteral("16:9"));

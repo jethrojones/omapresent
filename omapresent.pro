@@ -12,6 +12,7 @@ HEADERS += \
     src/omarchytheme.h \
     src/videocache.h \
     src/publisher.h \
+    src/embedserver.h \
     src/renderhost.h \
     src/settings.h \
     src/webbundle.h \
@@ -28,6 +29,7 @@ SOURCES += \
     src/omarchytheme.cpp \
     src/videocache.cpp \
     src/publisher.cpp \
+    src/embedserver.cpp \
     src/renderhost.cpp \
     src/settings.cpp \
     src/webbundle.cpp \

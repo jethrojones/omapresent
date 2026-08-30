@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Omapresent embed</title>
+<!--
+  The embed shim. Served only over loopback by src/embedserver.cpp, and only
+  after the reader clicks Play.
+
+  It exists for one reason: a hosted player refuses to configure when the page
+  embedding it has an opaque origin, because there is no Referer to send. The
+  deck page is `qrc:` and a published bundle opened from a folder is `file:`, so
+  both are opaque. This page is `http://127.0.0.1:<port>`, which is not — and
+  that is the whole of the fix for "Error 153".
+
+  It drives the player through YouTube's own IFrame API rather than by posting
+  hand-written commands, so onReady, onStateChange and onError are the player's
+  real events and not guesses about them.
+
+  It talks to two parties and trusts neither by default: the deck page above it,
+  which may only ask for play and pause, and the player below it, whose events
+  are only read for playback state and error codes.
+-->
+<style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    #player, iframe { display: block; width: 100%; height: 100%; border: 0; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<script>
+(function () {
+    "use strict";
+
+    var params = new URLSearchParams(window.location.search);
+
+    function report(message) {
+        // The deck page is the only party this page reports to. It knows the
+        // loopback origin it created, so it can check where this came from.
+        try { window.parent.postMessage(message, "*"); } catch (error) { /* detached */ }
+    }
+
+    // A YouTube id is a short opaque token. Anything else is not something this
+    // page will hand to the player — the id arrives from deck text, so it is
+    // input, and it is the only part of that text which reaches this page.
+    var id = params.get("v") || "";
+    if (!/^[A-Za-z0-9_-]{5,32}$/.test(id)) {
+        report({ op: "error", code: 2 });
+        return;
+    }
+
+    var player = null;
+    var ready = false;
+    // Anything asked for before the player exists is remembered, not dropped:
+    // the reader clicked Play, and the API takes a moment to arrive.
+    var queued = null;
+
+    function apply(request) {
+        if (!ready || !player) {
+            queued = request;
+            return;
+        }
+        if (request === "play" && typeof player.playVideo === "function")
+            player.playVideo();
+        else if (request === "pause" && typeof player.pauseVideo === "function")
+            player.pauseVideo();
+    }
+
+    window.addEventListener("message", function (event) {
+        // Only the deck page directly above, and only these two requests.
+        if (event.source !== window.parent)
+            return;
+        var request = event.data;
+        if (!request || typeof request !== "object")
+            return;
+        if (request.op === "play" || request.op === "pause")
+            apply(request.op);
+    });
+
+    window.onYouTubeIframeAPIReady = function () {
+        player = new YT.Player("player", {
+            videoId: id,
+            playerVars: {
+                autoplay: 1,
+                rel: 0,
+                playsinline: 1,
+                modestbranding: 1,
+                // The origin the player should expect to be embedded by. This
+                // page has a real one, which is the point of serving it.
+                origin: window.location.origin,
+            },
+            events: {
+                onReady: function () {
+                    ready = true;
+                    // Reported from the player's own event, so "ready" means
+                    // the player configured — not merely that a frame loaded.
+                    report({ op: "ready" });
+                    if (queued) {
+                        var request = queued;
+                        queued = null;
+                        apply(request);
+                    }
+                },
+                onStateChange: function (event) {
+                    report({ op: "state", state: Number(event.data) });
+                },
+                onError: function (event) {
+                    // 101 and 150: the owner disallowed embedding. 153: the
+                    // configuration error this page exists to avoid. 2 and 100:
+                    // a bad id and a missing video.
+                    report({ op: "error", code: Number(event.data) });
+                },
+            },
+        });
+    };
+
+    var api = document.createElement("script");
+    api.src = "https://www.youtube.com/iframe_api";
+    api.addEventListener("error", function () { report({ op: "error", code: 153 }); });
+    document.head.appendChild(api);
+})();
+</script>
+</body>
+</html>

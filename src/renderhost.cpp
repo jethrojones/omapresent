@@ -1,5 +1,6 @@
 #include "renderhost.h"
 
+#include "embedserver.h"
 #include <QDebug>
 #include <QFile>
 #include <QJsonArray>
@@ -72,6 +73,10 @@ QJsonObject RenderHost::composeDeck(const QString &mode, const QJsonObject &deck
         {QStringLiteral("palette"), palette},
         {QStringLiteral("backgroundImage"), backgroundImage},
         {QStringLiteral("textScale"), textScale}};
+}
+
+QString RenderHost::embedBase() const {
+    return EmbedServer::instance()->baseUrl();
 }
 
 QString RenderHost::callScript(const QString &function, const QJsonObject &deckJson) {

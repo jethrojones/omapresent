@@ -244,6 +244,16 @@ function youtubeApiUrl(value) {
     }
 }
 
+// The bare video id for a YouTube line, or "" when it is not one. The embed
+// shim takes an id rather than a URL, so nothing a deck author writes reaches a
+// URL this side of the loopback origin.
+export function youtubeVideoId(value) {
+    const parsed = urlFromLine(value);
+    if (!parsed || videoHostFor(value) !== "youtube")
+        return "";
+    return youtubeId(parsed);
+}
+
 export function mediaDecision(source, description = {}) {
     const value = String(source ?? "").trim();
     const forced = forcedQrValue(value);

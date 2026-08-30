@@ -1865,3 +1865,85 @@ checks. The author cannot self-approve; it needs upstream write access.
 **Tests:** Focused T33 selection passes 4/4. `git diff --check` passes. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes: OmapresentTest 44/44 and renderer tests 45/45. Final Autoreview is clean.
 **Next:** Stage only T33 paths and worklog entries, inspect, commit, push `master`, and verify the exact CI run.
 **NEEDS:** nothing
+
+### 2026-08-29 18:05 PT — webbundle (Claude Opus 5)
+**Task:** T34 YouTube playback and save-time prefetch
+**Did:** Diagnosed and fixed "Error 153: Video player configuration error".
+
+*The cause, measured rather than reasoned.* A hosted player refuses to configure
+when the page embedding it has an opaque origin, because there is no `Referer`
+to send. `qrc:` and `file:` are both opaque. The same iframe markup, same
+browser, same session: from `file://` all of `?enablejsapi=1`, `?autoplay=1` and
+`youtube-nocookie.com` give 153; from `http://127.0.0.1` all three play. So the
+embed parameters, the referrer policy, the cookie domain and CSP are all ruled
+out — it is the origin, and nothing else.
+
+*Why the deck page did not have to move.* A `file://` page hosting a **nested**
+frame served over loopback gets a working player. That matters: moving the whole
+renderer to an http origin would have broken every `file:///` image and cached
+video in the app, since an http page may not load them, and it would have forced
+the server to serve user files. With a nested shim the server serves exactly one
+compiled-in page and never touches the filesystem.
+
+*What is new.* `src/embedserver.{h,cpp}`: `QTcpServer` on `QHostAddress::LocalHost`,
+ephemeral port, one GET route behind a per-session 128-bit token, reading only
+through `QFile(":/renderer/…")`. It does not listen until `baseUrl()` is called,
+and the renderer only calls it after a click. `src/renderer/embed.html`: the
+shim, driving the player through YouTube's own IFrame API so `onReady`,
+`onStateChange` and `onError` are its real events; play/pause asked for before
+the API arrives is queued, not dropped. `src/renderer/embed.js`: the decisions,
+pure and unit-tested — which of shim/direct/fallback applies, the shim URL, the
+codes that mean "will not play here", who a message is allowed to come from.
+`RenderHost::embedBase()` is `Q_INVOKABLE` rather than a property, because a
+WebChannel sends properties at handshake and that would start the server when a
+deck opens.
+
+*Also:* `presentation.auto_prefetch_video` now defaults true, with the gate left
+where it was, inside the explicit save path. `welcome/welcome.md` demonstrates
+`aqz-KE-bpKQ` (Big Buck Bunny, Blender, CC BY) — the previous demo video is not
+embeddable anywhere, and showed "This video is unavailable" even from a working
+http origin — and its two untrue claims are corrected.
+
+**Tests:** `./bin/build && ./bin/test` pass, 0 failures. `tests/tst_embedserver.cpp`
+16 cases: loopback binding, ephemeral port, nothing listening until asked, the
+shim and nothing else, wrong token, wrong and duplicate and mixed-case Host,
+every method but GET, traversal in five encodings, oversized → 431, and the pure
+router. `tests/renderer/embed.test.mjs` 9 cases including the asynchronous
+WebChannel callback, a silent host, non-YouTube media never asking for a base,
+and message sender/origin validation. `tests/renderer/embed-network.test.mjs` is
+opt-in (`OMAPRESENT_NETWORK_TESTS=1`) and does not claim to prove 153 — see
+below. Renderer suite 45/45, three consecutive clean runs.
+
+**Next:** waiting on an independent review before staging. Nothing committed.
+
+**NEEDS:**
+- `tests/renderer/interaction.test.mjs` "recall overlays…" is timing-fragile
+  under parallel load, and it is not T34's doing: at **HEAD**, with two *empty*
+  dummy test files added to `tests/renderer/` and none of this work present, it
+  failed 3 runs in 6. With T34 present it failed 1 in 6, and 0 in the last 3.
+  Any added test file can tip it. Its owner should give that one case a larger
+  virtual-time budget; it measures scroll and fragment state across several
+  nested timers inside a 1500 ms budget, which is the actual fragility.
+- Recorded so nobody re-derives it: **Error 153 cannot be asserted
+  programmatically.** It is rendered inside the player's cross-origin document,
+  which `--dump-dom` cannot read. With a hand-written `postMessage` handshake
+  the player reports nothing at all — measured from a folder and from loopback,
+  for an embeddable video and a non-embeddable one, the only event that ever
+  arrived was the shim's own "ready". Moving the shim to the official IFrame API
+  is what makes `onError` real; the opt-in network test asserts the player
+  reaches `onReady` over loopback and reports no fallback error, and says
+  plainly that it does not prove 153. The evidence for 153 itself is the
+  screenshot experiment recorded in `tasks/t34-youtube-playback.md`.
+
+### 2026-08-29 17:27 PDT — T34 reviewer (Codex GPT-5)
+**Task:** T34 YouTube playback closeout proof
+**Did:** Correction: `tests/renderer/embed.test.mjs` now has 10 cases, not 9. Added a browser DOM regression for a deferred YouTube URL with a real local cached poster and no cached video. It proves the poster is applied before activation, with no video or remote player in the DOM, no `embedBase()` call, and no HTTP(S) resource.
+**Tests:** `node tests/renderer/embed.test.mjs` passes 10/10. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` passes; renderer suites 45/45. `git diff --check` passes.
+**Next:** T34 proof is ready for its owner to stage with the existing T34 work.
+**NEEDS:** nothing
+
+### 2026-08-29 17:35 PDT — T34 reviewer (Codex GPT-5)
+**Task:** T34 closeout correction
+**Did:** Corrected the settings default comment to say video prefetch is on by default. The deferred-poster DOM test now uses the standard explicit Chromium skip and has no early-return pass path.
+**Tests:** `node tests/renderer/embed.test.mjs` passes 10/10 with 0 skips. The SettingsTest shares one C++ runner and has no isolated suite command. `git diff --check` passes.
+**NEEDS:** nothing

@@ -488,6 +488,14 @@ html[data-mode="present"] .op-missing-tag {
     transform: scale(0.99);
 }
 
+/* Spec §4.8's last resort: the video cannot play here, so show where it is. */
+.op-media-fallback .op-media-fallback-link {
+    display: inline-block;
+    margin-top: 0.6rem;
+    color: var(--op-accent);
+    font-size: clamp(0.9rem, 1.3vw, 1.2rem);
+}
+
 .op-media-loader-mark {
     color: var(--op-accent);
     font-size: clamp(2.4rem, 6vw, 5.5rem);

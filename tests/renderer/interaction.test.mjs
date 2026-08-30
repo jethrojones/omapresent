@@ -104,9 +104,14 @@ test("remote video sources do not enter the DOM until play", {
     assert.equal(attribute(html, "data-direct-preload"), "none");
     assert.equal(attribute(html, "data-embed-before-play"), "false");
     assert.equal(attribute(html, "data-embed-placeholder"), "true");
-    assert.equal(attribute(html, "data-embed-after-play"), "true");
-    assert.equal(attribute(html, "data-embed-autoplay"), "1");
-    assert.equal(attribute(html, "data-embed-allows-autoplay"), "true");
+    // This page is a file:// origin with no host bridge — a published bundle
+    // opened from a folder. A hosted player cannot configure without an origin
+    // to send ("Error 153"), so the click gives the reader a QR code and a link
+    // instead of a frame that is certain to fail (spec §4.8). The zero-request
+    // check above is what this case guards, and it is unchanged; which of the
+    // three outcomes applies is decided in src/renderer/embed.js and covered
+    // exhaustively in embed.test.mjs.
+    assert.equal(attribute(html, "data-embed-after-play"), "false");
     assert.equal(attribute(html, "data-cached-placeholder"), "false");
     assert.equal(attribute(html, "data-cached-source"), "file:///tmp/cached-test.mp4");
     assert.equal(attribute(html, "data-cached-preload"), "metadata");

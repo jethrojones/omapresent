@@ -122,11 +122,12 @@ QJsonObject Settings::defaults() {
             {QStringLiteral("do_not_disturb"), true},
             {QStringLiteral("default_aspect"), QStringLiteral("16:9")},
             {QStringLiteral("single_monitor_notes"), false},
-            // Off by default: a save must not reach the network without being
-            // asked. Spec §4.8 still allows it, and turning this on restores
-            // the fetch-on-save behaviour; "Prepare for offline" is the
-            // explicit route either way.
-            {QStringLiteral("auto_prefetch_video"), false}
+            // On by default: spec §4.8 says a save resolves and caches embeds,
+            // and welcome.md tells the reader it does. The consent this used to
+            // protect is still there — the gate sits inside the explicit save
+            // path, so recovery and autosave never reach the network, and
+            // "Prepare for offline" remains the deliberate route.
+            {QStringLiteral("auto_prefetch_video"), true}
         }},
         // `export.pdf_paginated` used to live here. Spec §8 says a slide taller
         // than a page paginates and is never scaled, so the only other setting

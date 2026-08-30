@@ -112,6 +112,29 @@ if (fixtureParams.get("metrics") === "heading-fragments") {
         },
     ];
 }
+if (fixtureParams.get("metrics") === "cached-youtube-poster") {
+    const poster = fixtureParams.get("poster") ?? "";
+    let embedBaseCalls = 0;
+    globalThis.omapresentFixture.slides = [
+        { index: 0, markdown: "https://youtu.be/aqz-KE-bpKQ", recallKey: "", skip: false },
+    ];
+    // The cached thumbnail is useful even when no video file was downloaded.
+    // Do not add cachedFile here: this must take the deferred hosted path.
+    globalThis.omapresentFixture.media = {
+        "https://youtu.be/aqz-KE-bpKQ": {
+            host: "youtube",
+            poster,
+            status: "cached",
+        },
+    };
+    globalThis.omapresentHost = {
+        embedBase() {
+            embedBaseCalls += 1;
+            return "http://127.0.0.1:45123/0123456789abcdef/";
+        },
+    };
+    globalThis.omapresentFixture.cachedPosterEmbedBaseCalls = () => embedBaseCalls;
+}
 if (fixtureParams.get("metrics") === "interaction") {
     globalThis.omapresentHost = {
         state(payload) {
@@ -260,6 +283,21 @@ globalThis.addEventListener("load", () => setTimeout(() => {
         document.body.dataset.cachedPlaceholder = String(Boolean(document.querySelector(".op-media-loader")));
         document.body.dataset.cachedSource = cached?.getAttribute("src") ?? "";
         document.body.dataset.cachedPreload = cached?.preload ?? "";
+    }
+    if (fixtureParams.get("metrics") === "cached-youtube-poster") {
+        const loader = document.querySelector("button.op-media-loader.has-poster");
+        const poster = fixtureParams.get("poster") ?? "";
+        const hasRemoteSource = [...document.querySelectorAll("video[src], iframe[src]")]
+            .some(element => /^https?:\/\//i.test(element.getAttribute("src") ?? ""));
+        const externalResources = performance.getEntriesByType("resource")
+            .filter(entry => /^https?:\/\//i.test(entry.name));
+        document.body.dataset.cachedPosterRendered = String(Boolean(loader)
+            && loader.style.backgroundImage.includes(poster));
+        document.body.dataset.cachedPosterVideo = String(Boolean(document.querySelector("video[src]")));
+        document.body.dataset.cachedPosterRemoteSource = String(hasRemoteSource);
+        document.body.dataset.cachedPosterEmbedBaseCalls = String(
+            globalThis.omapresentFixture.cachedPosterEmbedBaseCalls());
+        document.body.dataset.cachedPosterExternalResources = String(externalResources.length);
     }
     if (fixtureParams.get("metrics") === "remote-image") {
         const hasRemoteSource = () => [...document.querySelectorAll("img[src]")]

@@ -214,13 +214,13 @@ Omapresent indexes your deck's folder (or the directory specified by `root:` in 
 
 # Video & Interactive Embeds
 
-https://www.youtube.com/watch?v=dQw4w9WgXcQ
+https://www.youtube.com/watch?v=aqz-KE-bpKQ
 
-A bare URL from a recognized video host on its own line becomes an embedded player.
+A bare URL from a recognized video host on its own line becomes a player. Nothing is fetched until you press Play, so opening a deck never contacts anyone.
 
 Omapresent natively recognizes YouTube, Vimeo, Loom, Descript, TikTok, X/Twitter, Instagram, Facebook, and direct video files (`.mp4`, `.webm`, `.mov`).
 
-Pressing `Space` plays and pauses the video. When playback finishes, the next `Space` advances the slide. On save, Omapresent pre-fetches video embeds into `.omapresent-cache/` for reliable offline presentation.
+Pressing `Space` plays and pauses the video. When playback finishes, the next `Space` advances the slide. Saving pre-fetches what each host allows into `.omapresent-cache/` for reliable offline presentation; a video that cannot be cached or embedded falls back to a QR code of its URL.
 
 ---
 

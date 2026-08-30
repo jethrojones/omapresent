@@ -1296,6 +1296,18 @@ private slots:
         Backend backend;
         QSignalSpy finishedSpy(&backend, &Backend::offlinePrefetchFinished);
 
+        // Saving prefetches by default now (spec §4.8, and welcome.md says so),
+        // so this case states the precondition it always relied on rather than
+        // inheriting it: with the setting off, a save still reaches nothing.
+        const QString settingsPath = deckDirectory.filePath(QStringLiteral("settings.toml"));
+        QFile settings(settingsPath);
+        QVERIFY(settings.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(settings.write("[presentation]\nauto_prefetch_video = false\n") > 0);
+        settings.close();
+        backend.settings()->setPath(settingsPath);
+        QVERIFY(!backend.settings()->boolValue(
+            QStringLiteral("presentation.auto_prefetch_video")));
+
         // Opening a deck reads the file and nothing else.
         backend.open(QUrl::fromLocalFile(deckPath));
         QCOMPARE(backend.offlineMediaUrls(),
@@ -1303,11 +1315,50 @@ private slots:
         QVERIFY(!backend.offlinePrefetchRunning());
         QCOMPARE(finishedSpy.count(), 0);
 
-        // So does saving it: presentation.auto_prefetch_video is off by default.
+        // So does saving it, while that setting says not to.
         backend.save();
         QTest::qWait(50);
         QVERIFY(!backend.offlinePrefetchRunning());
         QCOMPARE(finishedSpy.count(), 0);
+    }
+
+    void savingIsTheAskThatFetches() {
+        // The other half of the case above: with the setting at its default,
+        // an explicit save is what starts the fetch (spec §4.8, and what
+        // welcome.md tells the reader). The media is a local file, so this
+        // exercises the whole path without a single external request.
+        QTemporaryDir deckDirectory;
+        QVERIFY(deckDirectory.isValid());
+
+        QFile clip(deckDirectory.filePath(QStringLiteral("clip.mp4")));
+        QVERIFY(clip.open(QIODevice::WriteOnly));
+        QVERIFY(clip.write(QByteArray(64, 'v')) > 0);
+        clip.close();
+
+        const QString deckPath = deckDirectory.filePath(QStringLiteral("local-media.md"));
+        QFile deck(deckPath);
+        QVERIFY(deck.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(deck.write("# Watch\n\nclip.mp4\n") > 0);
+        deck.close();
+
+        Backend backend;
+        QSignalSpy finishedSpy(&backend, &Backend::offlinePrefetchFinished);
+
+        // Nothing is configured away: this is the shipped default.
+        QVERIFY(backend.settings()->boolValue(
+            QStringLiteral("presentation.auto_prefetch_video")));
+
+        backend.open(QUrl::fromLocalFile(deckPath));
+        QCOMPARE(backend.offlineMediaUrls(), QStringList{QStringLiteral("clip.mp4")});
+        // Opening still asks for nothing.
+        QCOMPARE(finishedSpy.count(), 0);
+
+        backend.save();
+        QVERIFY(finishedSpy.count() > 0 || finishedSpy.wait(5000));
+        // It cached the file rather than failing at it.
+        QVERIFY(finishedSpy.takeFirst().constFirst().toStringList().isEmpty());
+        QVERIFY(QFileInfo::exists(
+            deckDirectory.filePath(QStringLiteral(".omapresent-cache"))));
     }
 
     void aDeckWithNoWebMediaHasNothingToPrepare() {

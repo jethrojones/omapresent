@@ -1,11 +1,13 @@
 <RCC>
     <qresource prefix="/renderer">
         <file>render.html</file>
+        <file>embed.html</file>
         <file>render.js</file>
         <file>deck.css</file>
         <file>deckparse.js</file>
         <file>layout.js</file>
         <file>media.js</file>
+        <file>embed.js</file>
         <file>vendor/markdown-it.mjs</file>
         <file>vendor/katex.mjs</file>
         <file>vendor/katex.css</file>

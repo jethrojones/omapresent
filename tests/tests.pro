@@ -15,6 +15,7 @@ SOURCES += \
     tst_omarchytheme.cpp \
     tst_videocache.cpp \
     tst_publisher.cpp \
+    tst_embedserver.cpp \
     tst_presentation.cpp \
     tst_settings.cpp \
     tst_webbundle.cpp \
@@ -28,6 +29,7 @@ SOURCES += \
     ../src/omarchytheme.cpp \
     ../src/videocache.cpp \
     ../src/publisher.cpp \
+    ../src/embedserver.cpp \
     ../src/presentation.cpp \
     ../src/renderhost.cpp \
     ../src/settings.cpp \
@@ -43,6 +45,7 @@ HEADERS += \
     ../src/omarchytheme.h \
     ../src/videocache.h \
     ../src/publisher.h \
+    ../src/embedserver.h \
     ../src/presentation.h \
     ../src/renderhost.h \
     ../src/settings.h \
