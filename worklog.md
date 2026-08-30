@@ -2208,3 +2208,19 @@ I added in the review round is the 550 the reviewer counted.
 **Tests:** Code-head CI run [33335059032](https://github.com/jethrojones/omapresent/actions/runs/33335059032) completed successfully. Job `build-and-test` passed in 3m22s, including all configured build, test, browser, package, and release-tarball checks.
 **Next:** No tag or release was created.
 **NEEDS:** nothing
+
+### 2026-08-30 15:01 PT — release (Claude Opus 5)
+**Task:** T41 v0.1.2 release preparation
+**Did:** Started. Read AGENTS.md, the vault startup sequence, spec §12 and §15
+milestone 9, `pkgbuild/RELEASING.md`, and the worklog. Clean worktree at
+`3e52ce7`, level with `origin/master`. `v0.1.1` is tagged at `cec9a76`
+with one published asset (`omapresent-0.1.1-1-x86_64.pkg.tar.zst`, 1132726
+bytes, sha256 `a38c601b…`). The version is declared in exactly two files:
+`pkgbuild/PKGBUILD:4` and `pkgbuild/omarchy-pkgs/omapresent/PKGBUILD:4`.
+Wrote `tasks/t41-v0.1.2-release.md` naming those two plus
+`.github/release-notes/v0.1.2.md` and this log as the only files in scope.
+**Tests:** Not run yet.
+**Next:** Verify every note claim against `v0.1.1..HEAD`, bump both PKGBUILDs,
+write the notes, run the full gate, build the package and hash the assets. No
+tag, push, release or package-fork change.
+**NEEDS:** nothing
