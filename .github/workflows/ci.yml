@@ -86,6 +86,13 @@ jobs:
           bash -n pkgbuild/PKGBUILD
           namcap pkgbuild/PKGBUILD
 
+      # release-checksums runs a few times a year, during a release, when a
+      # defect in it is most expensive and least likely to be noticed — it once
+      # told you to stage one of the two files it had just rewritten. Its
+      # self-test is offline and fixture-based, so it costs a second here.
+      - name: Release checksum tool is sound
+        run: pkgbuild/release-checksums self-test
+
       # A release tarball that is missing a file the PKGBUILD installs fails at
       # `makepkg` time on a user's machine, long after the tag is immutable.
       - name: Release tarball carries everything the package installs
