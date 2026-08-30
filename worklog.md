@@ -2201,3 +2201,10 @@ I added in the review round is the 550 the reviewer counted.
 **Tests:** `git diff --check` passes. Focused AudienceVideoPointerTest result: 4/4 passed.
 **Next:** No commit or push requested.
 **NEEDS:** nothing
+
+### 2026-08-30 14:00 PDT — release (Codex GPT-5)
+**Task:** Release handoff for the final audience-window fixes
+**Did:** Verified a clean tree ahead of `origin/master` by exactly `93d8180`, `c3533ec`, `1cc13bc`, and `4a4d925`, then pushed `master` through `4a4d925405030a43f010550866f3615d3b244784`.
+**Tests:** Code-head CI run [33335059032](https://github.com/jethrojones/omapresent/actions/runs/33335059032) completed successfully. Job `build-and-test` passed in 3m22s, including all configured build, test, browser, package, and release-tarball checks.
+**Next:** No tag or release was created.
+**NEEDS:** nothing
