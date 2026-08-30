@@ -744,6 +744,11 @@ struct Presentation::Private {
     bool shortcuts = false;
     bool active = false;
     bool mediaActive = false;
+    int mediaCount = 0;
+    // Spec §5.1: the audience window opens windowed. This is the presenter's
+    // own answer to `F` / `F11`, kept so a re-assignment restores it rather
+    // than resetting it.
+    bool audienceFullScreen = false;
     int elapsed = 0;
     QTimer clock;
 
@@ -873,6 +878,9 @@ void Presentation::start(int fromSlideIndex) {
     d->overview = false;
     d->notesOverlay = false;
     d->shortcuts = false;
+    // Every presentation starts as a window. Fullscreen is a thing you ask for
+    // during the talk, not a state the last talk leaves behind.
+    d->audienceFullScreen = false;
     d->nav.clearJump();
     d->nav.hideRecall();
     d->nav.gotoSlide(fromSlideIndex);
@@ -1027,10 +1035,19 @@ QStringList Presentation::outputs() const {
 void Presentation::toggleFullscreen() {
     if (!d->audienceWindow)
         return;
-    if (d->audienceWindow->visibility() == QWindow::FullScreen)
-        d->audienceWindow->showNormal();
-    else
+
+    d->audienceFullScreen = d->audienceWindow->visibility() != QWindow::FullScreen;
+    if (d->audienceFullScreen)
         d->audienceWindow->showFullScreen();
+    else
+        d->audienceWindow->showNormal();
+
+    // The presenter's control reads audienceFullScreen to label itself.
+    emit positionChanged();
+}
+
+bool Presentation::audienceFullScreen() const {
+    return d->audienceFullScreen;
 }
 
 void Presentation::toggleShortcuts() {
@@ -1046,7 +1063,7 @@ QStringList Presentation::shortcutReference() const {
         QStringLiteral("↑ ↓ PgUp PgDn\tScroll this slide"),
         QStringLiteral("Home / End\tFirst / last slide"),
         QStringLiteral("digits then Enter\tJump to a slide number"),
-        QStringLiteral("F\tFullscreen the audience window"),
+        QStringLiteral("F / F11\tFullscreen the audience window"),
         QStringLiteral("B / W\tBlack / white the audience screen"),
         QStringLiteral("O\tOverview grid; arrows and Enter to pick"),
         QStringLiteral("N\tNotes overlay (single screen)"),
@@ -1160,10 +1177,17 @@ bool Presentation::handleKey(int key, int modifiers, const QString &text) {
         return true;
 
     case Qt::Key_Tab:
+        // Spec §4.8: Tab moves focus between the players on the slide. A slide
+        // with no players has nothing to cycle, and claiming the key there
+        // would leave the presenter window's own controls unreachable from the
+        // keyboard — so it goes back to the window's focus chain instead.
+        if (d->mediaCount <= 0)
+            return false;
         emit runInView(d->masterRole(), call(QStringLiteral("focusNextMedia")));
         return true;
 
     case Qt::Key_F:
+    case Qt::Key_F11:
         toggleFullscreen();
         return true;
 
@@ -1245,6 +1269,7 @@ void Presentation::adoptState(const QString &role, const QJsonObject &state) {
     d->heading = state.value(QStringLiteral("heading")).toString();
     d->notesHtml = state.value(QStringLiteral("notesHtml")).toString();
     const int mediaCount = state.value(QStringLiteral("mediaCount")).toInt();
+    d->mediaCount = mediaCount;
     d->mediaActive = mediaCount > 0
         && state.value(QStringLiteral("mediaActive")).toBool(true);
 
@@ -1368,7 +1393,8 @@ void Presentation::assignMonitors() {
 
     if (!d->audienceWindow)
         d->audienceWindow = createWindow(QStringLiteral("qrc:/AudienceWindow.qml"));
-    placeWindow(d->audienceWindow, screens.value(assignment.audience));
+    placeWindow(d->audienceWindow, screens.value(assignment.audience),
+                d->audienceFullScreen);
 
     if (assignment.sharedOutput()) {
         // One screen: the audience window is the whole presentation and `N`
@@ -1382,7 +1408,8 @@ void Presentation::assignMonitors() {
     } else {
         if (!d->presenterWindow)
             d->presenterWindow = createWindow(QStringLiteral("qrc:/PresenterWindow.qml"));
-        placeWindow(d->presenterWindow, screens.value(assignment.presenter));
+        // The presenter window is chrome, and chrome is never fullscreen.
+        placeWindow(d->presenterWindow, screens.value(assignment.presenter), false);
         d->notesOverlay = false;
     }
 
@@ -1447,7 +1474,7 @@ QQuickWindow *Presentation::createWindow(const QString &source) {
     return window;
 }
 
-void Presentation::placeWindow(QQuickWindow *window, QScreen *screen) {
+void Presentation::placeWindow(QQuickWindow *window, QScreen *screen, bool fullScreen) {
     if (!window || !screen)
         return;
 
@@ -1459,7 +1486,16 @@ void Presentation::placeWindow(QQuickWindow *window, QScreen *screen) {
         window->setScreen(screen);
         window->setGeometry(screen->geometry());
     }
-    window->showFullScreen();
+
+    // Spec §5.1: this is an ordinary top-level window that happens to be
+    // showing a deck. It opens windowed so it can be tiled, moved, resized and
+    // shared like anything else on the desktop; `F` / `F11` is how it fills the
+    // output. On Wayland the geometry above is a request — a tiling compositor
+    // will place it, which is the point.
+    if (fullScreen)
+        window->showFullScreen();
+    else
+        window->showNormal();
     window->requestActivate();
 }
 

@@ -203,6 +203,10 @@ class Presentation : public QObject {
     Q_PROPERTY(bool notesOverlay READ notesOverlay NOTIFY positionChanged)
     Q_PROPERTY(bool shortcutsVisible READ shortcutsVisible NOTIFY positionChanged)
     Q_PROPERTY(bool singleOutput READ singleOutput NOTIFY activeChanged)
+    // Whether the audience window is fullscreen right now. It opens windowed
+    // (spec §5.1) and this follows `F` / `F11` from either window, so a control
+    // can show which state it is about to leave.
+    Q_PROPERTY(bool audienceFullScreen READ audienceFullScreen NOTIFY positionChanged)
 
 public:
     using WindowFactory = std::function<QQuickWindow *(const QString &source)>;
@@ -215,9 +219,13 @@ public:
     int slideCount() const;
     int elapsedSeconds() const;
 
-    // Opens the audience and presenter windows (spec §5.1). With two or more
-    // outputs the audience goes fullscreen on the external/non-primary one.
-    // With one output the audience fills it and `N` toggles a notes overlay.
+    // Opens the audience and presenter windows (spec §5.1). Both open windowed,
+    // not fullscreen: the audience is an ordinary top-level the compositor can
+    // tile and the user can move, resize and share. `F` or `F11` fullscreens it
+    // and puts it back, and that choice survives a monitor change.
+    // With two or more outputs the audience goes to the external/non-primary
+    // one. With one output the audience window is the whole presentation and
+    // `N` toggles a notes overlay over it.
     Q_INVOKABLE void start(int fromSlideIndex);
     Q_INVOKABLE void stop();
     Q_INVOKABLE void resetTimer();
@@ -285,6 +293,7 @@ public:
     bool notesOverlay() const;
     bool shortcutsVisible() const;
     bool singleOutput() const;
+    bool audienceFullScreen() const;
 
     // Called by the windows as their renderer pages come up and report back.
     Q_INVOKABLE void viewReady(const QString &role);
@@ -312,6 +321,10 @@ signals:
 
 private:
     void assignMonitors();
+    // `fullScreen` is the state to leave the window in. The audience carries
+    // the presenter's own choice across a re-assignment; the presenter window
+    // is never fullscreened.
+    void placeWindow(QQuickWindow *window, QScreen *screen, bool fullScreen);
     void inhibitIdle(bool on);       // hypridle / org.freedesktop.ScreenSaver
     void setDoNotDisturb(bool on);   // omarchy / makoctl / notification portal
 
@@ -327,7 +340,6 @@ private:
 
     QVector<PresentationOutput> currentOutputs() const;
     QQuickWindow *createWindow(const QString &source);
-    void placeWindow(QQuickWindow *window, QScreen *screen);
     void closeWindows();
 
     struct Private;

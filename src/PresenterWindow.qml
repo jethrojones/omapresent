@@ -187,6 +187,74 @@ Window {
 
                 Item { Layout.fillWidth: true }
 
+                // The audience window opens windowed (spec §5.1), so the state
+                // it is in has to be visible from here, and changeable without
+                // remembering a key. `F` and `F11` do the same thing.
+                Rectangle {
+                    id: fullScreenToggle
+                    objectName: "audienceFullScreenToggle"
+                    implicitWidth: fullScreenLabel.implicitWidth + presenter.baseFontSize * 1.6
+                    implicitHeight: fullScreenLabel.implicitHeight + presenter.baseFontSize * 0.8
+                    radius: 4
+                    color: "transparent"
+                    // Focus has to be visible, not just present: a keyboard user
+                    // needs to see where they are before they press Return.
+                    border.width: fullScreenToggle.activeFocus ? 2 : 1
+                    border.color: fullScreenToggle.activeFocus || fullScreenArea.containsMouse
+                        ? presenter.accent
+                        : presenter.muted
+
+                    // Reachable by Tab and by assistive tooling, not only by
+                    // the mouse.
+                    activeFocusOnTab: true
+                    Accessible.role: Accessible.Button
+                    Accessible.name: fullScreenLabel.text
+                    Accessible.description: presentation.audienceFullScreen
+                        ? "Return the audience window to a normal window"
+                        : "Make the audience window fill its output"
+                    Accessible.onPressAction: fullScreenToggle.activate()
+
+                    function activate() {
+                        presentation.toggleFullscreen();
+                    }
+
+                    Keys.onPressed: function(event) {
+                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                                || event.key === Qt.Key_Space) {
+                            fullScreenToggle.activate();
+                            event.accepted = true;
+                            return;
+                        }
+                        // Every other key still drives the talk while this has
+                        // focus, so tabbing to it is never a dead end.
+                        event.accepted = presentation.handleKey(event.key, event.modifiers,
+                                                                event.text);
+                    }
+
+                    Text {
+                        id: fullScreenLabel
+                        objectName: "audienceFullScreenLabel"
+                        anchors.centerIn: parent
+                        // Named for what pressing it does, not for where it is.
+                        text: presentation.audienceFullScreen ? "Windowed" : "Fullscreen"
+                        color: fullScreenToggle.activeFocus || fullScreenArea.containsMouse
+                            ? presenter.accent
+                            : presenter.muted
+                        font.pixelSize: presenter.baseFontSize
+                    }
+
+                    MouseArea {
+                        id: fullScreenArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            fullScreenToggle.forceActiveFocus();
+                            fullScreenToggle.activate();
+                        }
+                    }
+                }
+
                 Text {
                     text: (presentation.slideIndex + 1) + " / " + presentation.slideCount
                     color: presenter.foreground

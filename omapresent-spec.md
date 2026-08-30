@@ -314,13 +314,18 @@ quote, a QR survey link, a diagram you keep returning to.
 - "Present" opens **two separate top-level windows** (so Hyprland tiling / window
   rules treat them independently, and either can be screen-shared or captured in
   OBS on its own):
-  - **Audience window** — headings/media/lists only, themed, fills its output.
+  - **Audience window** — headings/media/lists only, themed, sized to its output.
   - **Presenter window** — current slide (scaled), next-slide preview, rendered
     speaker notes, elapsed timer (click to reset), wall clock, current
     slide x/count, and the list of recall-key bindings.
-- Monitor assignment: if ≥2 outputs, audience → the external/non-primary output
-  fullscreen, presenter → the other. If 1 output, audience fills it and
-  `N` toggles a notes overlay on the same screen.
+- **Both windows open windowed, not fullscreen.** The audience window is an
+  ordinary top-level: the compositor may tile it, and the user can move, resize
+  and share it like any other window. `F` or `F11` fullscreens it and puts it
+  back; that choice survives a monitor change. Present is something you can run
+  beside the editor while you write.
+- Monitor assignment: if ≥2 outputs, audience → the external/non-primary output,
+  presenter → the other. If 1 output, the audience window is the whole
+  presentation and `N` toggles a notes overlay on the same screen.
 - Projector hotplug mid-talk is handled: re-evaluate outputs and move windows.
 - The audience window is a normal shareable window — sharing just that window in
   a video call or OBS gives a clean full-frame capture.
@@ -334,7 +339,7 @@ quote, a QR survey link, a diagram you keep returning to.
 | ↑ / ↓ / PgUp / PgDn / wheel | Scroll the current slide (audience mirrors) |
 | Home / End | First / last slide |
 | digits then `Enter` | Jump to slide number |
-| `F` | Toggle fullscreen (audience) |
+| `F` / `F11` | Toggle fullscreen (audience) |
 | `B` | Black the audience screen (toggle) |
 | `W` | White the audience screen (toggle) |
 | `O` | Slide overview grid; arrows + `Enter` to pick |
@@ -595,7 +600,7 @@ replace · `Ctrl+B` / `Ctrl+I` / `Ctrl+K` bold/italic/link · `Super+F` fullscre
 · `F5` present from start · `Ctrl+Return` present from current slide.
 
 *Present:* `→`/`Space` next · `←` back · `↑`/`↓` scroll · `Home`/`End` first/last
-· digits+`Enter` jump · `F` fullscreen · `B` black · `W` white · `O` overview ·
+· digits+`Enter` jump · `F`/`F11` fullscreen · `B` black · `W` white · `O` overview ·
 `N` notes overlay · bound key = recall slide · `Esc` exit.
 
 ---

@@ -4,11 +4,15 @@
 #include <QPointer>
 #include <QQuickWindow>
 #include <QSet>
+#include <QScreen>
 #include <QtTest>
+
+#include <algorithm>
 
 #include "testrunner.h"
 #include "omarchytheme.h"
 #include "presentation.h"
+#include "renderhost.h"
 
 // Suite for src/presentation.h. Windows, DBus and the web engine are not
 // testable from here, so what is covered is the logic underneath them: where
@@ -37,6 +41,22 @@ private:
 
     static QJsonObject plainDeck(int slideCount) {
         return deck(QStringList(slideCount, QString()));
+    }
+
+    // Presentation re-places its windows on QGuiApplication's screen signals.
+    // Those come from the platform plugin, so a test asks for the same work by
+    // emitting one of them through the meta-object.
+    static QString presenterWindowSource() {
+        const QByteArray relative = QByteArrayLiteral("../src/PresenterWindow.qml");
+        QFile file(QFINDTESTDATA(relative.constData()));
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            return {};
+        return QString::fromUtf8(file.readAll());
+    }
+
+    static bool reassignOutputs() {
+        return QMetaObject::invokeMethod(qApp, "primaryScreenChanged",
+                                         Q_ARG(QScreen *, QGuiApplication::primaryScreen()));
     }
 
     static QJsonObject contentDeck(const QStringList &markdown) {
@@ -935,6 +955,300 @@ private slots:
         presentation.stop();
         QTRY_VERIFY_WITH_TIMEOUT(audience.isNull(), 5000);
         QVERIFY(!presentation.active());
+    }
+
+    // --- Window state (spec §5.1) -----------------------------------------
+
+    void audienceOpensAsAnOrdinaryWindow() {
+        // The whole point of T39: Present must not take over the display. A
+        // windowed top-level is what the compositor can tile, move and resize,
+        // and what a call can share as one window.
+        if (QGuiApplication::screens().isEmpty())
+            QSKIP("No screen is available for a presentation window.");
+
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(3));
+        QPointer<QQuickWindow> audience;
+        presentation.setWindowFactoryForTesting([&audience](const QString &source) {
+            auto *window = new QQuickWindow;
+            if (source == QStringLiteral("qrc:/AudienceWindow.qml"))
+                audience = window;
+            return window;
+        });
+        presentation.start(0);
+
+        QVERIFY(audience);
+        QCOMPARE(audience->visibility(), QWindow::Windowed);
+        QVERIFY(!presentation.audienceFullScreen());
+        QVERIFY(audience->isVisible());
+
+        // Windowed, but still its own top-level rather than a dialog.
+        QCOMPARE(audience->transientParent(), nullptr);
+        QCOMPARE(audience->modality(), Qt::NonModal);
+        QVERIFY(audience->flags().testFlag(Qt::Window));
+
+        presentation.stop();
+    }
+
+    void fullscreenGoesBothWays() {
+        if (QGuiApplication::screens().isEmpty())
+            QSKIP("No screen is available for a presentation window.");
+
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(3));
+        QPointer<QQuickWindow> audience;
+        presentation.setWindowFactoryForTesting([&audience](const QString &source) {
+            auto *window = new QQuickWindow;
+            if (source == QStringLiteral("qrc:/AudienceWindow.qml"))
+                audience = window;
+            return window;
+        });
+        presentation.start(0);
+        QVERIFY(audience);
+
+        presentation.toggleFullscreen();
+        QCOMPARE(audience->visibility(), QWindow::FullScreen);
+        QVERIFY(presentation.audienceFullScreen());
+
+        // And back: a presenter who fullscreens by accident has to be able to
+        // undo it with the same key.
+        presentation.toggleFullscreen();
+        QCOMPARE(audience->visibility(), QWindow::Windowed);
+        QVERIFY(!presentation.audienceFullScreen());
+
+        presentation.stop();
+    }
+
+    void f11IsTheSameKeyAsF() {
+        if (QGuiApplication::screens().isEmpty())
+            QSKIP("No screen is available for a presentation window.");
+
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(3));
+        QPointer<QQuickWindow> audience;
+        presentation.setWindowFactoryForTesting([&audience](const QString &source) {
+            auto *window = new QQuickWindow;
+            if (source == QStringLiteral("qrc:/AudienceWindow.qml"))
+                audience = window;
+            return window;
+        });
+        presentation.start(0);
+        QVERIFY(audience);
+
+        QVERIFY(presentation.handleKey(Qt::Key_F11, Qt::NoModifier, QString()));
+        QCOMPARE(audience->visibility(), QWindow::FullScreen);
+        QVERIFY(presentation.handleKey(Qt::Key_F11, Qt::NoModifier, QString()));
+        QCOMPARE(audience->visibility(), QWindow::Windowed);
+
+        // F is the documented key and must still do exactly this.
+        QVERIFY(presentation.handleKey(Qt::Key_F, Qt::NoModifier, QString()));
+        QCOMPARE(audience->visibility(), QWindow::FullScreen);
+        QVERIFY(presentation.handleKey(Qt::Key_F, Qt::NoModifier, QString()));
+        QCOMPARE(audience->visibility(), QWindow::Windowed);
+
+        presentation.stop();
+    }
+
+    void aMonitorChangeKeepsTheStateThePresenterChose() {
+        // Reassignment re-places the windows. A projector plugged in mid-talk
+        // must not undo the presenter's F11, and must not fullscreen a window
+        // they deliberately left windowed.
+        if (QGuiApplication::screens().isEmpty())
+            QSKIP("No screen is available for a presentation window.");
+
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(3));
+        QPointer<QQuickWindow> audience;
+        presentation.setWindowFactoryForTesting([&audience](const QString &source) {
+            auto *window = new QQuickWindow;
+            if (source == QStringLiteral("qrc:/AudienceWindow.qml"))
+                audience = window;
+            return window;
+        });
+        presentation.start(0);
+        QVERIFY(audience);
+
+        // assignMonitors ends by emitting positionChanged, so the spy is how
+        // this test knows the reassignment really happened and is not passing
+        // because nothing moved.
+        QSignalSpy reassigned(&presentation, &Presentation::positionChanged);
+
+        // Windowed survives a reassignment.
+        QVERIFY(reassignOutputs());
+        QVERIFY(reassigned.count() > 0);
+        QCOMPARE(audience->visibility(), QWindow::Windowed);
+        QVERIFY(!presentation.audienceFullScreen());
+
+        // So does fullscreen.
+        presentation.toggleFullscreen();
+        QCOMPARE(audience->visibility(), QWindow::FullScreen);
+        reassigned.clear();
+        QVERIFY(reassignOutputs());
+        QVERIFY(reassigned.count() > 0);
+        QCOMPARE(audience->visibility(), QWindow::FullScreen);
+        QVERIFY(presentation.audienceFullScreen());
+
+        presentation.stop();
+    }
+
+    void everyPresentationStartsWindowed() {
+        if (QGuiApplication::screens().isEmpty())
+            QSKIP("No screen is available for a presentation window.");
+
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(3));
+        presentation.setWindowFactoryForTesting(
+            [](const QString &) { return new QQuickWindow; });
+
+        presentation.start(0);
+        presentation.toggleFullscreen();
+        QVERIFY(presentation.audienceFullScreen());
+        presentation.stop();
+
+        // The next talk is a fresh window, not the last one's leftovers.
+        presentation.start(0);
+        QVERIFY(!presentation.audienceFullScreen());
+        presentation.stop();
+    }
+
+    void theAudienceIsWindowedOnWhicheverOutputItLandsOn() {
+        // Which output the audience takes is assignOutputs' decision and is
+        // covered by the cases above; a second screen cannot be synthesised on
+        // the offscreen platform. What is asserted here is the part that does
+        // not depend on the screen count: the state it is placed in.
+        if (QGuiApplication::screens().isEmpty())
+            QSKIP("No screen is available for a presentation window.");
+
+        const MonitorAssignment twoOutputs =
+            assignOutputs({output("eDP-1", true), output("HDMI-A-1")});
+        QCOMPARE(twoOutputs.audience, 1);
+        QVERIFY(!twoOutputs.sharedOutput());
+
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(2));
+        QStringList sources;
+        QPointer<QQuickWindow> audience;
+        presentation.setWindowFactoryForTesting(
+            [&sources, &audience](const QString &source) {
+                sources.append(source);
+                auto *window = new QQuickWindow;
+                if (source == QStringLiteral("qrc:/AudienceWindow.qml"))
+                    audience = window;
+                return window;
+            });
+        presentation.start(0);
+
+        QVERIFY(sources.contains(QStringLiteral("qrc:/AudienceWindow.qml")));
+        QVERIFY(audience);
+        QCOMPARE(audience->visibility(), QWindow::Windowed);
+        QCOMPARE(audience->screen(), QGuiApplication::screens().value(0));
+
+        presentation.stop();
+    }
+
+    void bothFullscreenKeysAreInTheReference() {
+        Presentation presentation;
+        const QStringList reference = presentation.shortcutReference();
+        const auto fullscreenRow = std::find_if(
+            reference.cbegin(), reference.cend(), [](const QString &row) {
+                return row.contains(QStringLiteral("Fullscreen"));
+            });
+        QVERIFY(fullscreenRow != reference.cend());
+        QVERIFY(fullscreenRow->startsWith(QStringLiteral("F / F11\t")));
+    }
+
+    void thePresenterCarriesTheFullscreenControl() {
+        // PresenterWindow.qml pulls in QtWebEngine, which cannot be
+        // instantiated in this binary, so the declaration is asserted the same
+        // way the other window-identity cases assert theirs.
+        const QString presenter = presenterWindowSource();
+        QVERIFY(!presenter.isEmpty());
+
+        QVERIFY(presenter.contains(QStringLiteral("objectName: \"audienceFullScreenToggle\"")));
+        QVERIFY(presenter.contains(QStringLiteral("presentation.toggleFullscreen()")));
+        // It names the state it moves to, so it is readable at a glance.
+        QVERIFY(presenter.contains(
+            QStringLiteral("presentation.audienceFullScreen ? \"Windowed\" : \"Fullscreen\"")));
+    }
+
+    void theFullscreenControlIsUsableWithoutAMouse() {
+        const QString presenter = presenterWindowSource();
+        QVERIFY(!presenter.isEmpty());
+
+        // A button, and one that says what it is, for anything reading the
+        // window through the accessibility bridge rather than looking at it.
+        QVERIFY(presenter.contains(QStringLiteral("Accessible.role: Accessible.Button")));
+        QVERIFY(presenter.contains(QStringLiteral("Accessible.name: fullScreenLabel.text")));
+        QVERIFY(presenter.contains(QStringLiteral("Accessible.description:")));
+        QVERIFY(presenter.contains(
+            QStringLiteral("Accessible.onPressAction: fullScreenToggle.activate()")));
+
+        // Reachable by Tab, activated by Return, Enter or Space.
+        QVERIFY(presenter.contains(QStringLiteral("activeFocusOnTab: true")));
+        QVERIFY(presenter.contains(QStringLiteral("event.key === Qt.Key_Return")));
+        QVERIFY(presenter.contains(QStringLiteral("event.key === Qt.Key_Enter")));
+        QVERIFY(presenter.contains(QStringLiteral("event.key === Qt.Key_Space")));
+
+        // Focus is visible, and the mouse still works exactly as it did.
+        QVERIFY(presenter.contains(
+            QStringLiteral("border.width: fullScreenToggle.activeFocus ? 2 : 1")));
+        QVERIFY(presenter.contains(QStringLiteral("fullScreenArea.containsMouse")));
+        QVERIFY(presenter.contains(QStringLiteral("cursorShape: Qt.PointingHandCursor")));
+
+        // Focusing the control must not strand the presenter: anything that is
+        // not an activation key still drives the talk.
+        QVERIFY(presenter.contains(QStringLiteral(
+            "event.accepted = presentation.handleKey(event.key, event.modifiers,")));
+    }
+
+    void tabReachesTheChromeWhenTheSlideHasNoPlayers() {
+        // Spec §4.8 gives Tab to the players on the slide. With none there is
+        // nothing to cycle, and claiming the key would leave the presenter's
+        // own controls unreachable from the keyboard.
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(2));
+
+        QVERIFY(!presentation.handleKey(Qt::Key_Tab, Qt::NoModifier, QString()));
+
+        // A slide that does have players keeps Tab.
+        presentation.audienceHost()->state(QStringLiteral(
+            "{\"slideIndex\":0,\"slideCount\":2,\"mediaCount\":2}"));
+        QVERIFY(presentation.handleKey(Qt::Key_Tab, Qt::NoModifier, QString()));
+
+        // And gives it back when the talk moves to a slide without them.
+        presentation.audienceHost()->state(QStringLiteral(
+            "{\"slideIndex\":1,\"slideCount\":2,\"mediaCount\":0}"));
+        QVERIFY(!presentation.handleKey(Qt::Key_Tab, Qt::NoModifier, QString()));
+    }
+
+    void theStartCommentDescribesWhatStartDoes() {
+        // src/presentation.h is what another agent reads before calling start().
+        // It said the audience goes fullscreen, which stopped being true.
+        const QByteArray relative = QByteArrayLiteral("../src/presentation.h");
+        QFile file(QFINDTESTDATA(relative.constData()));
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString header = QString::fromUtf8(file.readAll());
+
+        QVERIFY(header.contains(QStringLiteral("Both open windowed")));
+        QVERIFY(!header.contains(
+            QStringLiteral("the audience goes fullscreen on the external/non-primary one")));
+    }
+
+    void thePresentKeyListNamesBothFullscreenKeys() {
+        // The Ctrl+? sheet in the editor is the other place a user reads these.
+        const QByteArray relative = QByteArrayLiteral("../src/Main.qml");
+        QFile file(QFINDTESTDATA(relative.constData()));
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString editor = QString::fromUtf8(file.readAll());
+
+        QVERIFY(editor.contains(QStringLiteral("F / F11  Fullscreen the audience window")));
     }
 
     void presenterAndEditorRemainSeparateWindowDeclarations() {
