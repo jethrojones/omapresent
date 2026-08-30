@@ -2038,3 +2038,166 @@ below. Renderer suite 45/45, three consecutive clean runs.
 **Tests:** T38 focused suite — 15/15. Renderer suite — 48/48 three times. Full host gate — 541 C++ + 48 renderer = 589/589. `git diff --check` passed. GitHub Actions run 33318379764 for `201f5a9` succeeded; build-and-test succeeded with no failures.
 **Next:** User live-check of the sample deck.
 **NEEDS:** Physical audience-window confirmation only.
+
+### 2026-08-30 09:05 PT — app-shell (Claude Opus 5)
+**Task:** T39 the audience window opens windowed
+**Did:** Wrote `tasks/t39-windowed-audience.md`. The read-only trace found one
+cause: `Presentation::placeWindow` calls `showFullScreen()` unconditionally
+(`src/presentation.cpp:1462`) for both present windows, and nothing else in the
+app decides window state — `AudienceWindow.qml` deliberately leaves it to C++.
+No existing test asserts window visibility, so nothing pins the old behaviour.
+**Tests:** Baseline gate green at `aa6051b` before I started.
+**Next:** Remember the fullscreen choice across monitor reassignment, windowed by
+default, F11 parity, a presenter control, then the spec text.
+**NEEDS:** nothing yet
+
+### 2026-08-30 13:08 PDT — t40-audience-pointer (Codex GPT-5)
+**Task:** T40 audience video pointer acceptance
+**Did:** Started a production-QML QtWebEngine pointer integration test. T39-owned window-state changes remain unstaged and untouched.
+**Tests:** Pending focused audience pointer test and desktop-safe gate.
+**Next:** Run the new test against the current audience QML before any product change.
+**NEEDS:** nothing
+
+### 2026-08-30 13:15 PT — app-shell (Claude Opus 5)
+**Task:** T39 the audience window opens windowed
+**Did:** Present now opens the audience as an ordinary top-level window.
+- `Presentation::placeWindow` takes the state to leave the window in rather than
+  always calling `showFullScreen()`; the audience gets the presenter's own
+  choice, the presenter window is never fullscreened.
+- `Presentation::Private::audienceFullScreen` remembers that choice, so a
+  monitor reassignment restores it instead of resetting it. `start()` clears it,
+  so every talk begins windowed.
+- `toggleFullscreen()` records the decision and emits `positionChanged`;
+  `audienceFullScreen` is a new read-only property for the control to read.
+- `F11` joins `F` in `handleKey`, and the on-screen reference says "F / F11".
+- `PresenterWindow.qml` has a Fullscreen/Windowed toggle beside the wall clock,
+  named for the state it moves to.
+- Spec §5.1 said both "audience → the external/non-primary output fullscreen"
+  and "The audience window is a normal shareable window". §5.1, the §5.2 key
+  table and the §13 reference now say the same thing as the code.
+**Tests:** Eight new cases in `tests/tst_presentation.cpp` — default Windowed,
+both toggle directions, F11 parity with F, reassignment preserving both states,
+a fresh start being windowed, placement state, the shortcut text, and the
+presenter control. I checked they are not vacuous: reverting `placeWindow` to
+the old unconditional `showFullScreen()` fails six of them, and the hotplug case
+spies on `positionChanged` so it cannot pass without the reassignment running.
+All C++ suites green (549 cases, 0 failed; PresentationTest 71). Renderer suites
+48/48. `./bin/test` as a whole exits 2, on `tests/tst_audience_video_pointer.cpp`
+— an untracked T40 file that includes a QtWebEngineQuick private header which is
+not installed. Not mine and not touched by this change; I ran the C++ suites from
+the binary built from my final sources instead.
+**Live check on Hyprland:** F5 opened the audience tiled beside the editor at
+1901x2106, `fullscreen=0`. `F` fullscreened it to 3840x2160 and put it back,
+with the editor untouched. `Esc` closed it. Screenshot:
+`/tmp/claude-1000/-home-jethro-projects-omapresent/857540a4-fc78-44cc-a730-8297c1738c08/scratchpad/t39-windowed.png`
+**Next:** nothing in T39.
+**NEEDS:** `src/Main.qml:257` (not a T39 file). The editor binds
+`["Meta+F", "F11"]` with `context: Qt.ApplicationShortcut`, which fires whichever
+window of the application has focus. I confirmed on the live desktop that with
+the audience window active, `F11` fullscreens the *editor* and never reaches
+`Presentation::handleKey`. `F` is unaffected and works. The fix is to give that
+shortcut `context: Qt.WindowShortcut` — "fullscreen this window" is a window
+shortcut, not an application one. Until then F11 parity is real in the key
+handler and its tests, but unreachable while an editor window exists.
+
+### 2026-08-30 13:40 PT — app-shell (Claude Opus 5)
+**Task:** T39 closeout — the editor no longer steals F11
+**Did:** Ownership was extended to `src/Main.qml` after the live check found the
+conflict. `src/Main.qml:256` bound `["Meta+F", "F11"]` with
+`context: Qt.ApplicationShortcut`. Qt fires an application shortcut whenever
+*any* window of the application is active, so with the audience window focused
+the editor's binding consumed F11 and `Presentation::handleKey` never saw it.
+It is `Qt.WindowShortcut` now, which is what "fullscreen this window" means, and
+the Shortcut carries `objectName: "fullScreenShortcut"` so a test can find it.
+`F` was never affected — it is not an application shortcut.
+**Tests:** `theEditorFullscreenShortcutCannotStealF11FromTheAudience` in
+`tests/tst_omapresent.cpp` instantiates Main.qml, finds the shortcut and asserts
+its context is `Qt::WindowShortcut` and not `Qt::ApplicationShortcut`, and that
+both `F11` and `Meta+F` are still bound so the editor keeps its own key. Putting
+`Qt.ApplicationShortcut` back fails it, so it is not vacuous. All nine T39 cases
+pass.
+**Live check on Hyprland, both directions:**
+- audience active + `F11` → audience 3840x2160 `fs=2`, editor untouched `fs=0`;
+  again → audience back to 1901x2106 `fs=0`
+- editor active + `F11` → editor `fs=2`, audience untouched `fs=0`; again → back
+- `F5` opens the audience tiled beside the editor, `fs=0`; `Esc` closes it
+Screenshots: `t39-windowed.png`, `t39-f11-fixed.png` under the session scratchpad.
+**Gate:** `./bin/build` clean. `./bin/test` exits 1 on one failure that is not
+mine — `AudienceVideoPointerTest::audiencePointerReachesDeferredYoutubeLoader`,
+the untracked T40 suite, which builds `AudienceWindow.qml` directly with its own
+geometry and `show()` and never reaches `placeWindow`, so T39 cannot affect it.
+Every other suite is green: 549 C++ cases including PresentationTest 71 and
+OmapresentTest 47, and renderer 48/48.
+**Cleanup:** every Omapresent process and window I launched is gone. One window
+I did not launch is still running: `./build/omapresent ~/Downloads/testomapresent.md`,
+pid 1605367. I left it alone.
+**Next:** nothing in T39.
+**NEEDS:** nothing. The F11 NEEDS in my previous entry is resolved by this one.
+
+### 2026-08-30 13:27 PDT — t40-audience-pointer (Codex GPT-5)
+**Task:** T40 audience video pointer acceptance
+**Did:** Moved the key-focus item off the page hit area and attached its wheel handler to the production WebEngineView. Split the regression into native childAt ownership and deterministic DOM button activation. The DOM proof requires the preparing mutation and tokenized loopback iframe. The existing CSS hover rule is unchanged.
+**Tests:** Focused `AudienceVideoPointerTest` — 4/4 pass in a host-capable run. Full `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build && QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` — exit 0; C++ and renderer suites pass (renderer 48/48). `git diff --check` passes.
+**Next:** Physical hardware hover and click acceptance on the real audience window.
+**NEEDS:** QtWebEngine did not accept QTest synthetic pointer delivery on this host. No physical visual hover evidence was collected.
+
+### 2026-08-30 14:20 PT — app-shell (Claude Opus 5)
+**Task:** T39 review corrections
+**Correction to my earlier entries:** I reported the pre-T40 green C++ total as
+549. It was **550**. The earlier entries stay as written; this line is the
+correction.
+**Did:** Fixed the five review findings inside T39's files.
+- `src/Main.qml`: the `Ctrl+?` sheet said `F  Fullscreen` under Present. It now
+  says `F / F11  Fullscreen the audience window`, matching §5.2 and §13.
+- `src/presentation.h`: the `start()` comment still told the next reader that
+  the audience goes fullscreen. It now says both windows open windowed, that
+  `F` / `F11` toggles the audience, and that the choice survives a monitor
+  change.
+- `src/PresenterWindow.qml`: the Fullscreen/Windowed control was mouse-only. It
+  is now `Accessible.role: Accessible.Button` with a name, a description that
+  changes with the state, and `Accessible.onPressAction`; it takes Tab focus,
+  activates on Return, Enter or Space, and shows focus with a thicker accent
+  border. The mouse path and the label state are unchanged, and every
+  non-activation key still goes to `presentation.handleKey`, so focusing the
+  control is not a dead end.
+- `src/presentation.cpp`: Tab could never reach that control, because
+  `handleKey` claimed Tab unconditionally for `focusNextMedia`. It now claims
+  Tab only when the slide actually has players — `Private::mediaCount`, set from
+  the renderer's state — and otherwise leaves it to the window's focus chain.
+  Spec §4.8 is preserved: Tab still cycles players wherever there are any.
+- `tasks/t39-windowed-audience.md`: ownership now lists `src/Main.qml` and
+  `tests/tst_omapresent.cpp`; two more required behaviours and the new test
+  cases are written down; the stamp is the full required form.
+**Tests:** Four new cases in `tests/tst_presentation.cpp` —
+`theFullscreenControlIsUsableWithoutAMouse`,
+`tabReachesTheChromeWhenTheSlideHasNoPlayers` (a real behavioural case driving
+state through `audienceHost()->state()`), `theStartCommentDescribesWhatStartDoes`
+and `thePresentKeyListNamesBothFullscreenKeys`. All 13 T39 cases pass.
+`git diff --check` clean.
+**Next:** nothing in T39.
+**NEEDS:** nothing.
+
+### 2026-08-30 13:44 PT — t40-audience-pointer (Codex GPT-5)
+**Task:** T40 review fixes
+**Did:** Required exactly one 32-hex token path segment before `embed.html`. Unknown `OMAPRESENT_TEST_SUITE` now reports the name to stderr and exits 2. Added the required task attribution stamp.
+**Tests:** Focused `AudienceVideoPointerTest` — 4/4 pass. Unknown-suite self-check with `DefinitelyNotASuite` exits 2 and prints the expected report. `git diff --check` passes.
+**Next:** No commit or push requested.
+**NEEDS:** nothing
+
+### 2026-08-30 14:30 PT — app-shell (Claude Opus 5)
+**Task:** T39 gate result after the review corrections
+**Did:** Nothing further; this records the gate. The T40 pointer suite that was
+failing earlier has since landed green, so `./bin/test` now exits 0 for the
+first time this session: 558 C++ cases passing and renderer 48/48. That total
+checks out against the correction above — 558 less T40's 4 and less the 4 cases
+I added in the review round is the 550 the reviewer counted.
+**Tests:** Full gate exit 0. `git diff --check` clean.
+**Next:** nothing in T39.
+**NEEDS:** nothing.
+
+### 2026-08-30 13:53 PT — t40-audience-pointer (Codex GPT-5)
+**Task:** T40 comment correction
+**Did:** Updated the audience header comment to describe an independent window whose compositor-managed size the renderer fills. Behavior is unchanged.
+**Tests:** `git diff --check` passes. Focused AudienceVideoPointerTest result: 4/4 passed.
+**Next:** No commit or push requested.
+**NEEDS:** nothing
