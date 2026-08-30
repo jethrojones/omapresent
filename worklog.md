@@ -2224,3 +2224,49 @@ Wrote `tasks/t41-v0.1.2-release.md` naming those two plus
 write the notes, run the full gate, build the package and hash the assets. No
 tag, push, release or package-fork change.
 **NEEDS:** nothing
+
+### 2026-08-30 15:04 PT — release (Claude Opus 5)
+**Task:** T41 v0.1.2 release preparation
+**Did:** Staged v0.1.2 locally. Bumped `pkgver` to 0.1.2 in
+`pkgbuild/PKGBUILD` and `pkgbuild/omarchy-pkgs/omapresent/PKGBUILD` and reset
+both checksums to the zero placeholder — the real one cannot exist until the tag
+is pushed, as in v0.1.0 and v0.1.1. Wrote `.github/release-notes/v0.1.2.md`.
+Release commit `0c67344`; task-file commit `2bb830c`.
+
+Every note claim was checked against `v0.1.1..HEAD` (23 commits): windowed
+resizable audience with preserved monitor placement (`93d8180`); `F`/`F11`
+plus a Tab-reachable presenter control carrying `Accessible.role`, `name`,
+`description` and `onPressAction` (`93d8180`, `c3533ec`); pointer overlay
+removed so players get hover and click (`1cc13bc`,
+`tests/tst_audience_video_pointer.cpp`); local images embedded as data URLs
+because WebEngine blocks `file://` from the `qrc` origin (`6180faf`),
+recovered decks resolving assets from their own directory (`7578459`), seven
+images tiling 4+3 (`d63bdb9`), host-theme-independent image tests
+(`4ff2463`); YouTube through a tokenized localhost shim after explicit
+activation, fixing player error 153 (`a5c3394`) and a bridge race
+(`201f5a9`); consecutive headings ordered with slide content (`966a51f`).
+
+Two requested items were **dropped as unsupported**. No commit in
+`v0.1.1..HEAD` touches the live editor preview — the only `Main.qml` and
+`backend.cpp` changes are fullscreen scoping, Actions-menu width and the
+recovered-asset base. None changes recall or scrolling behaviour either:
+`34306d8` is README wording about behaviour that already shipped, `scrollTop`
+is untouched, and the recall lines in the video commits only strip shim frames
+from an overlay.
+**Tests:** `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build` exit 0.
+`QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` exit 0: 16 C++
+suites totalling 558 passed, 0 failed, 0 skipped, 0 blacklisted; renderer 48
+tests, 48 passed, 0 failed, 0 skipped. Package built through the PKGBUILD's
+documented `OMAPRESENT_SRC` local path (the tag-archive path cannot run before
+the tag exists). `namcap` on the PKGBUILD reports nothing; on the package, the
+seven accepted warnings only.
+
+Staged asset: `pkgbuild/omapresent-0.1.2-1-x86_64.pkg.tar.zst`, 1151819 bytes,
+sha256 `7dbf7b5cec44a4154d505108b5fa9acfc559ff8f6ae8be09b44239243b28913b`.
+Untracked by design — `.gitignore` excludes `*.pkg.tar.*`.
+**Next:** Stopped, as instructed. No tag, no push, no GitHub release, no change
+to the Omarchy fork or PR #235.
+**NEEDS:** The staged asset's sha256 is **not** the source checksum the PKGBUILD
+needs. That one only exists after `v0.1.2` is pushed, via
+`pkgbuild/release-checksums v0.1.2`, which then needs its own commit on master
+before the release is published.
