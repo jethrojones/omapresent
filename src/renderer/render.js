@@ -4,6 +4,7 @@ import { mediaDecision, youtubeVideoId } from "./media.js";
 import {
     createShimRegistry, embedStrategy, isFromShim, needsEmbedOrigin,
     playerMessage, resolveEmbedBase, shimEmbedUrl,
+    waitForEmbedBridge,
 } from "./embed.js";
 import ir from "./vendor/markdown-it.mjs";
 import katex from "./vendor/katex.mjs";
@@ -13,6 +14,7 @@ const root = document.getElementById("deck");
 const roleValues = new Set(["audience", "presenter", "editor", "export", "web"]);
 const scrollPositions = new Map();
 const deferredPlayers = new WeakMap();
+const deferredBridgeWaits = new WeakMap();
 const shimListeners = createShimRegistry();
 
 let deck = { mode: "preview", slides: [] };
@@ -380,13 +382,6 @@ function playerElement(decision, allowRemote = false, requestPlayback = false) {
     return player;
 }
 
-// True when a host is present to ask. A published bundle has no bridge, and
-// must decide what to build in the same turn as the click.
-function hasEmbedBridge() {
-    const host = globalThis.omapresentHost;
-    return Boolean(host && typeof host.embedBase === "function");
-}
-
 // Spec §4.8's last resort: the video will not play here, so show where it is.
 function embedFallbackElement(decision) {
     const container = qrElement(decision.value);
@@ -447,6 +442,40 @@ function releaseShimListeners(within) {
     return shimListeners.release(within);
 }
 
+// A new slide or recall overlay removes deferred-player buttons too. Cancel
+// their short bridge polls at the same boundary as shim message listeners, so
+// a stale page cannot activate a player after navigation.
+function releaseDeferredBridgeWaits(within) {
+    if (!within)
+        return 0;
+    const loaders = [...(within.querySelectorAll?.("button.op-media-loader") ?? [])];
+    if (within.matches?.("button.op-media-loader"))
+        loaders.push(within);
+    let released = 0;
+    for (const loader of loaders) {
+        const wait = deferredBridgeWaits.get(loader);
+        if (!wait)
+            continue;
+        wait.cancel();
+        deferredBridgeWaits.delete(loader);
+        released += 1;
+    }
+    return released;
+}
+
+function setDeferredPlayerPreparing(loader, preparing) {
+    loader.classList.toggle("is-preparing", preparing);
+    loader.disabled = preparing;
+    loader.setAttribute("aria-busy", preparing ? "true" : "false");
+    if (preparing)
+        loader.dataset.pending = "true";
+    else
+        delete loader.dataset.pending;
+    const detail = loader.querySelector(".op-media-loader-detail");
+    if (detail)
+        detail.textContent = preparing ? "Preparing video" : "Loads remote media";
+}
+
 function shimFrameElement(decision, url, base) {
     const frame = document.createElement("iframe");
     frame.src = url;
@@ -487,24 +516,37 @@ function activateDeferredPlayer(loader) {
         return frame;
     };
 
-    // Only a hosted embed needs an origin, and only the app has a host to ask.
-    // Everything else — a cached file, a local file, a direct video URL, another
-    // provider's embed — is decided in this turn and never starts the server.
-    if (needsEmbedOrigin(decision) && hasEmbedBridge()) {
+    // Only qrc pages can race QWebChannel's first handshake. A published page
+    // keeps its existing immediate result: http(s) embeds directly, while a
+    // file bundle gives its QR/open fallback without waiting. Cached files and
+    // every non-YouTube player also stay in the immediate path below.
+    if (needsEmbedOrigin(decision) && window.location.protocol === "qrc:") {
         if (loader.dataset.pending === "true")
             return null;
-        loader.dataset.pending = "true";
-        resolveEmbedBase(globalThis.omapresentHost).then(base => {
-            if (!loader.isConnected)
+        setDeferredPlayerPreparing(loader, true);
+        const wait = waitForEmbedBridge(() => globalThis.omapresentHost);
+        deferredBridgeWaits.set(loader, wait);
+        wait.promise.then(host => {
+            if (deferredBridgeWaits.get(loader) !== wait || !loader.isConnected)
                 return;
-            loader.dataset.pending = "false";
-            const strategy = strategyFor(base);
-            if (strategy === "shim")
-                buildShim(base);
-            else if (strategy === "fallback")
+            deferredBridgeWaits.delete(loader);
+            if (!host) {
+                setDeferredPlayerPreparing(loader, false);
                 replaceWithFallback(loader, decision);
-            else
-                finishDeferredPlayer(loader, decision);
+                return;
+            }
+            resolveEmbedBase(host).then(base => {
+                if (!loader.isConnected)
+                    return;
+                setDeferredPlayerPreparing(loader, false);
+                const strategy = strategyFor(base);
+                if (strategy === "shim")
+                    buildShim(base);
+                else if (strategy === "fallback")
+                    replaceWithFallback(loader, decision);
+                else
+                    finishDeferredPlayer(loader, decision);
+            });
         });
         return null;
     }
@@ -820,9 +862,11 @@ function renderCurrent() {
     // A recall overlay carries a whole slide, so it can carry a shim frame too.
     // Its listeners go when it does, rather than outliving the element.
     document.querySelectorAll(".op-blank-overlay, .op-recall-overlay").forEach(element => {
+        releaseDeferredBridgeWaits(element);
         releaseShimListeners(element);
         element.remove();
     });
+    releaseDeferredBridgeWaits(root);
     releaseShimListeners(root);
     root.replaceChildren();
     if (!slides.length) {
@@ -861,6 +905,7 @@ function renderOverlays() {
     // A recall overlay carries a whole slide, so it can carry a shim frame too.
     // Its listeners go when it does, rather than outliving the element.
     document.querySelectorAll(".op-blank-overlay, .op-recall-overlay").forEach(element => {
+        releaseDeferredBridgeWaits(element);
         releaseShimListeners(element);
         element.remove();
     });

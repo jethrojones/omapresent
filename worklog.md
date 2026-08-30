@@ -2004,9 +2004,30 @@ below. Renderer suite 45/45, three consecutive clean runs.
 **Next:** Host-capable Chromium must run the browser suite.
 **NEEDS:** Host-capable Chromium sandbox for DOM proof.
 
+### 2026-08-30 07:37 PDT - t38-video-race (Codex GPT-5)
+**Task:** T38 presentation video bridge race
+**Did:** Started after confirming the presentation bridge is already a valid QML property. The scope is delayed WebChannel availability during an explicit YouTube activation.
+**Tests:** Not run yet.
+**Next:** Add a bounded bridge wait and deterministic renderer tests.
+**NEEDS:** nothing
+
+### 2026-08-30 07:41 PDT - t38-video-race (Codex GPT-5)
+**Task:** T38 presentation video bridge race
+**Did:** Added a bounded qrc-only WebChannel bridge wait for explicitly activated YouTube loaders. A late host uses the existing tokenized loopback shim. A missing host uses the existing QR/open fallback. Slide and recall teardown cancel pending waits. Static files and web bundles remain immediate.
+**Tests:** `node --test tests/renderer/embed.test.mjs` — 14/14 pass. `node tests/renderer/suite.mjs` — 48/48 pass. `git diff --check` passes.
+**Next:** No commit or push requested.
+**NEEDS:** nothing
+
 ### 2026-08-30 07:56 PDT - t37-bento (Codex GPT-5)
 **Task:** T37 interaction recall timing follow-up
 **Did:** Made the interaction test wait for the non-empty `data-recall-after-goto-slide` DOM state before applying the unchanged recall assertions. Product and fixture behavior are unchanged.
 **Tests:** `node tests/renderer/suite.mjs` ran 3 times; all 3 were blocked by Chromium `SIGTRAP` with Crashpad `setsockopt: Operation not permitted`. The desktop-safe full gate built successfully. `./bin/test` reached 44 passed and 2 failed in `OmapresentTest` from loopback `server.listen()` failures, plus existing renderer Chromium `SIGTRAP`, PDF Chromium sandbox shutdown, EmbedServer loopback, and WebBundle loopback failures.
 **Next:** Host-capable Chromium and loopback environment are required for a green full gate.
+**NEEDS:** nothing
+
+### 2026-08-30 07:57 PDT - t38-video-race (Codex GPT-5)
+**Task:** T38 browser regression follow-up
+**Did:** Added a Chromium DOM regression that clicks before a delayed bridge, proves one tokenized loopback activation after repeated clicks, and proves rerender cancellation prevents a stale replacement.
+**Tests:** `node --test tests/renderer/embed.test.mjs` — 15/15 pass. `git diff --check` passes.
+**Next:** No commit or push requested.
 **NEEDS:** nothing

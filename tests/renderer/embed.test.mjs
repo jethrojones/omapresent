@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -18,6 +18,7 @@ import {
     playerMessage,
     resolveEmbedBase,
     shimEmbedUrl,
+    waitForEmbedBridge,
 } from "../../src/renderer/embed.js";
 
 const execute = promisify(execFile);
@@ -51,6 +52,81 @@ async function fixtureDom(search) {
         ], { maxBuffer: 2 * 1024 * 1024 });
         return stdout;
     } finally {
+        await rm(profile, { recursive: true, force: true });
+    }
+}
+
+// Chromium's file fixture cannot have a qrc: origin. Build a temporary module
+// from the production renderer and force only the qrc branch condition; every
+// activation, bridge and teardown path below remains the production source.
+async function qrcRaceDom() {
+    const directory = await mkdtemp(join(tmpdir(), "omapresent-qrc-race-"));
+    const profile = await mkdtemp(join(tmpdir(), "omapresent-chromium-"));
+    const rendererDirectory = resolve(here, "../../src/renderer");
+    const rendererPath = join(rendererDirectory, "render.js");
+    try {
+        let renderer = await readFile(rendererPath, "utf8");
+        assert.ok(renderer.includes('window.location.protocol === "qrc:"'));
+        renderer = renderer.replace(/from "(\.\/[^\"]+)";/g, (_, specifier) =>
+            `from "${pathToFileURL(resolve(rendererDirectory, specifier)).href}";`);
+        renderer = renderer.replace('window.location.protocol === "qrc:"', "true");
+        const modulePath = join(directory, "render-qrc-race.js");
+        const pagePath = join(directory, "race.html");
+        await writeFile(modulePath, renderer);
+        await writeFile(pagePath, `<!doctype html>
+<main id="deck"></main>
+<script>
+globalThis.omapresentFixture = {
+  mode: "present",
+  frontmatter: {}, palette: {}, textScale: 1, assets: {},
+  slides: [{ index: 0, markdown: "https://youtu.be/aqz-KE-bpKQ", recallKey: "", skip: false }]
+};
+let embedBaseCalls = 0;
+const loopback = ${JSON.stringify(LOOPBACK)};
+addEventListener("load", () => {
+  const first = document.querySelector("button.op-media-loader");
+  document.body.dataset.beforeLoader = String(Boolean(first));
+  document.body.dataset.beforeFrames = String(document.querySelectorAll("iframe.op-player-shim").length);
+  document.body.dataset.beforeHostCalls = String(embedBaseCalls);
+  first.click();
+  first.click();
+  document.body.dataset.afterClickFrames = String(document.querySelectorAll("iframe.op-player-shim").length);
+  document.body.dataset.afterClickHostCalls = String(embedBaseCalls);
+  document.body.dataset.preparing = first.dataset.pending || "";
+  setTimeout(() => {
+    globalThis.omapresentHost = {
+      embedBase(callback) {
+        embedBaseCalls += 1;
+        setTimeout(() => callback(loopback), 0);
+      },
+    };
+  }, 50);
+  setTimeout(() => {
+    const frame = document.querySelector("iframe.op-player-shim");
+    document.body.dataset.afterBridgeHostCalls = String(embedBaseCalls);
+    document.body.dataset.afterBridgeFrames = String(document.querySelectorAll("iframe.op-player-shim").length);
+    document.body.dataset.afterBridgeSrc = frame?.getAttribute("src") || "";
+    globalThis.omapresent.render(globalThis.omapresentFixture);
+    const stale = document.querySelector("button.op-media-loader");
+    stale.click();
+    globalThis.omapresent.render(globalThis.omapresentFixture);
+  }, 150);
+  setTimeout(() => {
+    document.body.dataset.afterTeardownFrames = String(document.querySelectorAll("iframe.op-player-shim").length);
+    document.body.dataset.afterTeardownLoader = String(Boolean(document.querySelector("button.op-media-loader")));
+    document.body.dataset.afterTeardownHostCalls = String(embedBaseCalls);
+  }, 300);
+});
+</script>
+<script type="module" src=${JSON.stringify(pathToFileURL(modulePath).href)}></script>`);
+        const { stdout } = await execute(chromium, [
+            "--headless", "--no-sandbox", "--disable-gpu", "--allow-file-access-from-files",
+            "--host-resolver-rules=MAP * 127.0.0.1", `--user-data-dir=${profile}`,
+            "--virtual-time-budget=1000", "--dump-dom", pathToFileURL(pagePath).href,
+        ], { maxBuffer: 2 * 1024 * 1024 });
+        return stdout;
+    } finally {
+        await rm(directory, { recursive: true, force: true });
         await rm(profile, { recursive: true, force: true });
     }
 }
@@ -201,6 +277,27 @@ test("a hosted player keeps the server asleep while a cached local poster render
     }
 });
 
+test("a delayed qrc bridge activates once and teardown cancels a stale loader", {
+    skip: !(await hasChromium()),
+}, async () => {
+    const html = await qrcRaceDom();
+    assert.equal(attribute(html, "data-before-loader"), "true");
+    assert.equal(attribute(html, "data-before-frames"), "0");
+    assert.equal(attribute(html, "data-before-host-calls"), "0");
+    assert.equal(attribute(html, "data-after-click-frames"), "0");
+    assert.equal(attribute(html, "data-after-click-host-calls"), "0");
+    assert.equal(attribute(html, "data-preparing"), "true");
+    assert.equal(attribute(html, "data-after-bridge-host-calls"), "1");
+    assert.equal(attribute(html, "data-after-bridge-frames"), "1");
+    const shim = new URL(attribute(html, "data-after-bridge-src"));
+    assert.equal(shim.origin, "http://127.0.0.1:45123");
+    assert.equal(shim.pathname, "/0123456789abcdef/embed.html");
+    assert.equal(shim.searchParams.get("v"), "aqz-KE-bpKQ");
+    assert.equal(attribute(html, "data-after-teardown-frames"), "0");
+    assert.equal(attribute(html, "data-after-teardown-loader"), "true");
+    assert.equal(attribute(html, "data-after-teardown-host-calls"), "1");
+});
+
 test("the bridge answers on a later turn, and a silent one does not hang Play", async () => {
     // This is how a WebChannel method really behaves: it returns undefined and
     // calls back later. Reading the return value loses the shim entirely.
@@ -238,6 +335,105 @@ test("the bridge answers on a later turn, and a silent one does not hang Play", 
                                    { timeoutMs: 0, setTimer: fire => fire() });
     callback(LOOPBACK);
     assert.equal(await raced, "");
+});
+
+function manualTimers() {
+    let nextId = 0;
+    const timers = new Map();
+    return {
+        setTimer(callback, delay) {
+            const id = ++nextId;
+            timers.set(id, { callback, delay });
+            return id;
+        },
+        clearTimer(id) {
+            timers.delete(id);
+        },
+        fire(delay) {
+            const ready = [...timers.entries()]
+                .filter(([, timer]) => timer.delay === delay);
+            for (const [id, timer] of ready) {
+                timers.delete(id);
+                timer.callback();
+            }
+        },
+        count() {
+            return timers.size;
+        },
+    };
+}
+
+test("a qrc early click waits for the bridge, then calls its normal embed method", async () => {
+    const timers = manualTimers();
+    let host = null;
+    let calls = 0;
+    const wait = waitForEmbedBridge(() => host, {
+        timeoutMs: 750,
+        retryMs: 25,
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+    });
+    assert.equal(timers.count(), 2, "one retry and one bounded timeout are armed");
+
+    host = { embedBase(callback) { calls += 1; callback(LOOPBACK); } };
+    timers.fire(25);
+    const bridge = await wait.promise;
+    assert.equal(await resolveEmbedBase(bridge), LOOPBACK);
+    assert.equal(calls, 1);
+    assert.equal(timers.count(), 0);
+});
+
+test("a post-bridge click uses the same immediate host path", async () => {
+    const timers = manualTimers();
+    const host = { embedBase: () => LOOPBACK };
+    const wait = waitForEmbedBridge(() => host, {
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+    });
+    assert.equal(await wait.promise, host);
+    assert.equal(timers.count(), 0);
+    assert.equal(await resolveEmbedBase(host), LOOPBACK);
+});
+
+test("a missing qrc bridge reaches the existing fallback and a detached loader cancels", async () => {
+    const timedOut = manualTimers();
+    const timeout = waitForEmbedBridge(() => null, {
+        timeoutMs: 750,
+        retryMs: 25,
+        setTimer: timedOut.setTimer,
+        clearTimer: timedOut.clearTimer,
+    });
+    timedOut.fire(750);
+    assert.equal(await timeout.promise, null);
+    assert.equal(embedStrategy({ host: "youtube", player: "embed", protocol: "qrc:", embedBase: "" }),
+                 "fallback");
+    assert.equal(timedOut.count(), 0);
+
+    const detached = manualTimers();
+    const cancelled = waitForEmbedBridge(() => null, {
+        setTimer: detached.setTimer,
+        clearTimer: detached.clearTimer,
+    });
+    cancelled.cancel();
+    assert.equal(await cancelled.promise, null);
+    assert.equal(detached.count(), 0);
+});
+
+test("preview and audience activate deferred media through the same renderer", async () => {
+    const [audience, presenter, preview, render] = await Promise.all([
+        readFile(resolve(here, "../../src/AudienceWindow.qml"), "utf8"),
+        readFile(resolve(here, "../../src/PresenterWindow.qml"), "utf8"),
+        readFile(resolve(here, "../../src/PreviewPane.qml"), "utf8"),
+        readFile(resolve(here, "../../src/renderer/render.js"), "utf8"),
+    ]);
+    assert.match(audience, /url: presentation\.rendererUrl/);
+    assert.match(presenter, /id: currentView[\s\S]*url: presentation\.rendererUrl/);
+    assert.match(preview, /url: "qrc:\/renderer\/render\.html"/);
+    assert.equal((render.match(/function activateDeferredPlayer\(/g) ?? []).length, 1);
+    assert.match(render, /waitForEmbedBridge\(\(\) => globalThis\.omapresentHost\)/);
+    assert.match(render, /function releaseDeferredBridgeWaits\(within\)/);
+    assert.ok((render.match(/releaseDeferredBridgeWaits\(/g) ?? []).length >= 3,
+              "slide and overlay teardown cancel delayed activation");
 });
 
 test("a message is trusted only from the frame, at the origin it was created on", () => {

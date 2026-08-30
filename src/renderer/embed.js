@@ -77,6 +77,52 @@ export function resolveEmbedBase(host, {
     });
 }
 
+// The qrc renderer can finish its first paint before QWebChannel has supplied
+// omapresentHost. A click in that small gap is still an explicit request to
+// play, so wait briefly for the host instead of turning it into the permanent
+// file-origin fallback. Callers own cancellation when their loader is removed.
+export function waitForEmbedBridge(getHost, {
+    timeoutMs = 750,
+    retryMs = 25,
+    setTimer = setTimeout,
+    clearTimer = clearTimeout,
+} = {}) {
+    let resolve;
+    let retryTimer = null;
+    let timeoutTimer = null;
+    let settled = false;
+    const promise = new Promise(done => { resolve = done; });
+    const finish = host => {
+        if (settled)
+            return;
+        settled = true;
+        if (retryTimer !== null)
+            clearTimer(retryTimer);
+        if (timeoutTimer !== null)
+            clearTimer(timeoutTimer);
+        resolve(host && typeof host.embedBase === "function" ? host : null);
+    };
+    const check = () => {
+        if (settled)
+            return;
+        let host = null;
+        try {
+            host = getHost();
+        } catch {
+            // A page that is tearing down can make a global unavailable. The
+            // bounded timeout below gives its loader the normal fallback.
+        }
+        if (host && typeof host.embedBase === "function") {
+            finish(host);
+            return;
+        }
+        retryTimer = setTimer(check, retryMs);
+    };
+    timeoutTimer = setTimer(() => finish(null), timeoutMs);
+    check();
+    return { promise, cancel: () => finish(null) };
+}
+
 // Which of the three outcomes applies. `embedBase` is what the host bridge
 // offered, "" when there is no host or it could not bind a socket.
 export function embedStrategy({ host, player, protocol, embedBase } = {}) {
