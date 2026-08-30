@@ -2319,3 +2319,36 @@ Omarchy fork or PR #235.
 outside T41 ownership, so adding a `pkgbuild/release-checksums self-test` step
 beside the existing `bash -n pkgbuild/PKGBUILD` check needs its own go-ahead.
 Until then the seam only runs when someone runs it.
+
+### 2026-08-30 15:33 PT — release (Claude Opus 5)
+**Task:** T41 v0.1.2 release preparation — CI seam for release-checksums
+**Did:** Closed the NEEDS from the previous entry. `.github/workflows/ci.yml`
+is now in T41's owned paths, narrowly: one added step, nothing existing touched.
+The step runs `pkgbuild/release-checksums self-test` and sits immediately after
+`Package definition is valid`, beside the `bash -n` and `namcap` checks it
+belongs with.
+
+Kept as its own step rather than folded into the package checks, so a failure
+names itself in the log instead of hiding inside a `namcap` run.
+
+The change is additive and that was verified structurally, not by eye: parsing
+the workflow before and after shows top-level keys identical, job settings
+identical, job list identical, steps 9 → 10, one step added, **none removed**,
+and every pre-existing step unchanged and in the same order. The workflow
+declared no `permissions` block before and still declares none, so nothing was
+widened. `.github/workflows/release.yml` was not touched.
+**Tests:** The new step's `run` body was extracted from the parsed workflow and
+executed verbatim: 10 checks, all ok, exit 0. `pkgbuild/release-checksums
+self-test` run directly: same, exit 0. Also invoked as `sh -e -c`, which is
+the shell Actions uses for `run` in this container — the script's
+`#!/usr/bin/env bash` shebang and `100755` mode in git make it its own bash
+process, so the launching shell does not matter. Every tool it needs
+(`bash`, `sed`, `awk`, `mktemp`, `printf`) is in `archlinux:base-devel`;
+it writes only under `mktemp -d` and leaves the checkout clean.
+`bash -n` ok on `pkgbuild/PKGBUILD` and `pkgbuild/release-checksums`.
+`namcap pkgbuild/PKGBUILD` reports nothing, exit 0. Both workflow files parse.
+`git diff --check` clean.
+**Next:** Still stopped before publication. No tag, no push, no GitHub release,
+no change to the Omarchy fork or PR #235. The seam has not yet run on GitHub —
+it cannot until these commits are pushed, which is part of the release step.
+**NEEDS:** nothing
