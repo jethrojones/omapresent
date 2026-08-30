@@ -2352,3 +2352,70 @@ it writes only under `mktemp -d` and leaves the checkout clean.
 no change to the Omarchy fork or PR #235. The seam has not yet run on GitHub —
 it cannot until these commits are pushed, which is part of the release step.
 **NEEDS:** nothing
+
+### 2026-08-30 15:49 PT — release (Claude Opus 5)
+**Task:** T41 — v0.1.2 published, Omarchy PR #235 updated
+**Did:** Ran the approved six-phase order. Nothing failed; nothing was retried.
+
+**Commits (Omapresent).** Nine approved commits `2bb830c`…`8083340` pushed
+from `3e52ce7`. Checksum commit `66d29ea`. This entry's commit follows.
+
+**Tag.** Annotated `v0.1.2`, object
+`8189784ca425c8bda80639ef9a6e9f6c7746c746`, message `Omapresent v0.1.2`,
+peeled target `8083340127da1910433cfc99febb49d8ad7a5209` — confirmed via the
+API and `ls-remote` (`refs/tags/v0.1.2^{}`). Created once, never moved.
+`v0.1.0` (`fbc50f5`) and `v0.1.1` (`aa44b51`) untouched.
+
+**Source checksum.**
+`4310fd20d8a8bc1145fefd7704ef3e473ff7f8ef8623c7e6a605f9078b272d23`, written by
+`pkgbuild/release-checksums v0.1.2` and verified independently by downloading
+the tag archive again and re-hashing. Both PKGBUILDs are byte-identical (6200
+bytes), `pkgver=0.1.2`, `pkgrel=1`, no zero placeholder left. The tool named
+both files this time — the fix committed in `2b6143f` paid for itself on its
+first real run.
+
+**Release.** https://github.com/jethrojones/omapresent/releases/tag/v0.1.2 —
+public, non-draft, non-prerelease, Latest, published 2026-08-30T22:44:50Z.
+Exactly one asset, built and attached by the workflow:
+`omapresent-0.1.2-1-x86_64.pkg.tar.zst`, 1142503 bytes, GitHub digest
+`sha256:fef831191f54a8ba3a47ba6dbe17366aa99c5e97e1fa0404aa6459e5c3e84f17`,
+matched by downloading it and re-hashing. `.PKGINFO` reads `omapresent`
+`0.1.2-1`. This is the first release whose asset the workflow attached itself;
+v0.1.0 and v0.1.1 were both attached by hand after that step failed.
+
+**The local package was never uploaded**, and the reason is now measured rather
+than asserted. Public asset `.BUILDINFO`: `builddir = /tmp/build`, 372
+installed packages, zero occurrences of `/home/jethro`, `jethro` or
+`ombee`, and none of the named personal host applications. Local validation
+build `.BUILDINFO`: `builddir = /home/jethro/projects/omapresent/pkgbuild`,
+1512 installed packages, `/home/jethro` twice, and `herdr`. Different bytes
+entirely — local `7dbf7b5c…` / 1151819 vs public `fef83119…` / 1142503. The
+local file stays on disk, ignored, unpublished.
+
+**CI runs, all success:**
+- master `8083340`: https://github.com/jethrojones/omapresent/actions/runs/33339619595 — includes the new `Release checksum tool is sound` step's first run on GitHub
+- tag `v0.1.2`: https://github.com/jethrojones/omapresent/actions/runs/33339796615
+- master `66d29ea`: https://github.com/jethrojones/omapresent/actions/runs/33339854232
+- published release: https://github.com/jethrojones/omapresent/actions/runs/33339964092 — `makepkg`, `namcap` and `Attach the package to the release` all green
+
+**Omarchy PR #235.** https://github.com/omacom/omarchy-pkgs/pull/235 — OPEN,
+MERGEABLE, head now `3b96ebad44180ca51f5f43d906eca63205e177a8`
+("Update omapresent to 0.1.2"), pushed normally, no force. Done in a throwaway
+clone; `git diff --name-only` was exactly
+`pkgbuilds/omapresent/PKGBUILD`. The branch serves `pkgver=0.1.2`,
+`pkgrel=1` and the exact checksum; `.omarchy/package.json` still reads
+`{ "source": "local" }`. Validation on that branch: `bash -n` ok;
+`makepkg --printsrcinfo` reports the v0.1.2 tag source and checksum;
+`makepkg --verifysource` "Passed"; a clean `--cleanbuild` produced
+`omapresent-0.1.2-1-x86_64.pkg.tar.zst` with `.PKGINFO` `0.1.2-1`;
+`namcap` clean on the PKGBUILD and the seven accepted warnings on the package;
+`bin/sync-upstream`, `bin/omarchy-pkgs` and `bin/omarchy-release`
+self-tests all PASS; `bin/list-packages` reads `0.1.2-1`.
+**Tests:** Every gate above passed. No check failed at any phase.
+**Next:** Nothing on this side.
+**NEEDS:** **Maintainer approval is the only remaining gate.** Upstream run
+`33340138065` for head `3b96eba` sits at `conclusion=action_required` with
+**zero jobs executed** — GitHub's fork/first-time-contributor gate, identical to
+`33232466964` on the previous head. It is why the PR reads `UNSTABLE`. An
+`omacom/omarchy-pkgs` maintainer must click "Approve and run workflows"; the
+author cannot self-approve. Polling that gate has stopped.
