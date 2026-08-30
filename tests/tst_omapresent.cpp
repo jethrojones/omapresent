@@ -1775,6 +1775,41 @@ private slots:
         QCOMPARE(accessBox->property("model").toStringList().size(), 4);
     }
 
+    void theEditorFullscreenShortcutCannotStealF11FromTheAudience() {
+        // Both windows belong to one application, so an application-scoped
+        // shortcut in the editor fires while the audience window is the active
+        // one. That is what made F11 fullscreen the editor from the audience
+        // window and kept the key from ever reaching Presentation::handleKey.
+        // Window scope is what distinguishes "the editor is active" from "the
+        // audience is active" — Qt will only fire this while the editor window
+        // itself is the active window.
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *fullScreen =
+            window->findChild<QObject *>(QStringLiteral("fullScreenShortcut"));
+        QVERIFY(fullScreen);
+        QCOMPARE(fullScreen->property("context").toInt(), int(Qt::WindowShortcut));
+        QVERIFY(fullScreen->property("context").toInt() != int(Qt::ApplicationShortcut));
+
+        // The editor keeps both of its own fullscreen keys while it is active.
+        const QVariantList sequences = fullScreen->property("sequences").toList();
+        QStringList keys;
+        for (const QVariant &sequence : sequences)
+            keys.append(sequence.toString());
+        QVERIFY(keys.contains(QStringLiteral("F11")));
+        QVERIFY(keys.contains(QStringLiteral("Meta+F")));
+        QVERIFY(fullScreen->property("enabled").toBool());
+    }
+
 private:
     QTemporaryDir m_settingsDirectory;
 };

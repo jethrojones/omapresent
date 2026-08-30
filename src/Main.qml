@@ -254,8 +254,14 @@ ApplicationWindow {
     }
 
     Shortcut {
+        objectName: "fullScreenShortcut"
         sequences: ["Meta+F", "F11"]
-        context: Qt.ApplicationShortcut
+        // Window-scoped, not application-scoped. "Fullscreen this window" is a
+        // question about one window, and an application shortcut answers it for
+        // whichever window of ours happens to be focused — which meant F11 in
+        // the audience window fullscreened the editor instead, and present
+        // mode's own F11 never saw the key (spec §5.2).
+        context: Qt.WindowShortcut
         onActivated: toggleFullScreen()
     }
 
@@ -800,7 +806,8 @@ ApplicationWindow {
                 + "Present\n"
                 + "Right / Space  Next\nLeft  Back\nUp / Down  Scroll this slide\n"
                 + "Home / End  First, last slide\ndigits then Enter  Jump to a slide\n"
-                + "F  Fullscreen\nB  Black\nW  White\nO  Overview\nN  Notes overlay\n"
+                + "F / F11  Fullscreen the audience window\n"
+                + "B  Black\nW  White\nO  Overview\nN  Notes overlay\n"
                 + "a bound letter or number  Recall slide\nEsc  Leave"
             lineHeight: 1.4
         }
