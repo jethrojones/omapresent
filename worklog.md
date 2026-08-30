@@ -2031,3 +2031,10 @@ below. Renderer suite 45/45, three consecutive clean runs.
 **Tests:** `node --test tests/renderer/embed.test.mjs` — 15/15 pass. `git diff --check` passes.
 **Next:** No commit or push requested.
 **NEEDS:** nothing
+
+### 2026-08-30 08:05 PT — Codex (GPT-5)
+**Task:** T37/T38 final verified checkpoint
+**Did:** Confirmed T37 commit `d63bdb9` and T38 commit `201f5a9` are on `origin/master`. Fresh Sol review is APPROVED.
+**Tests:** T38 focused suite — 15/15. Renderer suite — 48/48 three times. Full host gate — 541 C++ + 48 renderer = 589/589. `git diff --check` passed. GitHub Actions run 33318379764 for `201f5a9` succeeded; build-and-test succeeded with no failures.
+**Next:** User live-check of the sample deck.
+**NEEDS:** Physical audience-window confirmation only.
