@@ -32,13 +32,14 @@ test("layout grammar covers every specified arrangement", () => {
     }
 });
 
-test("bento arrangements map 2, 3, 4, 5 and 6 images", () => {
+test("bento arrangements map 2, 3, 4, 5, 6 and 7 images", () => {
     const cases = [
         [2, "bento-2", 2, 1],
         [3, "bento-3", 3, 1],
         [4, "bento-4", 2, 2],
         [5, "bento-mosaic", 6, 2],
         [6, "bento-mosaic", 6, 3],
+        [7, "bento-7", 4, 2],
     ];
 
     for (const [count, kind, columns, rows] of cases) {
@@ -59,9 +60,30 @@ test("main image becomes the hero tile without changing document order", () => {
     assert.ok(layout.tiles[3].columnSpan > layout.tiles[0].columnSpan);
 });
 
-test("outside the closed bento set images fall back to a stack", () => {
+test("eight or more images fall back to a stack", () => {
     assert.equal(bentoArrangement(1).kind, "stacked");
-    assert.equal(bentoArrangement(7).kind, "stacked");
+    assert.equal(bentoArrangement(8).kind, "stacked");
+});
+
+test("seven-image bento uses a balanced four-plus-three grid", () => {
+    const layout = bentoArrangement(7);
+    assert.deepEqual(layout.tiles.map(tile => [tile.column, tile.row]), [
+        [1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [2, 2], [3, 2],
+    ]);
+    assert.deepEqual(layout.tiles.map(tile => tile.index), Array.from({ length: 7 }, (_, index) => index));
+});
+
+test("seven-image bento keeps a marked main image prominent", () => {
+    const layout = bentoArrangement(7, 4);
+    assert.equal(layout.kind, "bento-hero");
+    assert.equal(layout.columns, 5);
+    assert.equal(layout.rows, 4);
+    assert.equal(layout.heroIndex, 4);
+    assert.equal(layout.tiles[4].role, "hero");
+    assert.equal(layout.tiles[4].columnSpan, 3);
+    assert.equal(layout.tiles[4].rowSpan, 3);
+    assert.equal(layout.tiles.filter(tile => tile.role === "tile").length, 6);
+    assert.equal(new Set(layout.tiles.map(tile => `${tile.column}:${tile.row}:${tile.columnSpan}:${tile.rowSpan}`)).size, 7);
 });
 
 test("fit decisions never shrink content and clamp scroll state", () => {

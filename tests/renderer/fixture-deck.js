@@ -84,6 +84,14 @@ if (fixtureParams.get("metrics") === "remote-image") {
     ];
     globalThis.omapresentFixture.assets = { [imageUrl]: imageUrl };
 }
+if (fixtureParams.get("metrics") === "seven-bento") {
+    const image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const references = Array.from({ length: 7 }, (_, index) => `seven-${index + 1}.png`);
+    globalThis.omapresentFixture.slides = [
+        { index: 0, markdown: references.map(reference => `![[${reference}]]`).join("\n"), recallKey: "", skip: false },
+    ];
+    globalThis.omapresentFixture.assets = Object.fromEntries(references.map(reference => [reference, image]));
+}
 if (fixtureParams.get("metrics") === "recall") {
     const baseBullets = Array.from({ length: 48 }, (_, index) => `- Base point ${index + 1}`).join("\n");
     const recallDeck = [
@@ -314,6 +322,23 @@ globalThis.addEventListener("load", () => setTimeout(() => {
         if (fixtureParams.get("load") === "1")
             loader?.click();
         document.body.dataset.remoteImageAfterLoad = String(hasRemoteSource());
+    }
+    if (fixtureParams.get("metrics") === "seven-bento") {
+        const container = document.querySelector(".op-images");
+        const figures = [...document.querySelectorAll(".op-images .op-image")];
+        const rowCounts = [1, 2].map(row => figures.filter(item => item.style.gridRow.startsWith(`${row} /`)).length);
+        const insideGrid = figures.every(item => {
+            const rect = item.getBoundingClientRect();
+            const grid = container?.getBoundingClientRect();
+            return grid && rect.left >= grid.left && rect.right <= grid.right
+                && rect.top >= grid.top && rect.bottom <= grid.bottom;
+        });
+        document.body.dataset.sevenBentoClass = container?.className ?? "";
+        document.body.dataset.sevenBentoCount = String(figures.length);
+        document.body.dataset.sevenBentoColumns = container?.style.getPropertyValue("--op-grid-columns") ?? "";
+        document.body.dataset.sevenBentoRows = container?.style.getPropertyValue("--op-grid-rows") ?? "";
+        document.body.dataset.sevenBentoRowCounts = rowCounts.join(",");
+        document.body.dataset.sevenBentoInsideGrid = String(insideGrid);
     }
     if (fixtureParams.get("metrics") === "read") {
         const heading = document.querySelector(".op-slide h1");

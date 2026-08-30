@@ -237,7 +237,7 @@ fits**; otherwise it is top-aligned and the slide scrolls.
 | Heading, then image on the **next line (no blank line)** | Tight unit: image directly under the heading, both centered, image near-full width. |
 | Heading, **blank line**, image | Two separate centered blocks with generous spacing between them. |
 | Image alone on the slide | Fills the content width (up to the display width); height scales; if it overflows vertically the slide scrolls. Never cropped. |
-| Several image refs on **consecutive lines** (one block) | **Bento tiling** (CSS grid), arranged "the Omarchy way": 2 → side by side, 3 → row, 4 → 2×2, 5–6 → mosaic. If one image has `|main`, it becomes a large central tile with the others sized around it (the macOS-keynote "feature grid" look). |
+| Several image refs on **consecutive lines** (one block) | **Bento tiling** (CSS grid), arranged "the Omarchy way": 2 → side by side, 3 → row, 4 → 2×2, 5–6 → mosaic, 7 → a balanced 4+3 two-row grid. Eight or more fall back to a vertical stack. If one image has `|main`, it becomes a large central tile with the others sized around it (the macOS-keynote "feature grid" look). |
 | Images separated by blank lines | Stacked vertically, each full width, slide scrolls. |
 | Indented lines under a heading | Static outline: indent = hierarchy depth, shown all at once. |
 | Bulleted / numbered list | Shown as a list, **revealed one item at a time** on → / Space; nested items reveal with their parent's children in sequence. After the last item, → advances to the next slide. |

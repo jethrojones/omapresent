@@ -26,6 +26,17 @@ function attribute(html, name) {
     return html.match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? "";
 }
 
+async function fixtureDomUntil(search, ready) {
+    let html = "";
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        html = await fixtureDom(search);
+        if (ready(html))
+            return html;
+        await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return html;
+}
+
 async function fixtureDom(search, extraArguments = []) {
     const fixture = pathToFileURL(resolve(here, "fixture.html"));
     fixture.search = search;
@@ -73,7 +84,10 @@ test("heading fragments reveal in order after prior bullets", {
 test("recall overlays preserve all fragments and restore moved underlying state after host goto", {
     skip: !(await hasChromium()),
 }, async () => {
-    const html = await fixtureDom("?metrics=recall");
+    const html = await fixtureDomUntil(
+        "?metrics=recall",
+        value => attribute(value, "data-recall-after-goto-slide") !== "",
+    );
     assert.equal(attribute(html, "data-recall-overlay-visible"), "true");
     assert.equal(attribute(html, "data-recall-overlay-fragments-revealed"), "true");
     assert.equal(attribute(html, "data-recall-overlay-fragment-count"), "4");
@@ -168,4 +182,17 @@ test("read view uses article type and flows speaker notes into the body", {
     assert.equal(attribute(html, "data-read-note-text"), "This paragraph is a speaker note.");
     assert.ok(Number(attribute(html, "data-read-measure")) <= 608);
     assert.equal(attribute(html, "data-read-scroll-y"), "0");
+});
+
+test("seven adjacent image embeds use the shared four-plus-three bento grid", {
+    skip: !(await hasChromium()),
+}, async () => {
+    const html = await fixtureDom("?metrics=seven-bento");
+    assert.match(attribute(html, "data-seven-bento-class"), /is-bento/);
+    assert.doesNotMatch(attribute(html, "data-seven-bento-class"), /is-stacked/);
+    assert.equal(attribute(html, "data-seven-bento-count"), "7");
+    assert.equal(attribute(html, "data-seven-bento-columns"), "4");
+    assert.equal(attribute(html, "data-seven-bento-rows"), "2");
+    assert.equal(attribute(html, "data-seven-bento-inside-grid"), "true");
+    assert.equal(attribute(html, "data-seven-bento-row-counts"), "4,3");
 });

@@ -72,8 +72,47 @@ function heroTiles(count, mainIndex) {
 
 export function bentoArrangement(imageCount, requestedMainIndex = -1) {
     const count = Number(imageCount);
-    if (!Number.isInteger(count) || count < 2 || count > 6)
+    if (!Number.isInteger(count) || count < 2 || count > 7)
         return { kind: "stacked", columns: 1, rows: Math.max(0, Number.isFinite(count) ? count : 0), heroIndex: -1, tiles: [] };
+
+    if (count === 7 && (!Number.isInteger(requestedMainIndex)
+                        || requestedMainIndex < 0 || requestedMainIndex >= count)) {
+        return {
+            kind: "bento-7",
+            columns: 4,
+            rows: 2,
+            heroIndex: -1,
+            tiles: Array.from({ length: 7 }, (_, index) => ({
+                column: (index % 4) + 1,
+                row: index < 4 ? 1 : 2,
+                columnSpan: 1,
+                rowSpan: 1,
+                index,
+                role: "tile",
+            })),
+        };
+    }
+    if (count === 7) {
+        const mainIndex = requestedMainIndex;
+        const sideTiles = [
+            { column: 1, row: 1, columnSpan: 1, rowSpan: 2 },
+            { column: 1, row: 3, columnSpan: 1, rowSpan: 2 },
+            { column: 5, row: 1, columnSpan: 1, rowSpan: 2 },
+            { column: 5, row: 3, columnSpan: 1, rowSpan: 2 },
+            { column: 2, row: 4, columnSpan: 2, rowSpan: 1 },
+            { column: 4, row: 4, columnSpan: 1, rowSpan: 1 },
+        ];
+        let sideIndex = 0;
+        return {
+            kind: "bento-hero",
+            columns: 5,
+            rows: 4,
+            heroIndex: mainIndex,
+            tiles: Array.from({ length: count }, (_, index) => index === mainIndex
+                ? { column: 2, row: 1, columnSpan: 3, rowSpan: 3, index, role: "hero" }
+                : { ...sideTiles[sideIndex++], index, role: "tile" }),
+        };
+    }
 
     const mainIndex = Number.isInteger(requestedMainIndex) && requestedMainIndex >= 0 && requestedMainIndex < count
         ? requestedMainIndex

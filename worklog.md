@@ -1982,3 +1982,31 @@ below. Renderer suite 45/45, three consecutive clean runs.
 **Tests:** `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build` passes. The exact full gate returns 1 from known loopback bind failures and QtWebEngine sandbox crashes. `git diff --check` passes.
 **Next:** No further T36 work in this environment.
 **NEEDS:** Host-capable loopback and QtWebEngine sandbox environment for a green full gate.
+
+### 2026-08-30 00:10 PDT - t37-bento (Codex GPT-5)
+**Task:** T37 seven-image bento layout
+**Did:** Started after reproducing the sample deck's seven consecutive image block as an intentional `stacked` layout fallback.
+**Tests:** Not run yet.
+**Next:** Add the seven-image 4+3 grid, additive spec text, and parser/layout/browser regressions.
+**NEEDS:** nothing
+
+### 2026-08-30 00:30 PDT - t37-bento (Codex GPT-5)
+**Task:** T37 seven-image bento layout
+**Did:** Added the additive seven-image 4+3 two-row layout. Existing 2-6 arrangements remain unchanged and eight or more images still stack. Added layout and browser DOM coverage based on seven adjacent embeds.
+**Tests:** `node --test tests/renderer/layout.test.mjs` passes 1/1. The seven-image browser test reaches Chromium but the sandbox exits with `SIGTRAP` before DOM output. `git diff --check` passes.
+**Next:** Host-capable Chromium must run `node tests/renderer/suite.mjs` to prove the seven-image DOM geometry.
+**NEEDS:** Host-capable Chromium sandbox for browser DOM verification.
+
+### 2026-08-30 00:45 PDT - t37-bento (Codex GPT-5)
+**Task:** T37 seven-image bento review follow-up
+**Did:** Added deterministic seven-image `|main` geometry with a prominent hero tile and six surrounding tiles. Replaced the browser test's raw escaped JSON parsing with DOM-derived row counts.
+**Tests:** `node --test tests/renderer/layout.test.mjs` passes. `node tests/renderer/suite.mjs` remains blocked by Chromium `SIGTRAP` sandbox exits and loopback `EPERM`. `git diff --check` passes.
+**Next:** Host-capable Chromium must run the browser suite.
+**NEEDS:** Host-capable Chromium sandbox for DOM proof.
+
+### 2026-08-30 07:56 PDT - t37-bento (Codex GPT-5)
+**Task:** T37 interaction recall timing follow-up
+**Did:** Made the interaction test wait for the non-empty `data-recall-after-goto-slide` DOM state before applying the unchanged recall assertions. Product and fixture behavior are unchanged.
+**Tests:** `node tests/renderer/suite.mjs` ran 3 times; all 3 were blocked by Chromium `SIGTRAP` with Crashpad `setsockopt: Operation not permitted`. The desktop-safe full gate built successfully. `./bin/test` reached 44 passed and 2 failed in `OmapresentTest` from loopback `server.listen()` failures, plus existing renderer Chromium `SIGTRAP`, PDF Chromium sandbox shutdown, EmbedServer loopback, and WebBundle loopback failures.
+**Next:** Host-capable Chromium and loopback environment are required for a green full gate.
+**NEEDS:** nothing
