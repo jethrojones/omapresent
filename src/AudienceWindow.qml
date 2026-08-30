@@ -2,10 +2,10 @@ import QtQuick
 import QtWebChannel
 import QtWebEngine
 
-// The audience window (spec §5.1): headings, media and lists, themed, filling
-// its output. A separate top-level window on purpose — Hyprland treats it as
-// its own thing, and sharing just this window in a call or in OBS gives a clean
-// full-frame capture with none of the presenter's notes in it.
+// The audience window (spec §5.1): an independent themed window whose
+// compositor-managed size the renderer fills. Sharing just this window in a
+// call or in OBS gives a clean full-frame capture with none of the presenter's
+// notes in it.
 //
 // It renders nothing itself. Everything on screen came from the shared renderer
 // bundle, driven by Presentation through docs/renderer-contract.md.
@@ -80,6 +80,12 @@ Window {
                 presentation.viewGone("audience");
             }
         }
+
+        // The web view owns the pointer route. Keep the audience wheel command
+        // on that route so it cannot put an Item over a video loader.
+        WheelHandler {
+            onWheel: function(event) { presentation.scrollBy(-event.angleDelta.y); }
+        }
     }
 
     Connections {
@@ -94,15 +100,10 @@ Window {
     // identically wherever the focus happens to be (spec §5.2).
     Item {
         id: keys
-        anchors.fill: parent
         focus: true
 
         Keys.onPressed: function(event) {
             event.accepted = presentation.handleKey(event.key, event.modifiers, event.text);
-        }
-
-        WheelHandler {
-            onWheel: function(event) { presentation.scrollBy(-event.angleDelta.y); }
         }
     }
 

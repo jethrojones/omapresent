@@ -17,6 +17,7 @@ SOURCES += \
     tst_publisher.cpp \
     tst_embedserver.cpp \
     tst_presentation.cpp \
+    tst_audience_video_pointer.cpp \
     tst_settings.cpp \
     tst_webbundle.cpp \
     tst_integration.cpp \
