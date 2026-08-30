@@ -10,15 +10,127 @@
 #
 #   pkgbuild/release-checksums            # uses the PKGBUILD's own pkgver
 #   pkgbuild/release-checksums v0.2.0     # and bumps pkgver to match
+#   pkgbuild/release-checksums self-test  # offline checks, changes nothing
 set -euo pipefail
 
-if [[ ${1:-} == '-h' || ${1:-} == '--help' ]]; then
-  sed -n '1,14p' "$0"
-  exit 0
+# Every file this tool rewrites, repo-relative. The closing guidance prints the
+# paths it actually wrote, taken from this same list, so what you are told to
+# stage cannot drift from what was changed. Forgetting the second one is how the
+# staged Omarchy copy silently keeps an old checksum.
+TARGETS=(
+  'pkgbuild/PKGBUILD'
+  'pkgbuild/omarchy-pkgs/omapresent/PKGBUILD'
+)
+
+usage() {
+  # Print the leading comment block, however long it grows.
+  awk 'NR==1 && /^#!/ {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"
+}
+
+# Rewrite pkgver and the source checksum in every target that exists under
+# <root>, printing each path it wrote. Missing targets are skipped, not an
+# error: the staged Omarchy tree is optional.
+write_version() { # <root> <pkgver> <sum>
+  local root=$1 pkgver=$2 sum=$3 rel
+  for rel in "${TARGETS[@]}"; do
+    [ -f "$root/$rel" ] || continue
+    sed -i \
+      -e "s/^pkgver=.*/pkgver=$pkgver/" \
+      -e "s/^  sha256sums=('.*')/  sha256sums=('$sum')/" \
+      "$root/$rel"
+    printf '%s\n' "$rel"
+  done
+}
+
+self_test() {
+  local tmp fixture written failures=0
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+
+  fixture() { # <path>
+    mkdir -p "$(dirname "$1")"
+    cat > "$1" <<'FIXTURE'
+pkgname=omapresent
+pkgver=0.0.1
+pkgrel=1
+url='https://github.com/jethrojones/omapresent'
+if [[ -n ${OMAPRESENT_SRC:-} ]]; then
+  sha256sums=()
+else
+  sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
 fi
+FIXTURE
+  }
+
+  check() { # <description> <expected> <actual>
+    if [ "$2" = "$3" ]; then
+      echo "  ok: $1"
+    else
+      echo "  FAIL: $1" >&2
+      echo "        expected: $2" >&2
+      echo "        actual:   $3" >&2
+      failures=$((failures + 1))
+    fi
+  }
+
+  local sum='1111111111111111111111111111111111111111111111111111111111111111'
+  local main='pkgbuild/PKGBUILD'
+  local staged='pkgbuild/omarchy-pkgs/omapresent/PKGBUILD'
+
+  # The contract, asserted by name rather than by index: dropping either path
+  # from TARGETS is exactly the defect this seam exists to catch, and it has to
+  # report that plainly instead of dying on an unbound subscript.
+  local listed=" ${TARGETS[*]} "
+  check "TARGETS lists the main PKGBUILD" \
+    "yes" "$(case "$listed" in *" $main "*) echo yes;; *) echo no;; esac)"
+  check "TARGETS lists the staged Omarchy PKGBUILD" \
+    "yes" "$(case "$listed" in *" $staged "*) echo yes;; *) echo no;; esac)"
+  if [ "$failures" -ne 0 ]; then
+    echo "release-checksums self-test: $failures failure(s)" >&2
+    return 1
+  fi
+
+  # Both targets present: both get written, and both are reported.
+  local root="$tmp/both"
+  fixture "$root/$main"
+  fixture "$root/$staged"
+  written=$(write_version "$root" 9.9.9 "$sum" | tr '\n' ' ')
+  check "reports both files it changed" "$main $staged " "$written"
+
+  local rel
+  for rel in "${TARGETS[@]}"; do
+    check "$rel gets the new pkgver" \
+      "pkgver=9.9.9" "$(sed -n 's/^\(pkgver=.*\)/\1/p' "$root/$rel")"
+    check "$rel gets the new checksum" \
+      "  sha256sums=('$sum')" "$(sed -n "/^  sha256sums=('/p" "$root/$rel")"
+    # The OMAPRESENT_SRC branch's empty sha256sums=() must survive untouched,
+    # or a local validation build starts demanding a checksum it never had.
+    check "$rel keeps the local-source sha256sums=()" \
+      "  sha256sums=()" "$(sed -n '/^  sha256sums=()$/p' "$root/$rel")"
+  done
+
+  # Only the main PKGBUILD present: the optional target is skipped quietly.
+  root="$tmp/one"
+  fixture "$root/$main"
+  written=$(write_version "$root" 9.9.9 "$sum" | tr '\n' ' ')
+  check "a missing staged tree is skipped, not an error" "$main " "$written"
+
+  if [ "$failures" -eq 0 ]; then
+    echo "release-checksums self-test passed"
+    return 0
+  fi
+  echo "release-checksums self-test: $failures failure(s)" >&2
+  return 1
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  self-test) self_test; exit $? ;;
+esac
 
 here="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-pkgbuild="$here/PKGBUILD"
+root="$(CDPATH= cd -- "$here/.." && pwd)"
+pkgbuild="$root/${TARGETS[0]}"
 
 url=$(sed -n "s/^url='\(.*\)'$/\1/p" "$pkgbuild")
 [ -n "$url" ] || { echo "no url= in $pkgbuild" >&2; exit 1; }
@@ -54,21 +166,16 @@ if ! sed -n '1p' "$tmp/entries" | grep -q "^omapresent-$pkgver/"; then
   echo "warning: $tag does not unpack to omapresent-$pkgver/" >&2
 fi
 
-sed -i \
-  -e "s/^pkgver=.*/pkgver=$pkgver/" \
-  -e "s/^  sha256sums=('.*')/  sha256sums=('$sum')/" \
-  "$pkgbuild"
-
-# Keep the ready-to-submit Omarchy package tree in lockstep when it exists.
-submission="$here/omarchy-pkgs/omapresent/PKGBUILD"
-if [ -f "$submission" ]; then
-  sed -i \
-    -e "s/^pkgver=.*/pkgver=$pkgver/" \
-    -e "s/^  sha256sums=('.*')/  sha256sums=('$sum')/" \
-    "$submission"
+mapfile -t written < <(write_version "$root" "$pkgver" "$sum")
+if [ "${#written[@]}" -eq 0 ]; then
+  echo "wrote nothing: no target PKGBUILD found under $root" >&2
+  exit 1
 fi
 
 echo "pkgver=$pkgver"
 echo "sha256sums=('$sum')"
 echo
-echo "Now: git add pkgbuild/PKGBUILD && git commit"
+echo "Wrote ${#written[@]} file(s):"
+printf '  %s\n' "${written[@]}"
+echo
+echo "Now: git add ${written[*]} && git commit"
