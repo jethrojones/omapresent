@@ -1968,3 +1968,17 @@ below. Renderer suite 45/45, three consecutive clean runs.
 **Tests:** T36 regression passes. `./bin/build` passes. `git diff --check` passes. The focused shared runner also reports unrelated loopback bind failures.
 **Next:** No further T36 work in this environment.
 **NEEDS:** nothing
+
+### 2026-08-29 21:50 PDT - t36-images (Codex GPT-5)
+**Task:** T36 CI portability follow-up
+**Did:** Replaced the host-specific Omarchy background path in `buildsTheDeckDocumentTheRendererExpects` with a deterministic temporary missing background and asserted the empty result. The real temporary extensionless PNG T36 coverage remains unchanged.
+**Tests:** Not run yet.
+**Next:** Run the desktop-safe full gate and `git diff --check`.
+**NEEDS:** nothing
+
+### 2026-08-29 21:55 PDT - t36-images (Codex GPT-5)
+**Task:** T36 CI portability follow-up
+**Did:** Completed the test portability fix without changing production code. The deck-composition test now uses a temporary missing background and expects an empty result.
+**Tests:** `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build` passes. The exact full gate returns 1 from known loopback bind failures and QtWebEngine sandbox crashes. `git diff --check` passes.
+**Next:** No further T36 work in this environment.
+**NEEDS:** Host-capable loopback and QtWebEngine sandbox environment for a green full gate.

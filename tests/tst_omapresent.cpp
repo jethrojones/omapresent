@@ -712,6 +712,10 @@ private slots:
     }
 
     void buildsTheDeckDocumentTheRendererExpects() {
+        QTemporaryDir missingBackground;
+        QVERIFY(missingBackground.isValid());
+        const QString missingBackgroundPath =
+            missingBackground.filePath(QStringLiteral("background"));
         const QJsonObject parsed{
             {QStringLiteral("frontmatter"),
              QJsonObject{{QStringLiteral("title"), QStringLiteral("Quarterly Review")}}},
@@ -725,7 +729,7 @@ private slots:
         const QJsonObject deck = RenderHost::composeDeck(
             QStringLiteral("preview"), parsed, assets, QJsonObject(),
             QJsonObject{{QStringLiteral("accent"), QStringLiteral("#ff0000")}},
-            QStringLiteral("/home/jethro/.local/state/omarchy/current/background"), 1.25);
+            missingBackgroundPath, 1.25);
 
         QCOMPARE(deck.value(QStringLiteral("mode")).toString(), QStringLiteral("preview"));
         QCOMPARE(deck.value(QStringLiteral("slides")).toArray().size(), 1);
@@ -736,8 +740,7 @@ private slots:
         // what tells the renderer to draw the placeholder.
         QVERIFY(deck.value(QStringLiteral("assets")).toObject()
                     .contains(QStringLiteral("missing.png")));
-        QVERIFY(deck.value(QStringLiteral("backgroundImage")).toString()
-                    .startsWith(QStringLiteral("data:image/")));
+        QCOMPARE(deck.value(QStringLiteral("backgroundImage")).toString(), QString());
         QCOMPARE(deck.value(QStringLiteral("textScale")).toDouble(), 1.25);
 
         // A deck built before anything has been parsed still has to render.
