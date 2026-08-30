@@ -2270,3 +2270,52 @@ to the Omarchy fork or PR #235.
 needs. That one only exists after `v0.1.2` is pushed, via
 `pkgbuild/release-checksums v0.1.2`, which then needs its own commit on master
 before the release is published.
+
+### 2026-08-30 15:30 PT — release (Claude Opus 5)
+**Task:** T41 v0.1.2 release preparation — review corrections
+**Did:** Three corrections. The earlier entries stay as written; this one
+corrects them.
+
+**Correction to the commit count.** The finish entry above says the notes were
+checked against `v0.1.1..HEAD` (23 commits). That count was true of the HEAD
+at verification time, `3e52ce7`, but it is not the release range. The
+release-notes range `v0.1.1..0c67344` is **25 commits**, and current T41 HEAD
+`fc7f3cf` is **26**, before this fix. No note claim changes — the two extra
+commits are the T41 task file and the release-prep commit itself, neither of
+which is a user-visible change.
+
+**`pkgbuild/release-checksums` named only one of the two files it rewrites.**
+It wrote `pkgbuild/PKGBUILD` and the staged
+`pkgbuild/omarchy-pkgs/omapresent/PKGBUILD`, then printed
+`git add pkgbuild/PKGBUILD && git commit`. Following it stages half the
+change, leaving the Omarchy copy on the previous release's checksum silently.
+The two paths are now a single `TARGETS` list; `write_version` prints what it
+wrote and the closing guidance prints that, so the instruction cannot drift from
+the change. Added `release-checksums self-test`: offline, fixture-based, ten
+checks. The zero-placeholder behaviour is unchanged and both PKGBUILDs still
+carry it.
+
+**The local package is validation-only.**
+`pkgbuild/omapresent-0.1.2-1-x86_64.pkg.tar.zst` (1151819 bytes, sha256
+`7dbf7b5cec44a4154d505108b5fa9acfc559ff8f6ae8be09b44239243b28913b`) proves the
+PKGBUILD builds and passes `namcap`. It must **not** be uploaded: its
+`.BUILDINFO` records this host's build environment — installed package set,
+build directory, toolchain — so publishing it would ship one developer's machine
+state as the official binary and leave the asset unreproducible. The published
+asset must come from the Release workflow on the published-release event, built
+from the immutable tag archive and the verified checksum and attached there. The
+file stays in place, ignored by `.gitignore`, and is never selected for upload.
+`tasks/t41-v0.1.2-release.md` now records this and adds
+`pkgbuild/release-checksums` to the owned paths.
+**Tests:** `bash -n pkgbuild/release-checksums` ok, and ok for both PKGBUILDs.
+`pkgbuild/release-checksums self-test` — 10 checks, all ok, exit 0; verified it
+fails by name (`FAIL: TARGETS lists the staged Omarchy PKGBUILD`, exit 1) when
+the original defect is reintroduced. `git diff --check` clean. `namcap` on
+`pkgbuild/PKGBUILD` reports nothing, exit 0. The release workflow's extractors
+still read `pkgver=0.1.2` and the 64-zero placeholder.
+**Next:** Still stopped. No tag, no push, no GitHub release, no change to the
+Omarchy fork or PR #235.
+**NEEDS:** The self-test is not wired into CI. `.github/workflows/ci.yml` is
+outside T41 ownership, so adding a `pkgbuild/release-checksums self-test` step
+beside the existing `bash -n pkgbuild/PKGBUILD` check needs its own go-ahead.
+Until then the seam only runs when someone runs it.
