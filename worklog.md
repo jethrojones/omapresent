@@ -2554,3 +2554,34 @@ content.
 **Next:** Gate from a clean clone of the candidate commit, then the finish entry.
 **NEEDS:** see the finish entry — the new "What's different?" block does not
 become its own slide.
+
+### 2026-08-30 21:31 PT — release (Claude Opus 5)
+**Task:** T43 v0.1.3 validation
+**Did:** Candidate commit `775813c`. Its diff against `224238c` touches seven
+paths and no others: the task file, `.github/release-notes/v0.1.3.md`, both
+PKGBUILDs, `welcome/welcome.md`, `tests/tst_integration.cpp` and this log.
+Both PKGBUILDs read `pkgver=0.1.3`, `pkgrel=1` and a 64-character all-zero
+source checksum, and are byte-identical to each other. Nothing tagged, pushed,
+drafted, published or uploaded; PR #235 untouched.
+**Tests:** Gate run in a clean clone of `775813c` in a temp directory, not in
+the shared tree. `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build`
+exit 0; `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` exit 0:
+16 C++ suites, **559 passed, 0 failed, 0 skipped, 0 blacklisted**; renderer
+**48 tests, 48 passed, 0 failed, 0 skipped**. `pkgbuild/release-checksums
+self-test` passed all ten checks. `bash -n` clean on both PKGBUILDs.
+The welcome deck edit was gated before it was committed, not after. The first
+run failed exactly once — `IntegrationTest::welcomeRecallKeysAreUniqueAndValid`
+at `tst_integration.cpp:298`, keys size 2 against an expected 1 — because the
+deck now binds `r` as well as `q`. That one expectation was updated to
+`{"r", "q"}`, document order, and nothing else in the suite was touched.
+`welcomeDeckParsesSilentlyAndIsStable` held at 25 slides throughout.
+**Next:** Awaiting a separate go-ahead to tag and publish.
+**NEEDS:** The deck still reads 25 slides because the new "What's different?"
+block never becomes a slide. `welcome/welcome.md:33` is a `---` whose previous
+line is `-`, and `DeckModel::isSeparatorLine` requires both neighbours blank,
+so the heading, its four bullets, the leftover empty bullet and that `---`
+render inside the "Writing Structure = Slide Structure" slide — three lines
+above the bullet that states the rule. Fixing it means blanking line 32, which
+makes 26 slides and moves the `slideCount` expectation. That is a second test
+expectation and a content change beyond trailing whitespace, so it is flagged
+here rather than taken.
