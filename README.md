@@ -46,6 +46,20 @@ For a call or recording, share the audience window. If presentation is already r
 
 ## Installation
 
+### Install the Released Package
+
+This is the normal install path. It does not build Omapresent.
+
+1. Open the [latest GitHub release](https://github.com/jethrojones/omapresent/releases/latest).
+2. Download the `omapresent-*-x86_64.pkg.tar.zst` file.
+3. Install the file you downloaded:
+
+```bash
+sudo pacman -U ./omapresent-VERSION-1-x86_64.pkg.tar.zst
+```
+
+Replace `VERSION` with the version in the downloaded file name.
+
 ### Omarchy Package Repository
 The package submission is prepared, but `omapresent` is not in the Omarchy
 package repository yet. Do not use `pacman -S omapresent` until that changes.
@@ -53,10 +67,19 @@ See [`pkgbuild/RELEASING.md`](pkgbuild/RELEASING.md) for the release and
 submission steps.
 
 ### Build from Source
+
+This path uses the source repository. It does not use a GitHub release package.
+
 ```bash
 git clone https://github.com/jethrojones/omapresent.git
 cd omapresent
 ./bin/build
+./build/omapresent
+```
+
+To install the source build as an Arch package, run:
+
+```bash
 ./bin/install
 ```
 

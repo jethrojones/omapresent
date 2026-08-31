@@ -2732,3 +2732,23 @@ updated 2026-08-30T22:48:35Z, hours before this publication. The Omarchy
 submission remains a separate, later step.
 **Next:** Nothing on T43. v0.1.3 is released and verified.
 **NEEDS:** nothing.
+
+### 2026-08-31 11:39 PT — root (Codex GPT-5.6 Sol)
+**Task:** T44 separate package install from source build
+**Did:** Started a README-only correction. Verified `bin/build`, `bin/install`,
+the v0.1.3 package name, and the current Omarchy repository status.
+**Tests:** Not run yet.
+**Next:** Split the installation paths, verify links and commands, then run the
+project gate.
+**NEEDS:** nothing.
+
+### 2026-08-31 11:47 PT — root (Codex GPT-5.6 Sol)
+**Task:** T44 separate package install from source build
+**Did:** Split the README into a released-package install path and a source-build
+path. The source path now starts the built binary before offering local install.
+**Tests:** Live v0.1.3 asset name verified with `gh release view`. A clean
+temporary copy with only T44 passed `./bin/build && ./bin/test`. The shared tree
+build passed, but its integration suite has two failures from the separate dirty
+`welcome/welcome.md` edit; T44 does not change that file.
+**Next:** Push the documentation commit to GitHub.
+**NEEDS:** Update the welcome deck fixture expectations in its owning task.
