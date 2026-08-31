@@ -2419,3 +2419,20 @@ self-tests all PASS; `bin/list-packages` reads `0.1.2-1`.
 `33232466964` on the previous head. It is why the PR reads `UNSTABLE`. An
 `omacom/omarchy-pkgs` maintainer must click "Approve and run workflows"; the
 author cannot self-approve. Polling that gate has stopped.
+
+### 2026-08-30 20:06 PT — audience-pointer (Claude Opus 5)
+**Task:** T42 audience window physical video click — start
+**Did:** Confirmed the tree clean at `be8dfe1` before touching anything. Read
+AGENTS.md, the spec, `tasks/t40-audience-video-pointer.md`,
+`src/AudienceWindow.qml`, `src/PreviewPane.qml`, the renderer's deferred-player
+path (`src/renderer/render.js`, `src/renderer/embed.js`) and
+`Presentation::applyTo`/`overlayScript`. Wrote
+`tasks/t42-audience-physical-video-click.md`, which takes over T40's two files.
+
+Ruled out the reported terminal noise before starting: portal registration,
+permissions-policy and WebGPU warnings are all emitted by the editor preview
+too, where the loader works, so none of them can be the discriminator.
+**Tests:** none yet.
+**Next:** Reproduce the pointer path in isolation, then in the production
+window.
+**NEEDS:** nothing
