@@ -2694,3 +2694,41 @@ line in each file; `bash -n` is clean on both.
 **Next:** Publish the release from the existing tag, then verify the attached
 asset.
 **NEEDS:** nothing.
+
+### 2026-08-30 21:46 PT — release (Claude Opus 5)
+**Task:** T43 v0.1.3 published
+**Did:** v0.1.3 is public. The approved candidate was `55a04e8`; the release
+preparation itself is `775813c`, `ddd912a`, `c4d3166`, `b160798`,
+`9e3e4e2`, `55a04e8`, and the checksum commit that followed the tag is
+`73ae43d`.
+Order, exactly as `pkgbuild/RELEASING.md` requires: pushed `master`
+fast-forward `224238c..55a04e8`; tagged; filled the checksum; pushed
+`55a04e8..73ae43d`; then published. The annotated tag `v0.1.3` is tag object
+`e6c4d7b` and peels to `55a04e8`. It was created once, pushed once, and never
+moved — the checksum commit deliberately sits after it on `master`, which is
+why the release job checks the default branch rather than the tag.
+**Tests:** four workflow runs, all success —
+CI for `55a04e8`: https://github.com/jethrojones/omapresent/actions/runs/33357541760
+Release, tag push: https://github.com/jethrojones/omapresent/actions/runs/33357775340
+  (`Tag version is valid` passed; the package job correctly did not run)
+CI for `73ae43d`: https://github.com/jethrojones/omapresent/actions/runs/33357844447
+Release, published: https://github.com/jethrojones/omapresent/actions/runs/33358060205
+  (verified the checksum on the default branch, `makepkg` from the immutable
+  tag archive, `namcap` on both the PKGBUILD and the package, then attached
+  the asset)
+**Release:** https://github.com/jethrojones/omapresent/releases/tag/v0.1.3 —
+"Omapresent 0.1.3", not a draft, not a prerelease, marked latest, body byte-for-byte
+`.github/release-notes/v0.1.3.md`.
+**Asset:** `omapresent-0.1.3-1-x86_64.pkg.tar.zst`, 1142799 bytes, sha256
+`eb84dc59b931e908e67a64e1bd9f938815a01a40b9e23f7e04cc73ad1487bdeb`. Exactly one
+asset. It was built and attached by the Release workflow; no locally built
+package was uploaded. Downloaded again from the public URL into an empty
+directory and hashed: it matches the API digest and the recorded size.
+**Source checksum:** `0bdc12a774f60c471f3f650b176774e99d8929401ab12ba2a64aeb250b6cf6e3`
+for the v0.1.3 tag archive, in both PKGBUILDs, verified independently of the
+tool that wrote it.
+**PR #235 was not changed.** `omacom-io/omarchy-pkgs#235` is still OPEN, last
+updated 2026-08-30T22:48:35Z, hours before this publication. The Omarchy
+submission remains a separate, later step.
+**Next:** Nothing on T43. v0.1.3 is released and verified.
+**NEEDS:** nothing.
