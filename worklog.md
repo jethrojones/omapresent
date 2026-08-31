@@ -2514,3 +2514,18 @@ untouched.
 false` on two web views (lines 124 and 287). Whether those are meant to be
 click-through chrome or are the same latent fault is a T39/presenter call, not
 mine — flagging it rather than editing another task's file.
+
+### 2026-08-30 20:49 PT — release-monitor (Claude Opus 5)
+**Task:** T42 push and CI verification
+**Did:** Pushed the three T42 commits (1e1ab31, c89ad25, d8da69e) to
+origin/master as a fast-forward, `be8dfe1..d8da69e`. No force, no tag, no
+release; PR #235 and all other branches untouched.
+**Tests:** CI run for d8da69e —
+https://github.com/jethrojones/omapresent/actions/runs/33354667526 — completed,
+**success**. Job `build-and-test` green in 3m22s: Build, Test, browser suites
+did not skip, skill/spec agree, package definition valid, checksum tool sound,
+release tarball complete.
+**Next:** Nothing on T42.
+**NEEDS:** nothing. Note for the orchestrator: `welcome/welcome.md` carried an
+uncommitted edit in the shared tree throughout this push. It is not a T42 file,
+was never staged, and is not in any pushed commit — it is still there, untouched.
