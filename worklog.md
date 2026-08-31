@@ -2626,3 +2626,23 @@ published or uploaded; `origin/master` is still `224238c`, no `v0.1.3` tag
 exists locally or on `origin`, no GitHub release carries it, and PR #235 is
 untouched. Tagging and publication need a separate go-ahead.
 **NEEDS:** nothing.
+
+### 2026-08-30 21:29 PT — release (Claude Opus 5)
+**Task:** T43 scope reconciliation
+**Did:** Reconciled the T43 task file with the work that was actually
+authorized, before review, so the scope text and the tree agree. Six places:
+the `tests/tst_integration.cpp` ownership line now allows the welcome deck's
+slide-count *and* recall-key expectations rather than the recall key alone;
+"any test beyond the one expectation" reads "the two expectations"; the
+`welcome/welcome.md` constraint now records both allowed edits — remove
+accidental trailing whitespace, and replace the one leftover empty bullet with
+a blank line so the `---` after it gets the blank neighbours
+`DeckModel::isSeparatorLine` requires; required step 3 now says to mention the
+deck in the notes once its new slide really is a slide; step 5's rationale no
+longer calls the deck edit uncommitted, because it is committed; and "Done
+when" now requires the new heading to stand as its own slide with both fixture
+expectations matching. Task file and this log only — no code, test, deck, note
+or PKGBUILD content changed, and the earlier commits are untouched.
+**Next:** v0.1.3 remains prepared and unpublished, awaiting a separate
+go-ahead.
+**NEEDS:** nothing.
