@@ -63,9 +63,16 @@ Window {
         backgroundColor: audience.background
         webChannel: hostChannel
         // The page never needs the keyboard: Space reaches the player through
-        // playPause() on the contract. Clicking a video must not take focus
-        // away from the key handler.
-        activeFocusOnPress: false
+        // playPause() on the contract, so every key belongs to `keys` below.
+        //
+        // `activeFocusOnPress: false` is not the way to keep it there. Qt
+        // WebEngine's delegate drops the whole pointer stream — hover as much
+        // as press — while the view neither holds active focus nor may take it,
+        // so that setting left every video loader here dead to the mouse, while
+        // the editor preview, which never set it, worked. Let the press through
+        // and hand the keyboard straight back on the following turn, once the
+        // page has had the event.
+        onActiveFocusChanged: if (activeFocus) Qt.callLater(keys.forceActiveFocus)
 
         onWidthChanged: viewportResize.restart()
         onHeightChanged: viewportResize.restart()
