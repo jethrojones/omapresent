@@ -29,7 +29,7 @@ In Omapresent, the Markdown document is the single source of truth. There are no
 - Slide Overlays (hotkey enabled)
 - Automatic QR Codes
 - Themes, of course
--
+
 ---
 
 

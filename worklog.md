@@ -2585,3 +2585,20 @@ above the bullet that states the rule. Fixing it means blanking line 32, which
 makes 26 slides and moves the `slideCount` expectation. That is a second test
 expectation and a content change beyond trailing whitespace, so it is flagged
 here rather than taken.
+
+### 2026-08-30 21:22 PT — release (Claude Opus 5)
+**Task:** T43 welcome-deck separator correction
+**Did:** Took the fix flagged in the previous entry. `welcome/welcome.md:32`,
+the leftover empty bullet, is now a blank line, so the `---` on line 33 has
+blank neighbours and `DeckModel::isSeparatorLine` accepts it. "What's
+different?" is its own slide instead of running into "Writing Structure =
+Slide Structure", and the deck goes from 25 slides to 26. The recall bindings
+are unchanged at `r`, `q`. No other line of the author's content moved, and the
+deck still has no trailing whitespace.
+Updated the one matching expectation, `slideCount` 25 to 26 in
+`welcomeDeckParsesSilentlyAndIsStable`; the `{"r", "q"}` expectation authorized
+earlier is untouched, and nothing else in the suite changed. Added one release
+note bullet recording the new welcome slide and the `r` recall example, which
+is now worth stating because the slide really is a slide.
+**Next:** Full gate from a clean clone of the correction commit.
+**NEEDS:** nothing.

@@ -226,7 +226,7 @@ private slots:
 
         QCOMPARE(recorder.messages(), QStringList());
         // Assert the real number: an edit to the manual has to be deliberate.
-        QCOMPARE(deck.slideCount(), 25);
+        QCOMPARE(deck.slideCount(), 26);
 
         const int lineCount = m_welcomeSource.split(QLatin1Char('\n')).size();
         const QVector<Slide> slides = deck.slides();
