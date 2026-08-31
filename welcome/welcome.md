@@ -23,6 +23,16 @@ In Omapresent, the Markdown document is the single source of truth. There are no
 
 ---
 
+# What's different?
+
+- Dynamic vertical height slides
+- Slide Overlays (hotkey enabled)
+- Automatic QR Codes
+- Themes, of course
+-
+---
+
+
 # Writing Structure = Slide Structure
 
 - Headings, lists, code, tables, quotes, math, and media → **Audience Screen**
@@ -222,7 +232,7 @@ Omapresent natively recognizes YouTube, Vimeo, Loom, Descript, TikTok, X/Twitter
 
 Pressing `Space` plays and pauses the video. When playback finishes, the next `Space` advances the slide. Saving pre-fetches what each host allows into `.omapresent-cache/` for reliable offline presentation; a video that cannot be cached or embedded falls back to a QR code of its URL.
 
----
+--- {r}
 
 # Automatic QR Codes
 

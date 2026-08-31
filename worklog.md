@@ -2529,3 +2529,28 @@ release tarball complete.
 **NEEDS:** nothing. Note for the orchestrator: `welcome/welcome.md` carried an
 uncommitted edit in the shared tree throughout this push. It is not a T42 file,
 was never staged, and is not in any pushed commit — it is still there, untouched.
+
+### 2026-08-30 21:18 PT — release (Claude Opus 5)
+**Task:** T43 prepare v0.1.3 (no publication)
+**Did:** Opened T43. `v0.1.2..HEAD` is six commits, of which exactly one is
+user-visible: `c89ad25`, which drops `activeFocusOnPress: false` from the
+audience window's web view and hands the keyboard back on the next turn. That
+is the whole of this release. Confirmed `v0.1.3` exists neither locally nor on
+`origin`, and no GitHub release carries that tag. Bumped `pkgver` to `0.1.3`
+in both PKGBUILDs, kept `pkgrel=1`, reset the source checksum to the 64-zero
+placeholder; the two files remain byte-identical. Wrote
+`.github/release-notes/v0.1.3.md`, which says plainly that `v0.1.2` removed the
+pointer overlay but left a second blocker in place, so its "responds to the
+mouse again" claim was false in the audience window.
+Took over `welcome/welcome.md`, which arrived as an unstaged edit, so the
+updated welcome deck ships with the release. Its four new claims were each
+checked against the feature that backs them, not against the deck's own prose:
+scrolling (§ "Long Content"), recall overlays (spec §4.9), QR codes and the
+theme bridge all exist. `--- {r}` is a valid separator with a recall tag
+(`DeckModel::isSeparatorBody`) and binds the QR-codes slide to `r`. Removed the
+one accidental trailing space, on line 32; the committed file had none, so the
+deck is again free of trailing whitespace. No other change to the author's
+content.
+**Next:** Gate from a clean clone of the candidate commit, then the finish entry.
+**NEEDS:** see the finish entry — the new "What's different?" block does not
+become its own slide.

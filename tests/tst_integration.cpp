@@ -295,7 +295,8 @@ private slots:
             keys.append(slide.recallKey);
         }
 
-        QCOMPARE(keys, QStringList({QStringLiteral("q")}));
+        // Document order: `r` on the QR-codes slide, then `q` on the recall demo.
+        QCOMPARE(keys, QStringList({QStringLiteral("r"), QStringLiteral("q")}));
         // A key bound twice would leave one of the slides silently unreachable.
         QCOMPARE(sortedUnique(keys).size(), keys.size());
         QVERIFY(keys.size() <= 8);
