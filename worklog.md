@@ -2602,3 +2602,27 @@ note bullet recording the new welcome slide and the `r` recall example, which
 is now worth stating because the slide really is a slide.
 **Next:** Full gate from a clean clone of the correction commit.
 **NEEDS:** nothing.
+
+### 2026-08-30 21:34 PT — release (Claude Opus 5)
+**Task:** T43 v0.1.3 final validation
+**Did:** Re-validated the corrected candidate `c4d3166` from a fresh clean
+clone of that commit in a temp directory, not in the shared tree. The clone is
+clean at checkout. `git diff --name-only 775813c c4d3166` is four owned paths —
+the notes, `tests/tst_integration.cpp`, `welcome/welcome.md` and this log — and
+`224238c..c4d3166`, the whole of the v0.1.3 preparation, is seven owned paths
+and nothing else. Both PKGBUILDs still read `pkgver=0.1.3`, `pkgrel=1` and a
+64-character all-zero checksum, and are byte-identical.
+**Tests:** `QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build` exit 0;
+`QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` exit 0: 16 C++
+suites, **559 passed, 0 failed, 0 skipped, 0 blacklisted**, zero `FAIL!` lines;
+renderer **48 tests, 48 passed, 0 failed, 0 skipped**. The focused
+`IntegrationTest` suite is **45 passed, 0 failed**, with
+`welcomeDeckParsesSilentlyAndIsStable` green at 26 slides and
+`welcomeRecallKeysAreUniqueAndValid` green on `{"r", "q"}`.
+`pkgbuild/release-checksums self-test` passed. `bash -n` clean on both
+PKGBUILDs. The welcome deck has no trailing whitespace.
+**Next:** v0.1.3 is prepared and waiting. Nothing is tagged, pushed, drafted,
+published or uploaded; `origin/master` is still `224238c`, no `v0.1.3` tag
+exists locally or on `origin`, no GitHub release carries it, and PR #235 is
+untouched. Tagging and publication need a separate go-ahead.
+**NEEDS:** nothing.
