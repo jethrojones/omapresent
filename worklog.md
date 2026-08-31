@@ -2646,3 +2646,28 @@ or PKGBUILD content changed, and the earlier commits are untouched.
 **Next:** v0.1.3 remains prepared and unpublished, awaiting a separate
 go-ahead.
 **NEEDS:** nothing.
+
+### 2026-08-30 21:31 PT — release (Claude Opus 5)
+**Task:** T43 worklog timestamp correction
+**Did:** Two T43 headings carry wrong times. The `21:31 PT` heading (the
+preparation validation entry) and the `21:34 PT` heading (the corrected
+validation entry) were both stamped ahead of the real clock at the moment they
+were written, so the five T43 headings do not run in order: they read 21:18,
+21:31, 21:22, 21:34, 21:29 down the file. Only the two headings are wrong. The
+body of every one of those entries — commit IDs, gate results, counts, paths
+and the statement that nothing was pushed, tagged or published — was recorded
+from real output and stands unchanged. Nothing earlier in this log has been
+rewritten, per the append-only rule; this entry is the correction.
+**Read the file order, not the clock.** Append order is the authoritative
+sequence of T43 events, which is:
+
+1. preparation start
+2. preparation validation
+3. welcome-deck correction
+4. corrected validation
+5. scope reconciliation
+6. this timestamp correction
+
+**Next:** v0.1.3 remains prepared and unpublished, awaiting a separate
+go-ahead.
+**NEEDS:** nothing.
