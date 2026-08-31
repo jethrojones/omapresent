@@ -2671,3 +2671,26 @@ sequence of T43 events, which is:
 **Next:** v0.1.3 remains prepared and unpublished, awaiting a separate
 go-ahead.
 **NEEDS:** nothing.
+
+### 2026-08-30 21:39 PT — release (Claude Opus 5)
+**Task:** T43 v0.1.3 source checksum
+**Did:** Independent review approved `55a04e8`, so v0.1.3 went out under the
+`pkgbuild/RELEASING.md` order. Pushed `master` fast-forward,
+`224238c..55a04e8`; CI for that commit is
+https://github.com/jethrojones/omapresent/actions/runs/33357541760 — success.
+Created the annotated tag `v0.1.3` on exactly `55a04e8` and pushed only that
+tag; it peels to `55a04e8` on `origin` and has not been moved. The tag-push
+Release run is
+https://github.com/jethrojones/omapresent/actions/runs/33357775340 — success:
+`Tag version is valid` passed, and `Build the release package` correctly did
+not run, because it waits for the published-release event.
+Ran `pkgbuild/release-checksums v0.1.3`. It rewrote exactly the two owned
+PKGBUILDs and nothing else. Both now read `pkgver=0.1.3`, `pkgrel=1` and
+`sha256sums=('0bdc12a774f60c471f3f650b176774e99d8929401ab12ba2a64aeb250b6cf6e3')`,
+and remain byte-identical to each other. That hash was checked against one
+computed here independently of the tool, by curling the immutable tag archive
+and running `sha256sum` on it: the two agree. The diff is the one checksum
+line in each file; `bash -n` is clean on both.
+**Next:** Publish the release from the existing tag, then verify the attached
+asset.
+**NEEDS:** nothing.

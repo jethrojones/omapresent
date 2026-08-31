@@ -68,7 +68,7 @@ else
   # ./release-checksums; see pkgbuild/RELEASING.md. The zero placeholder is not
   # a valid checksum for anything, so makepkg refuses to build before that
   # release gate.
-  sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+  sha256sums=('0bdc12a774f60c471f3f650b176774e99d8929401ab12ba2a64aeb250b6cf6e3')
 fi
 
 prepare() {
