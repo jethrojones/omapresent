@@ -2436,3 +2436,81 @@ too, where the loader works, so none of them can be the discriminator.
 **Next:** Reproduce the pointer path in isolation, then in the production
 window.
 **NEEDS:** nothing
+
+### 2026-08-30 20:23 PT — audience-pointer (Claude Opus 5)
+**Task:** T42 audience window physical video click — root cause and fix
+**Did:** `src/AudienceWindow.qml` set `activeFocusOnPress: false` on its
+`WebEngineView`, so that clicking a video could not take the keyboard away from
+the `keys` Item. That setting does more than refuse focus. Qt WebEngine's
+delegate drops the **entire** pointer stream before it reaches Chromium while
+the view neither holds active focus nor may take it on press — hover as well as
+press. Since `keys` holds active focus for the window's whole life, the gate was
+permanently shut and every video loader in the audience window was dead to the
+mouse. `src/PreviewPane.qml` never set the property, which is exactly why the
+same loader worked in the editor preview.
+
+Measured, not inferred. A standalone Qt 6.11.2 probe outside the repo built the
+same arrangement twice over a page whose button counted its own events:
+
+| | mouseover | mousedown | click | elementFromPoint |
+|---|---|---|---|---|
+| `activeFocusOnPress: false` | 0 | 0 | 0 | the button |
+| default (`true`) | 1 | 1 | 1 | the button |
+
+`elementFromPoint` finds the button either way and
+`contentItem()->childAt()` returns the `WebEngineView` either way, so QML
+stacking, CSS, `pointer-events`, layout and the wheel/key overlay were all
+ruled out by measurement rather than by reading. The reported portal,
+permissions-policy and WebGPU warnings are emitted by the editor preview too,
+where the loader works, so none of them was ever the discriminator.
+
+The fix is two lines: drop the property, and hand the keyboard back on the
+turn after the page has had the event —
+`onActiveFocusChanged: if (activeFocus) Qt.callLater(keys.forceActiveFocus)`.
+Both halves are needed. Dropping the property alone restores the pointer and
+then loses the keyboard to the page, which the probe also measured: arrow keys
+arrive as page `keydown`s and never reach `Presentation::handleKey`. Two other
+arrangements were measured and rejected — putting `Keys.onPressed` on the
+`WebEngineView` with `focus: true` (with or without `activeFocusOnPress`) never
+fires, because active focus lands on the delegate child item, not the view.
+
+Nothing else moved. The `WheelHandler`, the key Item, `flags: Qt.Window`,
+`transientParent: null`, the WebChannel registration, the resize pulse and both
+overlays are untouched, so wheel scrolling, window identity, offline behaviour,
+the presenter window and the editor preview are unchanged by construction.
+**Tests:** `tests/tst_audience_video_pointer.cpp` gains
+`nativePointerReachesTheLoaderAndKeysStillMoveTheDeck`. It drives the real
+`qrc:/AudienceWindow.qml` and the real qrc renderer, waits for the production
+loader, reads the loader's own `getBoundingClientRect()`, and synthesizes a
+native press at that centre through `QTest`, which enters Qt at
+`QWindowSystemInterface` and travels the full Qt Quick delivery path into the
+delegate. It asserts the page's own capture listeners saw `mouseover`,
+`mousedown` and `click`, that the loader matched `:hover`, that the production
+click handler really started activation, and that `Right` pressed straight
+afterwards moves `presentation.slideIndex` from 0 to 1.
+
+Both halves were shown to have teeth by rebuilding against deliberately broken
+QML: with `activeFocusOnPress: false` restored it fails at the hover assertion
+(line 306); with the property simply deleted and no hand-back it fails at the
+keyboard assertion (line 326). The three existing T40 cases pass throughout.
+The duplicated title-marker plumbing in the suite is now one `evaluateJson`
+helper.
+
+Gate, exactly as required —
+`QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/build` exit 0;
+`QT_QPA_PLATFORMTHEME= QT_STYLE_OVERRIDE=Fusion ./bin/test` exit 0: 16 C++
+suites, **559 passed, 0 failed, 0 skipped, 0 blacklisted** (558 before, plus
+this one); renderer **48 tests, 48 passed, 0 failed, 0 skipped**.
+
+**Physical acceptance: confirmed by Jethro.** On the real deck
+`/home/jethro/Downloads/testomapresent.md`, in the separate audience window on
+Hyprland/Wayland, the Play video button responds to a real mouse click. That is
+the check the automated suite cannot make on its own, and it is the one that
+closes this task. Two of my own throwaway `omapresent present` instances were
+launched during investigation and are both gone; no other instance was touched.
+**Next:** Nothing on this task. Not pushed, not tagged, no release, PR #235
+untouched.
+**NEEDS:** `src/PresenterWindow.qml` carries the same `activeFocusOnPress:
+false` on two web views (lines 124 and 287). Whether those are meant to be
+click-through chrome or are the same latent fault is a T39/presenter call, not
+mine — flagging it rather than editing another task's file.
