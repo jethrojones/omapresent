@@ -2759,3 +2759,22 @@ build passed, but its integration suite has two failures from the separate dirty
 **Tests:** GitHub CI run 33427104083 passed every build, test, browser, skill,
 package, checksum, and release-tarball check.
 **Next:** Nothing on T44.
+
+### 2026-09-01 11:02 PT — root (Codex GPT-5.6 Sol)
+**Task:** T45 official Omarchy package instructions
+**Did:** Started the README and website status update after verifying v0.1.3 in
+the official Omarchy repository, Package picker source, and stable database.
+**Tests:** Not run yet.
+**Next:** Update both public pages, validate them, then push and deploy.
+**NEEDS:** nothing.
+
+### 2026-09-01 11:12 PT — root (Codex GPT-5.6 Sol)
+**Task:** T45 official Omarchy package instructions
+**Did:** Updated the project README and website source to recommend the verified
+`omarchy pkg add omapresent` command. Removed the unverified Package picker
+claim. Updated the website to v0.1.3.
+**Tests:** Clean-clone `./bin/build && ./bin/test` passed. Website JavaScript
+checks and `wrangler deploy --dry-run` passed.
+**Next:** Commit, push, deploy, and verify the live pages.
+**NEEDS:** The Omarchy Package picker does not list Omapresent on two tested
+machines. Direct terminal installation works.
