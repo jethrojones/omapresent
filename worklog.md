@@ -2778,3 +2778,13 @@ checks and `wrangler deploy --dry-run` passed.
 **Next:** Commit, push, deploy, and verify the live pages.
 **NEEDS:** The Omarchy Package picker does not list Omapresent on two tested
 machines. Direct terminal installation works.
+
+### 2026-09-01 11:16 PT — root (Codex GPT-5.6 Sol)
+**Task:** T45 official Omarchy package instructions
+**Did:** Pushed Omapresent commit `bf01204` and website commit `636c75e`.
+Deployed website version `0dd5be08-c20b-41d9-902b-5967224561de`. The live
+page shows v0.1.3 and `omarchy pkg add omapresent`, with no Package picker claim.
+**Tests:** GitHub CI run 33542397140 passed. Live HTML checks passed.
+**Next:** Nothing on T45.
+**NEEDS:** Omarchy must fix or refresh its Package picker if it is expected to
+list Omapresent. The official terminal install works now.
