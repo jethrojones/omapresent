@@ -110,6 +110,14 @@ package() {
     "$pkgdir/usr/share/licenses/$pkgname/vendor/LICENSES.md"
   install -m644 -t "$pkgdir/usr/share/licenses/$pkgname/vendor" \
     src/renderer/vendor/LICENSE.*
+  # The live terminal's emulator is compiled in too. Guarded, because this
+  # PKGBUILD also builds release tarballs cut before src/terminal existed.
+  if [[ -d src/terminal/vendor ]]; then
+    install -Dm644 src/terminal/vendor/LICENSES.md \
+      "$pkgdir/usr/share/licenses/$pkgname/vendor/terminal/LICENSES.md"
+    install -m644 -t "$pkgdir/usr/share/licenses/$pkgname/vendor/terminal" \
+      src/terminal/vendor/LICENSE.*
+  fi
 
   # First run links the skill into the agent skill directories itself
   # (src/backend.cpp), because a pacman hook must not write into a home.

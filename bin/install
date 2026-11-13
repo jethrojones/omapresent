@@ -4,6 +4,12 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 PKGBUILD_DIR="$ROOT/pkgbuild"
 
+# A Mac has no makepkg. Its installer builds the same binary and wraps it in
+# Omapresent.app instead of an Arch package.
+if [ "$(uname -s)" = "Darwin" ]; then
+  exec "$ROOT/bin/install-macos" "$@"
+fi
+
 if ! command -v makepkg >/dev/null 2>&1; then
   echo "makepkg is required to build and install the Arch package." >&2
   exit 1

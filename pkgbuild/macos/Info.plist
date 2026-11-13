@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Omapresent</string>
+    <key>CFBundleDisplayName</key>
+    <string>Omapresent</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.omapresent.Omapresent</string>
+    <key>CFBundleExecutable</key>
+    <string>omapresent</string>
+    <key>CFBundleIconFile</key>
+    <string>omapresent</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>MIT licensed. Started from Omawrite by David Heinemeier Hansson; extended by Jethro Jones.</string>
+    <!-- Offered for Markdown files, never claimed as their default editor. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Markdown deck</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>net.daringfireball.markdown</string>
+                <string>public.plain-text</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>md</string>
+                <string>markdown</string>
+            </array>
+        </dict>
+    </array>
+    <!-- A `{terminal}` slide runs the speaker's own shell, and macOS asks on its
+         behalf the first time a command reaches into one of these folders. -->
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>A terminal slide runs your shell, which is reading files in Documents.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>A terminal slide runs your shell, which is reading files on the Desktop.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>A terminal slide runs your shell, which is reading files in Downloads.</string>
+</dict>
+</plist>

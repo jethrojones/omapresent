@@ -1,0 +1,164 @@
+#!/bin/sh
+# Builds Omapresent and installs it on macOS: Omapresent.app in ~/Applications
+# and an `omapresent` command on the PATH. This is what bin/install does on
+# Arch with makepkg; bin/install hands over to this script on a Mac.
+#
+#   ./bin/install-macos              build and install
+#   ./bin/install-macos --uninstall  remove the app and the command
+#
+# The app is not self-contained. Like the Arch package, it uses the system's
+# Qt, which on a Mac is Homebrew's. Nothing here needs sudo.
+#
+#   OMAPRESENT_APP_DIR   where Omapresent.app goes   (default ~/Applications)
+#   OMAPRESENT_BIN_DIR   where the command goes      (default ~/.local/bin)
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+APP_DIR="${OMAPRESENT_APP_DIR:-$HOME/Applications}"
+BIN_DIR="${OMAPRESENT_BIN_DIR:-$HOME/.local/bin}"
+APP="$APP_DIR/Omapresent.app"
+COMMAND="$BIN_DIR/omapresent"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "bin/install-macos is for macOS. On Arch, use ./bin/install." >&2
+  exit 1
+fi
+
+if [ "${1:-}" = "--uninstall" ]; then
+  rm -rf "$APP"
+  # Only our own wrapper: never a command somebody else put there.
+  if [ -f "$COMMAND" ] && grep -q "Omapresent.app/Contents/MacOS/omapresent" "$COMMAND"; then
+    rm -f "$COMMAND"
+  fi
+  echo "Removed $APP and $COMMAND."
+  echo "Your decks and ~/.config/omapresent/settings.toml were left alone."
+  exit 0
+fi
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew is required: Omapresent uses its Qt. See https://brew.sh" >&2
+  exit 1
+fi
+
+# --- Qt -----------------------------------------------------------------------
+# The modules omapresent.pro names, and no more: the `qt` meta-formula would
+# pull in thirty others.
+QT_FORMULAE="qtbase qtdeclarative qtwebengine qtwebchannel qtmultimedia qtsvg qtimageformats"
+missing=""
+for formula in $QT_FORMULAE; do
+  brew list --versions "$formula" >/dev/null 2>&1 || missing="$missing $formula"
+done
+if [ -n "$missing" ]; then
+  echo "Installing Qt from Homebrew:$missing"
+  # shellcheck disable=SC2086
+  brew install $missing
+fi
+PATH="$(brew --prefix)/bin:$PATH"
+export PATH
+
+# --- Fonts ----------------------------------------------------------------------
+# Omapresent is set in iA Writer Mono S and Quattro S and never bundles them
+# (the Arch package depends on ttf-ia-writer for the same reason). iA Writer and
+# iA Presenter keep their own copies inside their app bundles, where no other
+# app can see them, so having those installed does not count. Without the
+# fonts the app still runs, in the system's monospace.
+have_font() {
+  ls "$HOME/Library/Fonts" /Library/Fonts 2>/dev/null | grep -qi "$1"
+}
+fonts=""
+have_font "iAWriterMonoS" || fonts="$fonts font-ia-writer-mono"
+have_font "iAWriterQuattroS" || fonts="$fonts font-ia-writer-quattro"
+have_font "iAWriterDuoS" || fonts="$fonts font-ia-writer-duo"
+if [ -n "$fonts" ]; then
+  echo "Installing the iA Writer fonts:$fonts"
+  # shellcheck disable=SC2086
+  brew install --cask $fonts || {
+    echo "Could not install the iA Writer fonts. Omapresent will use the" >&2
+    echo "system monospace until they are installed:" >&2
+    echo "  brew install --cask$fonts" >&2
+  }
+fi
+
+# --- Build ----------------------------------------------------------------------
+"$ROOT/bin/build"
+
+VERSION="$(sed -n 's/^pkgver=//p' "$ROOT/pkgbuild/PKGBUILD" | head -n 1)"
+[ -n "$VERSION" ] || VERSION="0.0.0"
+
+# --- Omapresent.app -------------------------------------------------------------
+# Assembled in a staging directory and moved into place in one step, so an
+# install that fails half way leaves the previous app working.
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/omapresent-app.XXXXXX")"
+trap 'rm -rf "$STAGE"' EXIT
+BUNDLE="$STAGE/Omapresent.app"
+CONTENTS="$BUNDLE/Contents"
+RESOURCES="$CONTENTS/Resources"
+mkdir -p "$CONTENTS/MacOS" "$RESOURCES/skill/reference" "$RESOURCES/licenses/vendor/terminal"
+
+install -m 755 "$ROOT/build/omapresent" "$CONTENTS/MacOS/omapresent"
+sed "s/@VERSION@/$VERSION/g" "$ROOT/pkgbuild/macos/Info.plist" > "$CONTENTS/Info.plist"
+
+# The same files the Arch package puts in /usr/share/omapresent, which is
+# where Platform::sharedDataDir() points on Linux and here on a Mac.
+install -m 644 "$ROOT/welcome/welcome.md" "$RESOURCES/welcome.md"
+install -m 644 "$ROOT/skill/SKILL.md" "$RESOURCES/skill/SKILL.md"
+install -m 644 "$ROOT"/skill/reference/*.md "$RESOURCES/skill/reference/"
+install -m 644 "$ROOT/LICENSE" "$ROOT/NOTICE" "$RESOURCES/licenses/"
+install -m 644 "$ROOT"/src/renderer/vendor/LICENSES.md "$ROOT"/src/renderer/vendor/LICENSE.* \
+  "$RESOURCES/licenses/vendor/"
+install -m 644 "$ROOT"/src/terminal/vendor/LICENSES.md "$ROOT"/src/terminal/vendor/LICENSE.* \
+  "$RESOURCES/licenses/vendor/terminal/"
+
+# The icon master is one 1024x1024 PNG; an .icns wants it at every size.
+ICONSET="$STAGE/omapresent.iconset"
+mkdir -p "$ICONSET"
+for size in 16 32 128 256 512; do
+  double=$((size * 2))
+  sips -z "$size" "$size" "$ROOT/pkgbuild/omapresent.png" \
+    --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z "$double" "$double" "$ROOT/pkgbuild/omapresent.png" \
+    --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$RESOURCES/omapresent.icns"
+
+# Apple Silicon runs nothing unsigned. An ad-hoc signature is enough for an app
+# built on the machine it runs on.
+codesign --force --sign - "$BUNDLE" >/dev/null 2>&1 || {
+  echo "codesign failed; macOS may refuse to open the app." >&2
+}
+
+mkdir -p "$APP_DIR"
+rm -rf "$APP"
+mv "$BUNDLE" "$APP"
+
+# So Finder's "Open With" offers it for Markdown files straight away.
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+[ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$APP" >/dev/null 2>&1 || true
+
+# --- The command ----------------------------------------------------------------
+# A wrapper, not a symlink: started through a symlink the binary cannot find
+# its own bundle, and with it the icon and the welcome deck.
+mkdir -p "$BIN_DIR"
+if [ -e "$COMMAND" ] && ! grep -q "Omapresent.app/Contents/MacOS/omapresent" "$COMMAND"; then
+  echo "$COMMAND exists and is not ours; leaving it alone." >&2
+else
+  cat > "$COMMAND" <<WRAPPER
+#!/bin/sh
+# Installed by omapresent's bin/install-macos.
+exec "$APP/Contents/MacOS/omapresent" "\$@"
+WRAPPER
+  chmod 755 "$COMMAND"
+fi
+
+echo
+echo "Installed Omapresent $VERSION"
+echo "  app:      $APP"
+echo "  command:  $COMMAND"
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *) echo "  $BIN_DIR is not on your PATH; add it, or run the command by its full path." ;;
+esac
+echo
+echo "Open a deck:        omapresent talk.md"
+echo "Present a deck:     omapresent present talk.md"
+echo "From Finder:        open -a Omapresent talk.md"
