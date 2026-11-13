@@ -9,3 +9,6 @@ Omarchy packaging conventions. Both are MIT licensed; see LICENSE.
 
 Bundled third-party assets under src/renderer/vendor/ carry their own
 licences, recorded in src/renderer/vendor/LICENSES.md.
+
+The live terminal's emulator, xterm.js, is bundled under src/terminal/vendor/
+with its licences recorded in src/terminal/vendor/LICENSES.md.

@@ -226,7 +226,7 @@ private slots:
 
         QCOMPARE(recorder.messages(), QStringList());
         // Assert the real number: an edit to the manual has to be deliberate.
-        QCOMPARE(deck.slideCount(), 26);
+        QCOMPARE(deck.slideCount(), 28);
 
         const int lineCount = m_welcomeSource.split(QLatin1Char('\n')).size();
         const QVector<Slide> slides = deck.slides();
@@ -295,8 +295,10 @@ private slots:
             keys.append(slide.recallKey);
         }
 
-        // Document order: `r` on the QR-codes slide, then `q` on the recall demo.
-        QCOMPARE(keys, QStringList({QStringLiteral("r"), QStringLiteral("q")}));
+        // Document order: `r` on the QR-codes slide, `q` on the recall demo,
+        // then `t` on the live terminal.
+        QCOMPARE(keys, QStringList({QStringLiteral("r"), QStringLiteral("q"),
+                                    QStringLiteral("t")}));
         // A key bound twice would leave one of the slides silently unreachable.
         QCOMPARE(sortedUnique(keys).size(), keys.size());
         QVERIFY(keys.size() <= 8);

@@ -6,6 +6,8 @@
 
 A dead-simple, Markdown-only presentation app for Omarchy. Open any Markdown file and it is already a presentation. No styling, no slide masters, no layout fiddling — the structure of your writing *is* the deck.
 
+It is built for Omarchy and also runs on macOS from the same source. See [Install on macOS](#install-on-macos).
+
 <!-- Screenshot placeholder -->
 <p align="center">
   <img src="welcome/screenshot.png" alt="Omapresent editor with a Video and Interactive Embeds slide and live audience preview" width="800" onerror="this.style.display='none'"/>
@@ -40,7 +42,49 @@ For a call or recording, share the audience window. If presentation is already r
 - **Bento layouts & rich media.** Consecutive images automatically tile into CSS Bento grids. Bare video URLs (YouTube, Vimeo, etc.) become interactive players; other bare URLs become scannable QR codes with captions.
 - **Dual-window present mode.** Automatically routes the audience view fullscreen to external monitors while giving you a dedicated presenter cockpit (notes, timer, clock, next-slide preview, recall keys).
 - **Rapid recall uses QWERTY keys.** Tag a separator (`--- {q}`) to bind the next slide to `Q`. Press `Q` to show it. Press `Q` again, `Space`, or `Esc` to return to the exact slide, fragment, and scroll position.
+- **A live terminal on a slide.** Tag a separator (`--- {terminal}`) and that slide is your real shell, on the audience screen, at a size the room can read. `Shift+Esc` hands the keyboard back to the slides. See [A live terminal in the deck](#a-live-terminal-in-the-deck).
 - **Export & Pluggable Publish.** Export pixel-identical PDFs (`Ctrl+E`) or publish static web bundles (`Ctrl+Shift+P`) with both interactive slide and long-read article formats via `here.now`, S3/B2, or custom shell commands.
+
+---
+
+## A live terminal in the deck
+
+Tag a slide separator with `terminal` and, in present mode, that slide is a real terminal running your own shell. Run a REPL, an editor, or a coding agent in front of the room.
+
+```markdown
+--- {terminal}
+
+# Live demo
+
+Run the tests, then start the agent.
+```
+
+It uses the same tag as recall slides, so the two combine:
+
+| Separator | What you get |
+| :--- | :--- |
+| `--- {terminal}` | A terminal slide in the normal flow |
+| `--- {t, terminal}` | The same, and `T` pops it over any slide |
+| `--- {t, terminal, skip}` | Only by pressing `T`. The arrow keys never land on it |
+
+How it behaves:
+
+- **Arriving on a terminal gives it the keyboard.** Every key goes to the shell, plain `Esc` included.
+- **`Shift+Esc` gives the keyboard back.** A terminal popped by its key closes and you are back on the slide you left. A terminal slide in the flow stays on screen and the arrow keys drive the talk again.
+- **`Enter` types in it again.** So does a click on the terminal.
+- **The presenter window always says who has the keyboard.** On one screen the audience window says it for a few seconds each time it changes. A thin accent line along the top of the terminal is on while the shell has the keyboard.
+- **One shell for the whole talk.** It starts the first time a terminal is shown, in the deck's folder. Every terminal slide shows that same session, so what you ran is still there when you come back. It ends when you leave present mode.
+- **The audience screen sets the size.** About 100 columns at the default type size. The presenter window mirrors the same grid, smaller.
+- **Type size:** `Cmd+=` and `Cmd+-` on macOS, `Ctrl+=` and `Ctrl+-` on Linux. `Cmd+0` or `Ctrl+0` resets it.
+- **Scrollback:** `Shift+PgUp` and `Shift+PgDn`.
+- **`Shift+Enter` sends Esc-Return**, which shells and coding agents read as a new line.
+- **If the shell exits**, press `Enter` for a new one.
+
+Only in present mode. The editor preview, a PDF and a published deck have no shell, so a terminal slide shows its own Markdown there. Write on it what a reader should see instead. In present mode that Markdown is covered by the terminal, and its plain paragraphs are still your speaker notes.
+
+A deck cannot run a command for you. It can only open a prompt, and only when you put that slide on screen.
+
+Not there yet: copying text out of the terminal on Linux.
 
 ---
 
@@ -85,6 +129,46 @@ To install the source build as an Arch package, run:
 ./bin/install
 ```
 
+### Install on macOS
+
+You need [Homebrew](https://brew.sh). Then, from a clone of this repository:
+
+```bash
+./bin/install
+```
+
+On a Mac that runs `bin/install-macos`, which:
+
+- installs the Qt modules it needs from Homebrew, if they are missing
+- installs the iA Writer fonts from Homebrew, if they are missing
+- builds the app
+- puts `Omapresent.app` in `~/Applications`
+- puts an `omapresent` command in `~/.local/bin`
+
+Nothing needs `sudo`. Then:
+
+```bash
+omapresent talk.md            # open a deck in the editor
+omapresent present talk.md    # open it and start presenting
+open -a Omapresent talk.md    # the same as double-clicking it in Finder
+```
+
+What is different on a Mac:
+
+- **`Ctrl` in this README is `Cmd`.** `Cmd+S` saves, `Cmd+Return` presents from the current slide. `Super+F` is `Ctrl+F`.
+- **The presenter view goes on the laptop's own screen** and the audience window on the external display, whichever one has the menu bar.
+- **`F` fullscreens the audience window** on the display it is on. `F11` belongs to macOS.
+- **No Omarchy theme.** The deck uses the built-in dark or light palette, following the system appearance. A `colors.toml` at `~/.local/state/omarchy/current/theme/` is still read if you put one there.
+- **Do Not Disturb is yours to switch on.** macOS gives apps no way to do it. The display is kept awake for you.
+- **Settings are in the same place:** `~/.config/omapresent/settings.toml`.
+- **The app uses Homebrew's Qt**, like the Arch package uses the system's. It is not a self-contained bundle to copy to another Mac.
+
+To remove it:
+
+```bash
+./bin/install-macos --uninstall
+```
+
 ### Uninstall
 
 If Omarchy installed the package, run:
@@ -110,6 +194,12 @@ and user settings in `~/.config/omapresent/settings.toml`.
 - Build only: `imagemagick`
 - The package does not use GStreamer or bundle fonts. QtWebEngine supplies the
   HTML video path, and the iA Writer S fonts come from the system package.
+- macOS (Homebrew): `qtbase`, `qtdeclarative`, `qtwebengine`, `qtwebchannel`,
+  `qtmultimedia`, `qtsvg`, `qtimageformats`, and the casks
+  `font-ia-writer-mono`, `font-ia-writer-quattro`, `font-ia-writer-duo`.
+  `bin/install-macos` installs all of them.
+- The live terminal needs nothing extra on either platform. xterm.js is
+  vendored in `src/terminal/vendor/` and compiled into the app.
 
 ---
 
@@ -147,8 +237,12 @@ and user settings in `~/.config/omapresent/settings.toml`.
 | `O` | Toggle slide overview grid |
 | `N` | Toggle presenter notes overlay (single-monitor mode) |
 | *Bound Key (e.g. `Q`)* | Toggle recall overlay slide |
+| `Shift+Esc` | Leave a live terminal. A popped terminal closes; a terminal slide stays up |
+| `Enter` | On a terminal slide: type in the terminal again |
 | `Esc` | Exit presentation mode |
 | `Ctrl+?` | Shortcut reference sheet |
+
+On macOS, read `Ctrl` as `Cmd`.
 
 ---
 

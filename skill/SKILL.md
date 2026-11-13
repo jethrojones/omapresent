@@ -54,6 +54,7 @@ If presentation is already running, share the audience window. Choose the window
    - **Speaker Notes:** Plain paragraph prose is hidden from the audience and displayed in the presenter view and web subtitles.
 3. **Comments:** `// line comment`, `%% Obsidian comment %%`, `<!-- HTML comment -->`. A `// ---` separator excludes the subsequent slide entirely (draft slide).
 4. **Recall Overlays:** `--- {q}` binds the next slide to key `q` as an instant toggleable overlay. `--- {q, skip}` binds the key but removes the slide from the linear left/right flow.
+   - **Live Terminal:** Add `terminal` to the tag (`--- {terminal}`, `--- {t, terminal}`, `--- {t, terminal, skip}`) and in present mode that slide is the presenter's own shell. `Shift+Esc` returns the keyboard to the slides. A deck cannot run commands; it only opens a prompt. Outside present mode the slide shows its Markdown, so write a fallback there.
 5. **Images & Bento Grids:** `![[name.png]]`, `![alt](name.png)`, or bare path `~/Pictures/photo.png`. Consecutive image lines with no blank lines between them automatically form a Bento CSS grid. Append `|main` to designate a hero tile (`![[photo.png|main]]`).
 6. **No Shrink to Fit:** Content keeps its natural size. If a slide overflows vertically, it becomes a smooth scroll surface mirrored between presenter and audience screens.
 7. **Theming:** Inherits the desktop theme from `~/.local/state/omarchy/current/theme/colors.toml`. Override per deck with `theme: <name>` in frontmatter for Omapresent windows only.

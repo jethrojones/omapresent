@@ -137,6 +137,27 @@ Recall slides allow you to pop reference material (agendas, glossaries, contact 
   ```
   The slide is reachable via key `q`, but will not appear during linear `→` navigation.
 
+### Live terminal slides
+
+Add the word `terminal` to the same tag and, in present mode, the slide is a real terminal running the presenter's own shell on the audience screen:
+
+```markdown
+--- {terminal}
+
+# Live demo
+
+Run the tests, then start the agent.
+```
+
+- `--- {terminal}` is a terminal slide in the normal flow.
+- `--- {t, terminal}` also pops it over any slide with `t`.
+- `--- {t, terminal, skip}` is reachable only with `t`.
+- Arriving on a terminal gives it the keyboard. `Shift+Esc` gives the keyboard back to the slides: a popped terminal closes, a terminal slide in the flow stays up. `Enter` types in it again.
+- There is one shell per talk. It starts in the deck's folder the first time a terminal is shown, every terminal slide shows that same session, and it ends with present mode.
+- A terminal slide may have no Markdown at all.
+- The deck never runs a command. Put the commands to type in the slide's plain paragraphs, which are speaker notes.
+- The editor preview, PDF export, and published web decks have no shell. There the slide renders its Markdown like any other slide, so write what a reader should see instead of a terminal.
+
 ---
 
 ## 8. YAML Frontmatter

@@ -2788,3 +2788,40 @@ page shows v0.1.3 and `omarchy pkg add omapresent`, with no Package picker claim
 **Next:** Nothing on T45.
 **NEEDS:** Omarchy must fix or refresh its Package picker if it is expected to
 list Omapresent. The official terminal install works now.
+
+### 2026-11-13 15:26 PT - macos-port (Claude Fable 5.2, on Jethro-MBP)
+**Task:** macOS port and live terminal slides. Branch `macos-port`, not pushed.
+**Did:** The same source now builds on macOS against Homebrew Qt 6.12
+(qtwebengine 6.11.2). Every platform difference is in `src/platform.{h,cpp}`;
+on Linux each function returns what the replaced code computed inline.
+`bin/install` hands over to the new `bin/install-macos` on a Mac, which
+assembles `Omapresent.app` in `~/Applications` and an `omapresent` wrapper in
+`~/.local/bin`. On macOS the presenter takes the laptop's own panel and the
+audience the external display, a first window gets a real geometry, and the
+display is kept awake with an IOKit assertion. A document opened from Finder
+arrives as a `QFileOpenEvent` and goes through `requestOpen`.
+Added `--- {terminal}` slides: a PTY-backed shell (`src/terminalsession.cpp`,
+QProcess plus `posix_openpt`) drawn by vendored xterm.js 6.0.0 in
+`src/terminal/`, kept out of `src/renderer/` so no published bundle carries
+it. The tag combines with a recall key and `skip`. Arriving on a terminal
+gives it the keyboard; `Shift+Esc` gives it back. One shell per talk.
+The welcome deck has two new slides (28 total, 27 in the flow).
+See `docs/spec-deviations.md` D-004 and D-005, and
+`docs/renderer-contract.md` section 8.
+**Tests:** macOS: `./bin/build && ./bin/test` pass. C++ 584 passed, 3 skipped
+(two Omarchy-only cases skip on macOS, one needs `/usr/bin/chromium`). Renderer
+44 passed, 8 skipped (the Chromium-backed suites). New: `tests/tst_terminal.cpp`
+(28 cases, including a real `/bin/sh` on a real PTY) and
+`tests/renderer/terminal.test.mjs`. The installed app was driven on this Mac
+with synthesized Qt key events and its windows grabbed with
+`QQuickWindow::grabWindow`: navigation, a scrolling slide mirrored on the
+audience, recall, black and white, overview, audience fullscreen on the
+external display, and the terminal (zsh, vim, `claude --version`, zoom, recall
+by key, persistence, both windows, one screen under the offscreen platform).
+**Next:** Run `./bin/build && ./bin/test` on Omarchy, then present a deck with
+a terminal slide there. Nothing in this entry has been run on Linux.
+**NEEDS:** The Mac was locked for the whole session, so no physical key
+press, no real window activation and no `screencapture` were possible. A
+person at the keyboard has to confirm `Shift+Esc`, `Cmd+=` and typing.
+`pkgbuild/PKGBUILD` and its staged copy gained a guarded install of the
+xterm.js licences; carry that to the Omarchy package at the next release.

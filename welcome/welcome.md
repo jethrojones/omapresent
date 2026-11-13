@@ -301,6 +301,7 @@ The share portal may show its own label. Omapresent does not control that label.
 | `B` / `W` | Black out / White out audience display |
 | `O` | Toggle slide overview grid |
 | `N` | Toggle speaker notes overlay |
+| `Shift+Esc` | Leave a live terminal (`Enter` types in it again) |
 | `Esc` | Exit presentation mode |
 
 These shortcuts give you complete control during a live presentation.
@@ -320,6 +321,31 @@ Pressing `Ctrl+?` in either the editor or presenter view displays the complete k
 Recall slides are perfect for agendas, reference diagrams, glossary definitions, and question prompts that you want to return to on demand.
 
 Tagging a separator with `--- {k}` binds the subsequent slide to key `k`. The presenter display lists all active recall bindings so you never forget your shortcuts.
+
+---
+
+# A Live Terminal
+
+- Tag a separator `--- {terminal}` and that slide is a real shell
+- Add a recall key, `--- {t, terminal}`, to pop it over any slide
+- It is your own shell: run a REPL, an editor, a coding agent
+- One session lasts the whole talk, so it is all still there when you come back
+- `Shift+Esc` hands the keyboard back to the slides
+
+Press `T` now. A terminal opens over this slide, in the folder the deck lives in. Type in it, then press `Shift+Esc` and you are back here.
+
+While the terminal has the keyboard, every key goes to the shell, plain `Esc` included. `Shift+Esc` is the one key that does not. A terminal popped by its key closes. A terminal slide in the normal flow stays on screen and the arrow keys drive the talk again; `Enter` gives the keyboard back to the shell.
+
+The terminal exists only in present mode. In the editor preview, a PDF and a published deck, a terminal slide shows its own Markdown, so write there what a reader should see when there is no shell.
+
+--- {t, terminal, skip}
+
+# Terminal (Key: T)
+
+- In present mode this slide is a live shell
+- Everywhere else it shows these lines
+
+This slide is tagged `--- {t, terminal, skip}`. The `skip` keeps it out of the arrow-key flow, so paging through this manual never lands you in a shell by surprise.
 
 ---
 

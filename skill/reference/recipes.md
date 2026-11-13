@@ -85,6 +85,23 @@ Recall slides allow you to pop reference material over your presentation at any 
 
 ---
 
+## Recipe 2b: Add a Live Terminal
+
+Use this when the talk includes a live coding or command-line demo.
+
+1. **Tag the Separator:** Add `terminal` to the slide separator. Add a key to make it poppable from anywhere, and `skip` to keep it out of the arrow-key flow:
+   ```markdown
+   --- {t, terminal, skip}
+
+   # Live demo
+
+   Run `npm test`, then start the agent and ask it to fix the failing case.
+   ```
+2. **Write the Fallback:** The heading and any lists are what a PDF or published deck shows in place of the terminal. The plain paragraph is a speaker note and stays visible in the presenter window while the terminal is up.
+3. **Tell the Presenter the Keys:** `t` opens it, `Shift+Esc` closes it and returns to the slide underneath. Never promise that the deck will run a command; it only opens a shell prompt.
+
+---
+
 ## Recipe 3: Build a Bento Image Grid
 
 To create a balanced Bento grid (CSS grid layout):
