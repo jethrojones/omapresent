@@ -16,6 +16,7 @@
 #include <QQmlError>
 #include <QQuickWindow>
 #include <QScreen>
+#include <QSet>
 #include <QWindow>
 #include <QStandardPaths>
 #include <QTimer>
@@ -25,7 +26,9 @@
 #include <utility>
 
 #include "omarchytheme.h"
+#include "platform.h"
 #include "renderhost.h"
+#include "terminalsession.h"
 
 namespace {
 
@@ -38,6 +41,11 @@ const QString previewRole = QStringLiteral("preview");
 // One arrow press of scrolling, and one page. Renderer pixels (spec §4.7).
 constexpr qreal arrowScrollPixels = 120.0;
 constexpr qreal pageScrollPixels = 640.0;
+
+// The terminal's type size moves in steps, a tenth at a time, between a size
+// that fits a wide TUI and one a back row can read.
+constexpr int minTerminalZoom = -6;
+constexpr int maxTerminalZoom = 12;
 
 QString call(const QString &function) {
     return QStringLiteral("window.omapresent && window.omapresent.%1();").arg(function);
@@ -201,6 +209,12 @@ bool haveCommand(const QString &program) {
 class IdleInhibit {
 public:
     IdleInhibit() {
+        // macOS has its own power assertion and no session bus worth asking.
+        // Elsewhere this returns false and the DBus inhibitors below run.
+        m_native = Platform::holdDisplayAwake(true);
+        if (m_native)
+            return;
+
         // hypridle serves org.freedesktop.ScreenSaver itself, so on Omarchy
         // this one call covers both halves of the spec's "hypridle /
         // org.freedesktop.ScreenSaver". The desktop-neutral PowerManagement
@@ -247,6 +261,10 @@ public:
     }
 
     ~IdleInhibit() {
+        if (m_native) {
+            Platform::holdDisplayAwake(false);
+            return;
+        }
         if (!m_service.isEmpty()) {
             QDBusInterface interface(m_service, m_path, m_interface,
                                      QDBusConnection::sessionBus());
@@ -265,6 +283,7 @@ private:
     QString m_path;
     QString m_interface;
     uint m_cookie = 0;
+    bool m_native = false;
     bool m_wasStayingAwake = false;
     bool m_heldStayAwake = false;
 };
@@ -437,7 +456,17 @@ struct ViewState {
     QString blank;
     QString recall;
     bool overview = false;
+    bool terminalFocused = false;
+    int terminalZoom = 0;
 };
+
+// `window.omapresent.terminalWrite('<base64>')`. PTY output is bytes, and base64
+// is the one encoding that survives becoming a JavaScript string literal with
+// no escaping to get wrong.
+QString terminalWriteScript(const QByteArray &bytes) {
+    return QStringLiteral("window.omapresent && window.omapresent.terminalWrite('%1');")
+        .arg(QString::fromLatin1(bytes.toBase64()));
+}
 
 }  // namespace
 
@@ -515,6 +544,33 @@ MonitorAssignment assignOutputs(const QVector<PresentationOutput> &outputs) {
             break;
         }
     }
+
+    // A known laptop panel takes the presenter view whatever is primary, and
+    // the audience takes an external display: the one that is not primary
+    // when there is a choice, since a desk monitor is more often the main
+    // display than a projector is.
+    int builtIn = -1;
+    for (int i = 0; i < outputs.size(); ++i) {
+        if (outputs.at(i).builtIn) {
+            builtIn = i;
+            break;
+        }
+    }
+    if (builtIn >= 0) {
+        int external = -1;
+        for (int i = 0; i < outputs.size(); ++i) {
+            if (i == builtIn || outputs.at(i).builtIn)
+                continue;
+            if (external < 0 || (outputs.at(external).primary && !outputs.at(i).primary))
+                external = i;
+        }
+        if (external >= 0) {
+            assignment.presenter = builtIn;
+            assignment.audience = external;
+            return assignment;
+        }
+    }
+
     assignment.presenter = primary;
     assignment.audience = primary == 0 ? 1 : 0;
     return assignment;
@@ -526,14 +582,24 @@ void DeckNavigator::setDeck(const QJsonObject &deckJson) {
     const QJsonArray slides = deckJson.value(QStringLiteral("slides")).toArray();
 
     QStringList keys;
+    QStringList terminalKeys;
     QVector<QString> flowMarkdown;
+    QVector<bool> flowTerminal;
     for (const QJsonValue &value : slides) {
         const QJsonObject slide = value.toObject();
         const QString key = slide.value(QStringLiteral("recallKey")).toString();
-        if (!key.isEmpty() && !keys.contains(key))
+        const bool terminal = slide.value(QStringLiteral("terminal")).toBool();
+        if (!key.isEmpty() && !keys.contains(key)) {
             keys.append(key);
-        if (!slide.value(QStringLiteral("skip")).toBool())
+            // The first slide bound to a key is the one it pops, here as in
+            // the renderer, so that slide alone decides.
+            if (terminal)
+                terminalKeys.append(key);
+        }
+        if (!slide.value(QStringLiteral("skip")).toBool()) {
             flowMarkdown.append(slide.value(QStringLiteral("markdown")).toString());
+            flowTerminal.append(terminal);
+        }
     }
 
     // A live edit is a full deck replacement. Keep state with the matching
@@ -585,6 +651,8 @@ void DeckNavigator::setDeck(const QJsonObject &deckJson) {
     };
 
     m_recallKeys = keys;
+    m_terminalRecallKeys = terminalKeys;
+    m_flowTerminal = flowTerminal;
     m_flowCount = flowMarkdown.size();
     m_flowMarkdown = flowMarkdown;
     m_scroll = scroll;
@@ -766,6 +834,24 @@ struct Presentation::Private {
     std::unique_ptr<DoNotDisturbHold> doNotDisturb;
     std::unique_ptr<PresentationEnvironmentControl> environment;
 
+    // The live terminal. One session for the whole talk, created the first
+    // time a terminal slide is shown.
+    std::unique_ptr<TerminalSession> terminal;
+    QString terminalDirectory;
+    // Roles whose page has built its terminal and is sent live output.
+    QSet<QString> terminalAttached;
+    // The role whose keystrokes are believed: the page that last took focus.
+    // Both pages run a terminal emulator and both answer the shell's queries,
+    // so only one of them may talk to it.
+    QString terminalInputRole;
+    bool terminalFocused = false;
+    // Which terminal the keyboard was last handed to: "slide:3", "recall:t",
+    // or empty when none is showing. A change of identity is an arrival.
+    QString terminalShowing;
+    int terminalCols = 0;
+    int terminalRows = 0;
+    int terminalZoom = 0;
+
     // The window whose renderer we ask to navigate and scroll, and whose state
     // events we believe. The presenter when there is one, because that is where
     // the speaker's hands are; the audience when presenting on one screen.
@@ -792,6 +878,28 @@ Presentation::Presentation(QObject *parent) : QObject(parent), d(new Private) {
     connect(d->presenterHost, &RenderHost::stateChanged, this,
             [this]() { adoptState(presenterRole, d->presenterHost->lastState()); });
 
+    // The live terminal. The hosts only relay; everything is decided here,
+    // where the role is known and the state of the talk can be checked.
+    const struct { RenderHost *host; QString role; } terminalHosts[] = {
+        {d->audienceHost, audienceRole}, {d->presenterHost, presenterRole}};
+    for (const auto &entry : terminalHosts) {
+        const QString role = entry.role;
+        connect(entry.host, &RenderHost::terminalAttached, this,
+                [this, role]() { terminalAttached(role); });
+        connect(entry.host, &RenderHost::terminalInputReceived, this,
+                [this, role](const QByteArray &bytes) { terminalInput(role, bytes); });
+        connect(entry.host, &RenderHost::terminalResized, this,
+                [this, role](int cols, int rows) { terminalResized(role, cols, rows); });
+        connect(entry.host, &RenderHost::terminalFocusedIn, this,
+                [this, role]() { terminalFocusedIn(role); });
+        connect(entry.host, &RenderHost::terminalLeaveRequested, this,
+                [this]() { leaveTerminal(); });
+        connect(entry.host, &RenderHost::terminalFocusRequested, this,
+                [this]() { focusTerminal(); });
+        connect(entry.host, &RenderHost::terminalZoomRequested, this,
+                [this](int direction) { terminalZoomRequested(direction); });
+    }
+
     // Someone will plug a projector in mid-talk; that is the normal case
     // (spec §5.1), so both windows follow the outputs wherever they go.
     if (QGuiApplication *application = qGuiApp) {
@@ -808,6 +916,7 @@ Presentation::~Presentation() {
     // The holders release here too, so an exception or a crash on the way out
     // still gives the desktop its idle timer and its notifications back.
     d->environment->stop();
+    endTerminalSession();
     closeWindows();
     delete d;
 }
@@ -889,6 +998,7 @@ void Presentation::start(int fromSlideIndex) {
     d->clock.start();
 
     assignMonitors();
+    updateTerminalState();
     emit activeChanged();
     emit elapsedChanged();
     emit positionChanged();
@@ -909,6 +1019,10 @@ void Presentation::stop() {
     // not yet released these leaves the user's notifications switched off with
     // nothing left running to switch them back on.
     d->environment->stop();
+
+    // The shell belongs to the talk. It ends here, with its jobs, rather than
+    // running on behind an editor that has no way to show it.
+    endTerminalSession();
 
     closeWindows();
     emit activeChanged();
@@ -953,6 +1067,7 @@ void Presentation::setDeck(const QJsonObject &deckJson) {
     }
 
     emit deckChanged();
+    updateTerminalState();
     emit positionChanged();
     syncViews();
 }
@@ -981,6 +1096,7 @@ void Presentation::scrollBy(qreal deltaPixels) {
 void Presentation::showRecall(const QString &key) {
     if (!d->nav.showRecall(key))
         return;
+    updateTerminalState();
     for (const QString &role : {audienceRole, presenterRole})
         applyOverlays(role);
     emit positionChanged();
@@ -1009,6 +1125,7 @@ void Presentation::setOverview(bool on) {
     if (d->overview == on)
         return;
     d->overview = on;
+    updateTerminalState();
     for (const QString &role : {audienceRole, presenterRole})
         applyOverlays(role);
     emit positionChanged();
@@ -1069,6 +1186,7 @@ QStringList Presentation::shortcutReference() const {
         QStringLiteral("N\tNotes overlay (single screen)"),
         QStringLiteral("Tab\tNext player on the slide"),
         QStringLiteral("bound key\tShow or hide that recall slide"),
+        QStringLiteral("Shift+Esc\tLeave the terminal; Enter types in it again"),
         QStringLiteral("Esc\tClose what is open, then exit"),
         QStringLiteral("Ctrl+?\tThis list")};
 }
@@ -1077,6 +1195,26 @@ QStringList Presentation::shortcutReference() const {
 
 bool Presentation::handleKey(int key, int modifiers, const QString &text) {
     const Qt::KeyboardModifiers mods(modifiers);
+
+    if (terminalVisible()) {
+        // The one key a terminal never gets. Plain Esc belongs to whatever is
+        // running in it, so leaving needs a chord nothing in a shell uses.
+        if (key == Qt::Key_Escape && mods == Qt::KeyboardModifiers(Qt::ShiftModifier)) {
+            leaveTerminal();
+            return true;
+        }
+        if (d->terminalFocused) {
+            // The page owns the keyboard while the shell has it, so a key that
+            // lands here arrived while focus was somewhere else in the window.
+            // Pass on what it typed and have the window take focus back.
+            if (!text.isEmpty())
+                terminalInput(d->terminalInputRole.isEmpty() ? d->masterRole()
+                                                             : d->terminalInputRole,
+                              text.toUtf8());
+            emit terminalKeyboardWanted();
+            return true;
+        }
+    }
 
     if (mods.testFlag(Qt::ControlModifier)) {
         // `Ctrl+?` is Ctrl+Shift+/ on most layouts, so accept either spelling.
@@ -1173,6 +1311,8 @@ bool Presentation::handleKey(int key, int modifiers, const QString &text) {
             afterNavigation();
         } else if (d->overview) {
             setOverview(false);
+        } else if (terminalVisible()) {
+            focusTerminal();
         }
         return true;
 
@@ -1244,11 +1384,19 @@ void Presentation::viewReady(const QString &role) {
     view.blank.clear();
     view.recall.clear();
     view.overview = false;
+    view.terminalFocused = false;
+    view.terminalZoom = 0;
+    // A page that has just loaded has no terminal yet; it attaches again when
+    // it has built one, and is replayed the session so far.
+    d->terminalAttached.remove(role);
     applyTo(role);
 }
 
 void Presentation::viewGone(const QString &role) {
     d->views.remove(role);
+    d->terminalAttached.remove(role);
+    if (d->terminalInputRole == role)
+        d->terminalInputRole.clear();
 }
 
 void Presentation::adoptState(const QString &role, const QJsonObject &state) {
@@ -1283,6 +1431,7 @@ void Presentation::adoptState(const QString &role, const QJsonObject &state) {
 }
 
 void Presentation::afterNavigation() {
+    updateTerminalState();
     syncViews();
     emit positionChanged();
 }
@@ -1370,6 +1519,19 @@ QString Presentation::overlayScript(const QString &role) {
                                     : call(QStringLiteral("showRecall"), recall));
     }
 
+    // After the recall, so a terminal popped by its key exists in the page
+    // before it is told it has the keyboard.
+    if (view.terminalZoom != d->terminalZoom) {
+        view.terminalZoom = d->terminalZoom;
+        script << call(QStringLiteral("terminalSetZoom"), d->terminalZoom);
+    }
+    if (view.terminalFocused != d->terminalFocused) {
+        view.terminalFocused = d->terminalFocused;
+        script << QStringLiteral("window.omapresent && window.omapresent.terminalSetFocus(%1);")
+                      .arg(d->terminalFocused ? QStringLiteral("true")
+                                              : QStringLiteral("false"));
+    }
+
     return script.join(QLatin1Char('\n'));
 }
 
@@ -1378,8 +1540,10 @@ QVector<PresentationOutput> Presentation::currentOutputs() const {
     const QList<QScreen *> screens = QGuiApplication::screens();
     const QScreen *primary = QGuiApplication::primaryScreen();
     outputs.reserve(screens.size());
-    for (const QScreen *screen : screens)
-        outputs.append(PresentationOutput{screen->name(), screen == primary});
+    for (const QScreen *screen : screens) {
+        outputs.append(PresentationOutput{screen->name(), screen == primary,
+                                          Platform::isBuiltInScreen(screen)});
+    }
     return outputs;
 }
 
@@ -1481,11 +1645,17 @@ void Presentation::placeWindow(QQuickWindow *window, QScreen *screen, bool fullS
     // A fullscreen window will not move between outputs while it is fullscreen,
     // so drop out, move, and go back — which is also what makes a projector
     // plugged in mid-talk land on the right screen.
-    if (window->screen() != screen) {
+    const bool changesOutput = window->screen() != screen;
+    if (changesOutput) {
         window->setVisibility(QWindow::Windowed);
         window->setScreen(screen);
-        window->setGeometry(screen->geometry());
     }
+    // A window that is not moving keeps the place it has. The exception is a
+    // desktop that does not tile, the first time a window is shown there: the
+    // compositor will not size it, so an audience window that happens to start
+    // on its own output would open at Qt's default of a few pixels square.
+    if (changesOutput || (!window->isVisible() && Platform::windowsNeedGeometry()))
+        window->setGeometry(Platform::windowedGeometry(screen));
 
     // Spec §5.1: this is an ordinary top-level window that happens to be
     // showing a deck. It opens windowed so it can be tiled, moved, resized and
@@ -1536,4 +1706,189 @@ void Presentation::setDoNotDisturb(bool on) {
     } else {
         d->doNotDisturb.reset();
     }
+}
+
+// --- The live terminal ------------------------------------------------------
+
+bool Presentation::terminalVisible() const {
+    return d->active && !d->overview && d->nav.showingTerminal();
+}
+
+bool Presentation::terminalFocused() const { return d->terminalFocused; }
+
+TerminalSession *Presentation::terminalSession() const { return d->terminal.get(); }
+
+void Presentation::setTerminalDirectory(const QString &directory) {
+    d->terminalDirectory = directory;
+}
+
+void Presentation::updateTerminalState() {
+    QString showing;
+    if (terminalVisible()) {
+        showing = d->nav.recall().isEmpty()
+            ? QStringLiteral("slide:%1").arg(d->nav.slideIndex())
+            : QStringLiteral("recall:%1").arg(d->nav.recall());
+    }
+
+    // Arriving on a terminal is the speaker saying "I am going to type now", so
+    // it takes the keyboard. Anything that takes the terminal off screen gives
+    // the keyboard back, so no key press is ever swallowed by a shell nobody
+    // can see.
+    if (showing.isEmpty())
+        d->terminalFocused = false;
+    else if (showing != d->terminalShowing)
+        d->terminalFocused = true;
+    d->terminalShowing = showing;
+}
+
+void Presentation::focusTerminal() {
+    if (!terminalVisible() || d->terminalFocused)
+        return;
+    d->terminalFocused = true;
+    for (const QString &role : {audienceRole, presenterRole})
+        applyOverlays(role);
+    emit positionChanged();
+}
+
+void Presentation::leaveTerminal() {
+    if (!terminalVisible())
+        return;
+
+    // A terminal popped by its recall key is left the way every recall slide
+    // is: it closes, and the talk is back exactly where it was.
+    if (!d->nav.recall().isEmpty())
+        hideRecall();
+
+    // A terminal slide in the flow stays up, with the arrows driving the talk
+    // again. (And if the slide under a closed recall is itself a terminal, it
+    // does not grab the keyboard the speaker just asked to have back.)
+    d->terminalFocused = false;
+    for (const QString &role : {audienceRole, presenterRole})
+        applyOverlays(role);
+    emit positionChanged();
+}
+
+void Presentation::startTerminalSession() {
+    if (!d->terminal) {
+        d->terminal = std::make_unique<TerminalSession>();
+        connect(d->terminal.get(), &TerminalSession::output, this,
+                [this](const QByteArray &bytes) { sendToTerminalViews(bytes); });
+        connect(d->terminal.get(), &TerminalSession::exited, this, [this](int exitCode) {
+            const QString message = exitCode < 0 && d->terminal
+                ? d->terminal->lastError()
+                : QStringLiteral("[shell exited. Press Enter to start a new one.]");
+            sendToTerminalViews(QStringLiteral("\r\n%1\r\n").arg(message).toUtf8());
+        });
+    }
+
+    if (!d->terminal->start(d->terminalDirectory,
+                            d->terminalCols > 0 ? d->terminalCols : 80,
+                            d->terminalRows > 0 ? d->terminalRows : 24)) {
+        sendToTerminalViews(
+            QStringLiteral("\r\n%1\r\n").arg(d->terminal->lastError()).toUtf8());
+    }
+}
+
+void Presentation::endTerminalSession() {
+    d->terminal.reset();
+    d->terminalAttached.clear();
+    d->terminalInputRole.clear();
+    d->terminalShowing.clear();
+    d->terminalFocused = false;
+    d->terminalCols = 0;
+    d->terminalRows = 0;
+    d->terminalZoom = 0;
+}
+
+void Presentation::sendToTerminalViews(const QByteArray &bytes) {
+    if (bytes.isEmpty() || d->terminalAttached.isEmpty())
+        return;
+    const QString script = terminalWriteScript(bytes);
+    for (const QString &role : std::as_const(d->terminalAttached))
+        emit runInView(role, script);
+}
+
+void Presentation::terminalAttached(const QString &role) {
+    const auto view = d->views.constFind(role);
+    if (!d->active || view == d->views.constEnd() || !view->ready)
+        return;
+    d->terminalAttached.insert(role);
+
+    // The audience decides the grid; everyone else draws that grid at whatever
+    // type size fits their own pane.
+    if (role != audienceRole && d->terminalCols > 0) {
+        emit runInView(role,
+                       QStringLiteral("window.omapresent && window.omapresent.terminalSetSize(%1, %2);")
+                           .arg(d->terminalCols)
+                           .arg(d->terminalRows));
+    }
+
+    // A page that joins a session already under way is shown what the others
+    // have: the output so far, replayed into its own emulator.
+    if (!d->terminal)
+        return;
+    const QByteArray replay = d->terminal->scrollback();
+    if (!replay.isEmpty())
+        emit runInView(role, terminalWriteScript(replay));
+    if (d->terminal->scrollbackTruncated())
+        d->terminal->nudge();
+}
+
+void Presentation::terminalResized(const QString &role, int cols, int rows) {
+    // The audience screen is the one being read, so its grid is the grid.
+    if (!d->active || role != audienceRole || cols < 2 || rows < 1)
+        return;
+    d->terminalCols = cols;
+    d->terminalRows = rows;
+
+    if (d->terminal && d->terminal->running())
+        d->terminal->resize(cols, rows);
+    else if (!d->terminal && terminalVisible())
+        startTerminalSession();  // the first time a terminal is shown
+
+    if (d->terminalAttached.contains(presenterRole)) {
+        emit runInView(presenterRole,
+                       QStringLiteral("window.omapresent && window.omapresent.terminalSetSize(%1, %2);")
+                           .arg(cols)
+                           .arg(rows));
+    }
+}
+
+void Presentation::terminalInput(const QString &role, const QByteArray &bytes) {
+    // Nothing reaches the shell unless a terminal is on screen and has been
+    // given the keyboard. A page cannot type into a shell behind the speaker's
+    // back, and a shell that is not showing never receives a stray key.
+    if (bytes.isEmpty() || !terminalVisible() || !d->terminalFocused)
+        return;
+    const QString owner = d->terminalInputRole.isEmpty() ? d->masterRole()
+                                                         : d->terminalInputRole;
+    if (role != owner)
+        return;
+
+    if (!d->terminal || !d->terminal->running()) {
+        // The shell ended (`exit`, Ctrl+D) or never started. Enter asks for
+        // another; no other key does, so an exit is never undone by accident.
+        if (bytes == "\r" || bytes == "\n")
+            startTerminalSession();
+        return;
+    }
+    d->terminal->write(bytes);
+}
+
+void Presentation::terminalFocusedIn(const QString &role) {
+    if (d->views.contains(role))
+        d->terminalInputRole = role;
+}
+
+void Presentation::terminalZoomRequested(int direction) {
+    if (!terminalVisible())
+        return;
+    const int zoom = direction == 0
+        ? 0
+        : qBound(minTerminalZoom, d->terminalZoom + (direction > 0 ? 1 : -1), maxTerminalZoom);
+    if (zoom == d->terminalZoom)
+        return;
+    d->terminalZoom = zoom;
+    for (const QString &role : {audienceRole, presenterRole})
+        applyOverlays(role);
 }

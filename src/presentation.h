@@ -26,12 +26,16 @@
 class QQmlEngine;
 class QQuickWindow;
 class QScreen;
+class TerminalSession;
 
 // One output as present mode sees it: enough to decide which window goes where
 // and nothing more, so the decision can be tested without a compositor.
 struct PresentationOutput {
     QString name;
     bool primary = false;
+    // The computer's own panel. Only macOS reports it (Platform::isBuiltInScreen);
+    // everywhere else it stays false and `primary` decides alone.
+    bool builtIn = false;
 };
 
 // Which output each window takes (spec §5.1). Indices into the output list, or
@@ -52,6 +56,11 @@ struct MonitorAssignment {
 // (spec §5.1). With one output both windows share it; with none, nothing is
 // assigned. When no output claims to be primary the first one is treated as it,
 // which is the same answer Qt gives on a single-seat machine.
+//
+// A laptop's own panel, when the platform can point at it, overrules "primary":
+// the presenter takes the panel and the audience takes the display that was
+// plugged in. On a Mac the primary display is wherever the menu bar was last
+// dragged, which says nothing about which screen the room is looking at.
 MonitorAssignment assignOutputs(const QVector<PresentationOutput> &outputs);
 
 // Pure ownership policy for the two desktop holds used during a talk. The
@@ -160,6 +169,18 @@ public:
     bool hideRecall();
     QString recall() const { return m_recall; }
 
+    // Slides tagged `--- {terminal}`. A flow index, or a recall key.
+    bool terminalAt(int slideIndex) const { return m_flowTerminal.value(slideIndex); }
+    bool recallIsTerminal(const QString &key) const {
+        return m_terminalRecallKeys.contains(key);
+    }
+    // Whether what is on screen is a terminal: the recall overlay when one is
+    // up, otherwise the current slide.
+    bool showingTerminal() const {
+        return m_recall.isEmpty() ? terminalAt(m_position.slideIndex)
+                                  : recallIsTerminal(m_recall);
+    }
+
 private:
     DeckPosition m_position;
     // The last known content of each flow slide. Live edits may insert or
@@ -170,6 +191,8 @@ private:
     QVector<qreal> m_scroll;
     QVector<int> m_fragmentCounts;
     QStringList m_recallKeys;
+    QVector<bool> m_flowTerminal;
+    QStringList m_terminalRecallKeys;
     int m_flowCount = 0;
     QString m_jump;
     QString m_recall;
@@ -207,6 +230,11 @@ class Presentation : public QObject {
     // (spec §5.1) and this follows `F` / `F11` from either window, so a control
     // can show which state it is about to leave.
     Q_PROPERTY(bool audienceFullScreen READ audienceFullScreen NOTIFY positionChanged)
+    // The live terminal (`--- {terminal}`). Visible: a terminal slide is what
+    // the audience is looking at. Focused: the shell has the keyboard, and the
+    // only key that still belongs to the talk is Shift+Esc.
+    Q_PROPERTY(bool terminalVisible READ terminalVisible NOTIFY positionChanged)
+    Q_PROPERTY(bool terminalFocused READ terminalFocused NOTIFY positionChanged)
 
 public:
     using WindowFactory = std::function<QQuickWindow *(const QString &source)>;
@@ -308,6 +336,35 @@ public:
     // the talk is without going through the properties.
     const DeckNavigator &navigator() const;
 
+    // --- The live terminal --------------------------------------------------
+    //
+    // A slide tagged `--- {terminal}` shows a real shell on the audience screen
+    // instead of its Markdown, mirrored in the presenter window. There is one
+    // session per talk: it starts the first time a terminal slide is shown,
+    // every terminal slide and recall shows that same session, and it ends with
+    // the presentation.
+    //
+    // Arriving on a terminal gives it the keyboard. Shift+Esc takes it back: a
+    // terminal popped by its recall key closes, and a terminal slide in the
+    // flow stays up while the arrows drive the talk again. Enter, or a click on
+    // the terminal, returns the keyboard to the shell.
+    bool terminalVisible() const;
+    bool terminalFocused() const;
+    Q_INVOKABLE void focusTerminal();
+    Q_INVOKABLE void leaveTerminal();
+    // Where the shell starts: the deck's own directory. Anything that is not a
+    // writable directory falls back to the home directory.
+    void setTerminalDirectory(const QString &directory);
+    // The session, or null before the first terminal slide. For tests.
+    TerminalSession *terminalSession() const;
+    // What a renderer page's terminal reported, by role. Public so the dispatch
+    // can be tested without a page; the windows reach these through RenderHost.
+    void terminalAttached(const QString &role);
+    void terminalInput(const QString &role, const QByteArray &bytes);
+    void terminalResized(const QString &role, int cols, int rows);
+    void terminalFocusedIn(const QString &role);
+    void terminalZoomRequested(int direction);
+
 signals:
     void activeChanged();
     void positionChanged();
@@ -318,6 +375,9 @@ signals:
     // "presenter" or "preview"; each window runs only its own.
     void runInView(const QString &role, const QString &script);
     void deckChanged();
+    // The shell holds the keyboard but a key reached the window's own handler,
+    // so the web view has lost focus. The windows answer by taking it back.
+    void terminalKeyboardWanted();
 
 private:
     void assignMonitors();
@@ -337,6 +397,12 @@ private:
     void applyTo(const QString &role);
     void applyOverlays(const QString &role);
     QString overlayScript(const QString &role);
+    // Re-derives who has the keyboard after anything that can change what is on
+    // screen. Arriving on a terminal focuses it; leaving one never strands it.
+    void updateTerminalState();
+    void startTerminalSession();
+    void endTerminalSession();
+    void sendToTerminalViews(const QByteArray &bytes);
 
     QVector<PresentationOutput> currentOutputs() const;
     QQuickWindow *createWindow(const QString &source);

@@ -26,11 +26,12 @@
 #include <algorithm>
 #include <functional>
 
+#include "platform.h"
+
 namespace {
 
 QString publishConfigPath() {
-    return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation))
-        .filePath(QStringLiteral("omapresent/publish.toml"));
+    return QDir(Platform::configHome()).filePath(QStringLiteral("omapresent/publish.toml"));
 }
 
 QString uncommented(const QString &line) {

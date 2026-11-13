@@ -146,6 +146,7 @@ QString removeSpans(const QString &line, Span *openSpan)
 struct Segment {
     QString recallKey;
     bool skipInFlow = false;
+    bool terminal = false;
     bool dropped = false;
     // Original line numbers this segment owns, separator line included. Used
     // for cursor -> slide sync, so every line lands somewhere.
@@ -263,6 +264,8 @@ QDebug operator<<(QDebug debug, const Slide &slide)
         debug << ", recall \"" << slide.recallKey << '"';
     if (slide.skipInFlow)
         debug << ", skipped";
+    if (slide.terminal)
+        debug << ", terminal";
     return debug << ", markdown " << slide.markdown << ')';
 }
 
@@ -317,6 +320,10 @@ QJsonObject DeckModel::toJson() const
         object.insert(QStringLiteral("markdown"), slide.markdown);
         object.insert(QStringLiteral("recallKey"), slide.recallKey);
         object.insert(QStringLiteral("skip"), slide.skipInFlow);
+        // Only present when set, so a deck without a terminal produces exactly
+        // the document it always did.
+        if (slide.terminal)
+            object.insert(QStringLiteral("terminal"), true);
         object.insert(QStringLiteral("sourceStartLine"), slide.sourceStartLine);
         object.insert(QStringLiteral("sourceEndLine"), slide.sourceEndLine);
         slides.append(object);
@@ -350,10 +357,18 @@ bool DeckModel::isSeparatorLine(const QString &line, const QString &previousLine
 
 void DeckModel::parseSeparatorTag(const QString &line, QString *recallKey, bool *skipInFlow)
 {
+    parseSeparatorTag(line, recallKey, skipInFlow, nullptr);
+}
+
+void DeckModel::parseSeparatorTag(const QString &line, QString *recallKey, bool *skipInFlow,
+                                  bool *terminal)
+{
     if (recallKey)
         recallKey->clear();
     if (skipInFlow)
         *skipInFlow = false;
+    if (terminal)
+        *terminal = false;
 
     const QString trimmed = line.trimmed();
     const int open = trimmed.indexOf(QLatin1Char('{'));
@@ -369,6 +384,9 @@ void DeckModel::parseSeparatorTag(const QString &line, QString *recallKey, bool 
         if (word.compare(QStringLiteral("skip"), Qt::CaseInsensitive) == 0) {
             if (skipInFlow)
                 *skipInFlow = true;
+        } else if (word.compare(QStringLiteral("terminal"), Qt::CaseInsensitive) == 0) {
+            if (terminal)
+                *terminal = true;
         } else if (word.size() == 1 && word.at(0).isLetterOrNumber()) {
             if (recallKey && recallKey->isEmpty())
                 *recallKey = word;
@@ -478,7 +496,8 @@ void DeckModel::parse()
                 segment.dropped = !marker.isEmpty();
                 segment.spanStart = line.sourceLine;
                 segment.spanEnd = lines.size() - 1;
-                parseSeparatorTag(candidate, &segment.recallKey, &segment.skipInFlow);
+                parseSeparatorTag(candidate, &segment.recallKey, &segment.skipInFlow,
+                                  &segment.terminal);
                 segments.append(segment);
                 continue;
             }
@@ -499,20 +518,28 @@ void DeckModel::parse()
             ++first;
         while (last >= first && isBlank(body.at(segment.lines.at(last)).text))
             --last;
-        if (first > last)
-            continue; // Nothing between these separators: no slide.
+        // Nothing between these separators: no slide. A terminal is the one
+        // slide that needs no Markdown of its own, so `--- {terminal}` counts
+        // even when the next line of content belongs to the slide after it.
+        const bool empty = first > last;
+        if (empty && !segment.terminal)
+            continue;
 
         QStringList markdown;
-        markdown.reserve(last - first + 1);
+        markdown.reserve(empty ? 0 : last - first + 1);
         for (int i = first; i <= last; ++i)
             markdown.append(body.at(segment.lines.at(i)).text);
 
         Slide slide;
-        slide.markdown = markdown.join(QLatin1Char('\n')) + QLatin1Char('\n');
+        slide.markdown = empty ? QString()
+                               : markdown.join(QLatin1Char('\n')) + QLatin1Char('\n');
         slide.recallKey = segment.recallKey;
         slide.skipInFlow = segment.skipInFlow;
-        slide.sourceStartLine = body.at(segment.lines.at(first)).sourceLine;
-        slide.sourceEndLine = body.at(segment.lines.at(last)).sourceLine;
+        slide.terminal = segment.terminal;
+        slide.sourceStartLine = empty ? segment.spanStart
+                                      : body.at(segment.lines.at(first)).sourceLine;
+        slide.sourceEndLine = empty ? segment.spanStart
+                                    : body.at(segment.lines.at(last)).sourceLine;
 
         if (!slide.recallKey.isEmpty() && bindings >= maxRecallBindings) {
             // Drop the whole tag, not just the key: a skipped slide with no key

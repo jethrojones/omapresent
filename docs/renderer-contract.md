@@ -33,6 +33,7 @@ produces the `frontmatter` / `slides` half; the caller merges in the rest.
       "markdown": "# Hello\n\n![[a.png]]\n",   // comments already stripped
       "recallKey": "q",         // "" when unbound
       "skip": false,            // true for `--- {q, skip}`
+      "terminal": true,         // only present, and only true, for `--- {terminal}` (§8)
       "sourceStartLine": 12,    // 0-based, into the ORIGINAL file
       "sourceEndLine": 18
     }
@@ -228,3 +229,52 @@ The C++ network paths remain the explicit video pre-fetch (spec §4.8) and
 publish (spec §9). A published bundle retains a remote image URL only so the
 same explicit load action works there. Opening the bundle offline still renders
 the complete deck shell and never attempts that URL.
+
+## 8. The live terminal
+
+Added for `--- {terminal}` slides. Everything here is additive: a deck with no
+terminal slide produces the same document and makes the same calls as before.
+
+A slide whose `terminal` key is `true` is covered, in the audience and
+presenter windows, by a real terminal. The page shows it when the host object
+exists, the page's role is `audience` or `presenter`, the overview is closed,
+and the slide on screen (the recall overlay when one is up, otherwise the
+current slide) is a terminal. It does not depend on `mode`: a running
+presentation is handed the same document the preview is. Everywhere else the
+slide's own Markdown is drawn like any other slide.
+
+The emulator is xterm.js. It is **not** part of this bundle. It lives in
+`src/terminal/`, is compiled into the app as `qrc:/terminal/`, and is fetched by
+`render.js` the first time a terminal is shown. A published bundle, which
+carries every file under `src/renderer/`, therefore never carries it.
+
+A live terminal slide reports `fragmentCount: 0`.
+
+Page API additions, all no-ops on a page with no terminal:
+
+```js
+window.omapresent.terminalWrite(base64)      // PTY bytes for this page's emulator
+window.omapresent.terminalSetSize(cols, rows)// the audience's grid, for a mirror
+window.omapresent.terminalSetFocus(on)       // whether the shell has the keyboard
+window.omapresent.terminalSetZoom(step)      // type size step, audience page only
+window.omapresent.hostReady()                // called by the bridge after handshake
+```
+
+Host additions on `omapresentHost`, all relays to `Presentation`:
+
+```js
+terminalAttach()            // this page's emulator exists; send it output
+terminalInput(text)         // what was typed, as xterm.js encoded it
+terminalBinary(bytes)       // the same for binary reports, one byte per char
+terminalResize(cols, rows)  // the grid that fits; honoured from the audience page only
+terminalLeave()             // Shift+Esc
+terminalFocus()             // a click on a terminal that lacks the keyboard
+terminalFocusIn()           // this page's emulator took DOM focus
+terminalZoom(direction)     // +1, -1, or 0 to reset
+```
+
+The host decides everything. It starts the shell only when a terminal slide is
+on screen in a running presentation, accepts input only while that terminal has
+been given the keyboard, and listens to one page at a time, because both pages
+run an emulator and both answer the shell's queries. The editor preview's host
+object has the same methods and nothing connected to them.

@@ -40,10 +40,23 @@ Window {
             + ":" + twoDigits(seconds);
     }
 
-    onActiveChanged: if (active) keys.forceActiveFocus()
+    onActiveChanged: if (active) routeKeyboard()
     Component.onDestruction: {
         presentation.viewGone("presenter");
         presentation.viewGone("preview");
+    }
+
+    // While the live terminal (`--- {terminal}`) has the keyboard, the page
+    // mirroring it here holds focus so xterm.js gets every key; otherwise
+    // `keys` does, as always. See AudienceWindow.qml.
+    readonly property bool terminalHasKeyboard: presentation.terminalFocused
+    onTerminalHasKeyboardChanged: routeKeyboard()
+
+    function routeKeyboard() {
+        if (presentation.terminalFocused)
+            currentView.forceActiveFocus();
+        else
+            keys.forceActiveFocus();
     }
 
     WebChannel {
@@ -58,6 +71,10 @@ Window {
                 currentView.runJavaScript(script);
             else if (role === "preview")
                 previewView.runJavaScript(script);
+        }
+        function onTerminalKeyboardWanted() {
+            if (presenter.active)
+                presenter.routeKeyboard();
         }
     }
 
@@ -123,6 +140,10 @@ Window {
                     webChannel: hostChannel
                     activeFocusOnPress: false
 
+                    onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceId) {
+                        console.warn("presenter renderer:", sourceId + ":" + lineNumber, message);
+                    }
+
                     onWidthChanged: viewportResize.restart()
                     onHeightChanged: viewportResize.restart()
 
@@ -136,6 +157,14 @@ Window {
                             presentation.viewGone("presenter");
                         }
                     }
+                }
+
+                // This view takes no focus from a press (above), so a click
+                // cannot reach the page to ask for the keyboard. Ask here.
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: presentation.terminalVisible && !presentation.terminalFocused
+                    onClicked: presentation.focusTerminal()
                 }
 
                 // What the audience screen is doing when it is not showing the
@@ -371,6 +400,7 @@ Window {
                 Layout.fillWidth: true
                 color: presenter.accent
                 font.pixelSize: presenter.baseFontSize * 1.2
+                wrapMode: Text.Wrap
                 text: {
                     var parts = [];
                     if (presentation.jumpBuffer.length > 0)
@@ -379,6 +409,12 @@ Window {
                         parts.push("overview");
                     if (presentation.recall.length > 0)
                         parts.push("recall " + presentation.recall);
+                    // Who has the keyboard, and the way to change it, for as
+                    // long as a terminal is up.
+                    if (presentation.terminalFocused)
+                        parts.push("terminal has the keyboard · Shift+Esc returns to the slides");
+                    else if (presentation.terminalVisible)
+                        parts.push("terminal · Enter to type in it");
                     return parts.join("   ");
                 }
             }

@@ -23,7 +23,7 @@ else
   exit 1
 fi
 
-JOBS="$(nproc 2>/dev/null || echo 1)"
+JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
 
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"

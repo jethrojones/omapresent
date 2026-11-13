@@ -653,7 +653,12 @@ void VideoCacheTest::offlineLocalVideoEndToEnd()
 {
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
-    const QString deck = tmp.filePath(QString::fromUtf8("Deck café テスト"));
+    // The real path of the temporary directory: on macOS /var is a symlink to
+    // /private/var, and the cache reports its own location resolved. Every
+    // path comparison below is between two spellings of the same directory
+    // unless both start from the resolved one. A no-op on Linux.
+    const QString tmpRoot = QFileInfo(tmp.path()).canonicalFilePath();
+    const QString deck = QDir(tmpRoot).filePath(QString::fromUtf8("Deck café テスト"));
     QVERIFY(QDir().mkpath(deck));
 
     const QString sourceName = QStringLiteral("clip.webm");
@@ -714,7 +719,7 @@ void VideoCacheTest::offlineLocalVideoEndToEnd()
         QVERIFY2(QDir::cleanPath(path).startsWith(cacheDir + QLatin1Char('/')),
                  qPrintable(path));
     }
-    for (const QString &path : filesUnder(tmp.path())) {
+    for (const QString &path : filesUnder(tmpRoot)) {
         const QString clean = QDir::cleanPath(path);
         QVERIFY2(clean.startsWith(QDir::cleanPath(deck) + QLatin1Char('/'))
                      || clean.startsWith(cacheDir + QLatin1Char('/')),

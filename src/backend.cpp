@@ -43,14 +43,24 @@
 #include <unistd.h>
 
 #include "markdownhighlighter.h"
+#include "platform.h"
 
 constexpr qreal typoraLineHeightPercent = 140;
 const QString lastSaveDirectorySetting = QStringLiteral("file/lastSaveDirectory");
 const QString welcomeShownSetting = QStringLiteral("firstRun/welcomeShown");
-const QString installedSkillPath = QStringLiteral("/usr/share/omapresent/skill");
-const QString installedWelcomeDeck = QStringLiteral("/usr/share/omapresent/welcome.md");
-const QString installedThemeHook =
-    QStringLiteral("/usr/share/omapresent/hooks/omapresent-theme-refresh");
+
+// What the package installs beside the binary: /usr/share/omapresent on Linux,
+// Omapresent.app's Resources on macOS. Functions, not constants, because the
+// macOS answer depends on where the application was started from.
+static QString installedSkillPath() {
+    return Platform::sharedDataDir() + QStringLiteral("/skill");
+}
+static QString installedWelcomeDeck() {
+    return Platform::sharedDataDir() + QStringLiteral("/welcome.md");
+}
+static QString installedThemeHook() {
+    return Platform::sharedDataDir() + QStringLiteral("/hooks/omapresent-theme-refresh");
+}
 
 // A keystroke must not reparse a 200-slide deck, so edits collect for a beat
 // before the preview and any running presentation are handed a new document.
@@ -76,8 +86,7 @@ static bool confirmPublishOnStdin(const QString &slug) {
 // it is a provider property. This is the same format and XDG location that
 // Publisher uses for its own narrowly scoped edits.
 static bool writePublishTomlSetting(const QString &key, const QString &value) {
-    const QString configPath = QDir(
-        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation))
+    const QString configPath = QDir(Platform::configHome())
         .filePath(QStringLiteral("omapresent/publish.toml"));
 
     QFile input(configPath);
@@ -135,7 +144,8 @@ public:
         themeSignalWriteFd = m_writeFd;
         struct sigaction action {};
         action.sa_handler = handleThemeReloadSignal;
-        ::sigemptyset(&action.sa_mask);
+        // Unqualified on purpose: macOS defines sigemptyset as a macro.
+        sigemptyset(&action.sa_mask);
         action.sa_flags = SA_RESTART;
         if (::sigaction(SIGUSR1, &action, nullptr) != 0) {
             themeSignalWriteFd = -1;
@@ -199,7 +209,8 @@ QString currentOmarchyBackground() {
 }
 
 void installOmarchyThemeHook() {
-    if (!QFileInfo(installedThemeHook).isFile())
+    const QString themeHook = installedThemeHook();
+    if (!QFileInfo(themeHook).isFile())
         return;
     const QString omarchy = QStandardPaths::findExecutable(QStringLiteral("omarchy"));
     if (omarchy.isEmpty())
@@ -208,7 +219,7 @@ void installOmarchyThemeHook() {
     QProcess process;
     process.start(omarchy,
                   {QStringLiteral("hook"), QStringLiteral("install"),
-                   QStringLiteral("theme-set"), installedThemeHook});
+                   QStringLiteral("theme-set"), themeHook});
     if (!process.waitForFinished(2000)) {
         process.kill();
         process.waitForFinished(200);
@@ -1388,6 +1399,11 @@ void Backend::presentFromCaret(int cursorPosition) {
 }
 
 void Backend::startPresentation(int slideIndex) {
+    // A `--- {terminal}` slide opens its shell beside the deck, which is where
+    // the files a demo touches usually are.
+    m_presentation.setTerminalDirectory(
+        m_fileUrl.isLocalFile() ? QFileInfo(m_fileUrl.toLocalFile()).absolutePath()
+                                : QDir::homePath());
     m_presentation.setDeck(deckDocument(QStringLiteral("present")));
     m_presentation.start(slideIndex);
 
@@ -1665,7 +1681,7 @@ void Backend::completeFirstRun() {
     // Idempotent, so it runs every launch rather than only the first: a skills
     // directory that appears later still gets its link, and one that is already
     // there costs four stats. Nothing here may stop the app from starting.
-    installAgentSkill(installedSkillPath, QStringLiteral("omapresent"),
+    installAgentSkill(installedSkillPath(), QStringLiteral("omapresent"),
                       agentSkillDirectories(QDir::homePath()));
     // Omarchy owns the destination and mode. Its normal installer copies this
     // package file to ~/.config/omarchy/hooks/theme-set.d/ idempotently.
@@ -1679,8 +1695,8 @@ void Backend::completeFirstRun() {
         return;
 
     settings.setValue(welcomeShownSetting, true);
-    if (QFileInfo::exists(installedWelcomeDeck))
-        open(QUrl::fromLocalFile(installedWelcomeDeck));
+    if (QFileInfo::exists(installedWelcomeDeck()))
+        open(QUrl::fromLocalFile(installedWelcomeDeck()));
 }
 
 QString Backend::sessionStatePath() {
@@ -1791,7 +1807,7 @@ void Backend::prepareForOffline() {
 QString Backend::welcomeDeckPath() {
     // Installed by the package; the repo copy is what a development build has.
     const QStringList candidates{
-        installedWelcomeDeck,
+        installedWelcomeDeck(),
         QCoreApplication::applicationDirPath() + QStringLiteral("/../welcome/welcome.md")};
     for (const QString &candidate : candidates) {
         if (QFileInfo::exists(candidate))

@@ -69,8 +69,37 @@ public slots:
     // Called by the renderer: omapresentHost.state(JSON.stringify(state)).
     void state(const QString &json);
 
+    // --- The live terminal (`--- {terminal}`) ------------------------------
+    // Called by src/terminal/terminal.js, and only ever relayed: this object
+    // decides nothing. Presentation listens to the signals below and refuses
+    // every one of them unless a terminal slide is on screen in present mode,
+    // so the editor preview's host, which nothing connects, is inert.
+    //
+    // The page's terminal exists and can take output.
+    void terminalAttach();
+    // What the speaker typed, as xterm.js encoded it (text, UTF-8 on the wire).
+    void terminalInput(const QString &data);
+    // The same for xterm.js's binary reports, one byte per character.
+    void terminalBinary(const QString &data);
+    // The grid that fits this page at its type size.
+    void terminalResize(int cols, int rows);
+    // Shift+Esc, or the terminal was clicked: hand the keyboard back / over.
+    void terminalLeave();
+    void terminalFocus();
+    // The page's terminal took DOM focus, so its keystrokes are the real ones.
+    void terminalFocusIn();
+    // Type size, one step up (+1), down (-1) or back to the default (0).
+    void terminalZoom(int direction);
+
 signals:
     void stateChanged();
+    void terminalAttached();
+    void terminalInputReceived(const QByteArray &bytes);
+    void terminalResized(int cols, int rows);
+    void terminalLeaveRequested();
+    void terminalFocusRequested();
+    void terminalFocusedIn();
+    void terminalZoomRequested(int direction);
 
 private:
     QJsonObject m_state;

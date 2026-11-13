@@ -36,8 +36,28 @@ Window {
         return value !== undefined && value !== "" ? value : fallback;
     }
 
-    onActiveChanged: if (active) keys.forceActiveFocus()
+    onActiveChanged: if (active) routeKeyboard()
     Component.onDestruction: presentation.viewGone("audience")
+
+    // The live terminal (`--- {terminal}`) is the one thing in this window that
+    // is typed into. While the shell has the keyboard the page holds focus, so
+    // xterm.js sees every key exactly as a terminal would; the moment it gives
+    // the keyboard back, `keys` below has it again and the talk is driven as
+    // usual.
+    readonly property bool terminalHasKeyboard: presentation.terminalFocused
+    readonly property bool terminalShowing: presentation.terminalVisible
+    onTerminalHasKeyboardChanged: {
+        routeKeyboard();
+        terminalHint.announce();
+    }
+    onTerminalShowingChanged: terminalHint.announce()
+
+    function routeKeyboard() {
+        if (presentation.terminalFocused)
+            view.forceActiveFocus();
+        else
+            keys.forceActiveFocus();
+    }
 
     WebChannel {
         id: hostChannel
@@ -72,7 +92,11 @@ Window {
         // the editor preview, which never set it, worked. Let the press through
         // and hand the keyboard straight back on the following turn, once the
         // page has had the event.
-        onActiveFocusChanged: if (activeFocus) Qt.callLater(keys.forceActiveFocus)
+        //
+        // The exception is a terminal that has the keyboard: then the page is
+        // exactly where focus belongs. Decided on the following turn, not now,
+        // because a click on the terminal is also what asks for the keyboard.
+        onActiveFocusChanged: if (activeFocus) Qt.callLater(audience.routeKeyboard)
 
         onWidthChanged: viewportResize.restart()
         onHeightChanged: viewportResize.restart()
@@ -88,6 +112,12 @@ Window {
             }
         }
 
+        // A renderer that throws would otherwise fail silently, mid-talk. Its
+        // diagnostics belong in the app's log, as the editor preview's do.
+        onJavaScriptConsoleMessage: function(level, message, lineNumber, sourceId) {
+            console.warn("audience renderer:", sourceId + ":" + lineNumber, message);
+        }
+
         // The web view owns the pointer route. Keep the audience wheel command
         // on that route so it cannot put an Item over a video loader.
         WheelHandler {
@@ -100,6 +130,11 @@ Window {
         function onRunInView(role, script) {
             if (role === "audience")
                 view.runJavaScript(script);
+        }
+        // A key reached `keys` while the shell has the keyboard: focus slipped.
+        function onTerminalKeyboardWanted() {
+            if (audience.active)
+                audience.routeKeyboard();
         }
     }
 
@@ -147,6 +182,50 @@ Window {
             text: "N to close"
             color: audience.muted
             font.pixelSize: Math.round(audience.height * 0.018)
+        }
+    }
+
+    // On one screen there is no presenter window to say who has the keyboard,
+    // so the terminal says it here: for a few seconds whenever that changes,
+    // then it gets out of the audience's way.
+    Rectangle {
+        id: terminalHint
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: Math.round(audience.height * 0.02)
+        width: terminalHintText.implicitWidth + Math.round(audience.height * 0.03)
+        height: terminalHintText.implicitHeight + Math.round(audience.height * 0.016)
+        radius: 4
+        color: Qt.rgba(audience.background.r, audience.background.g, audience.background.b, 0.9)
+        border.color: audience.muted
+        border.width: 1
+        opacity: 0
+        visible: opacity > 0
+
+        function announce() {
+            if (presentation.singleOutput && presentation.terminalVisible) {
+                terminalHintFade.restart();
+            } else {
+                terminalHintFade.stop();
+                opacity = 0;
+            }
+        }
+
+        Text {
+            id: terminalHintText
+            anchors.centerIn: parent
+            text: presentation.terminalFocused
+                ? "Shift+Esc returns to the slides"
+                : "Enter types in the terminal"
+            color: audience.foreground
+            font.pixelSize: Math.round(audience.height * 0.02)
+        }
+
+        SequentialAnimation {
+            id: terminalHintFade
+            PropertyAction { target: terminalHint; property: "opacity"; value: 1 }
+            PauseAnimation { duration: 4000 }
+            NumberAnimation { target: terminalHint; property: "opacity"; to: 0; duration: 600 }
         }
     }
 

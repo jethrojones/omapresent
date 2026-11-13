@@ -26,6 +26,9 @@ struct Slide {
     QString recallKey;
     // True for `--- {q, skip}`: poppable by key, absent from the linear flow.
     bool skipInFlow = false;
+    // True for `--- {terminal}`: in present mode the slide shows a live shell
+    // instead of its Markdown. Combines with the others, `--- {t, terminal}`.
+    bool terminal = false;
     // 0-based line numbers in the ORIGINAL source, for editor<->slide sync.
     int sourceStartLine = 0;
     int sourceEndLine = 0;
@@ -38,6 +41,7 @@ inline bool operator==(const Slide &left, const Slide &right)
     return left.markdown == right.markdown
         && left.recallKey == right.recallKey
         && left.skipInFlow == right.skipInFlow
+        && left.terminal == right.terminal
         && left.sourceStartLine == right.sourceStartLine
         && left.sourceEndLine == right.sourceEndLine;
 }
@@ -93,6 +97,10 @@ public:
     // Parses `--- {q, skip}` into ("q", true). Returns ("", false) for a plain
     // `---`. Whitespace inside the braces is insignificant.
     static void parseSeparatorTag(const QString &line, QString *recallKey, bool *skipInFlow);
+    // The same, also reporting the `terminal` word: `--- {t, terminal}` gives
+    // ("t", false, true). Added beside the original so its callers are untouched.
+    static void parseSeparatorTag(const QString &line, QString *recallKey, bool *skipInFlow,
+                                  bool *terminal);
     // The YAML subset used by frontmatter: scalars, quoted strings, one level
     // of nesting, `true`/`false` booleans. Never throws.
     static QVariantMap parseFrontmatter(const QString &yaml);

@@ -3,5 +3,6 @@ import "./interaction.test.mjs";
 import "./layout.test.mjs";
 import "./media.test.mjs";
 import "./shell.test.mjs";
+import "./terminal.test.mjs";
 import "./vendor.test.mjs";
 import "./visual.test.mjs";

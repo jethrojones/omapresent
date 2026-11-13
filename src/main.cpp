@@ -1,3 +1,4 @@
+#include <QFileOpenEvent>
 #include <QFont>
 #include <QFontDatabase>
 #include <QApplication>
@@ -15,7 +16,36 @@
 
 #include "backend.h"
 #include "commandlinepolicy.h"
+#include "platform.h"
 #include "systemtheme.h"
+
+namespace {
+
+// macOS hands a document to a running application as an event, not as an
+// argument: that is what `open -a Omapresent talk.md`, a double-click in Finder
+// and a drop on the Dock icon all do. Nothing sends this event on Linux.
+class FileOpenFilter : public QObject {
+public:
+    explicit FileOpenFilter(QObject *window, QObject *parent)
+        : QObject(parent), m_window(window) {}
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override {
+        if (event->type() != QEvent::FileOpen)
+            return QObject::eventFilter(watched, event);
+        const QUrl url = static_cast<QFileOpenEvent *>(event)->url();
+        // The window's own path, so unsaved work gets the same prompt it gets
+        // from Ctrl+O.
+        if (url.isLocalFile() && m_window)
+            QMetaObject::invokeMethod(m_window, "requestOpen", Q_ARG(QVariant, url));
+        return true;
+    }
+
+private:
+    QObject *m_window = nullptr;
+};
+
+}  // namespace
 
 int main(int argc, char *argv[]) {
     // The renderer is a web page, and Chromium has to be told before the
@@ -62,7 +92,14 @@ int main(int argc, char *argv[]) {
 
     // Carry the desktop's text scale into the default font, so the chrome that
     // inherits it (dialog titles, buttons) grows along with the writing area.
-    const QFont interfaceFont(QStringLiteral("iA Writer Mono S"));
+    // The interface is written against one family name. Where that family is
+    // not installed (a Mac before bin/install-macos has run), point the name at
+    // the platform's own monospace so every `font.family` in the QML still
+    // lands on a fixed-width face.
+    const QString interfaceFamily = Platform::interfaceFontFamily();
+    if (interfaceFamily != QStringLiteral("iA Writer Mono S"))
+        QFont::insertSubstitution(QStringLiteral("iA Writer Mono S"), interfaceFamily);
+    const QFont interfaceFont(interfaceFamily);
     const qreal basePointSize = interfaceFont.pointSizeF() > 0
         ? interfaceFont.pointSizeF()
         : app.font().pointSizeF();
@@ -96,6 +133,7 @@ int main(int argc, char *argv[]) {
     }
 
     backend.setParentWindow(qobject_cast<QWindow *>(engine.rootObjects().constFirst()));
+    app.installEventFilter(new FileOpenFilter(engine.rootObjects().constFirst(), &app));
 
     const auto launchMode = command.command == Backend::CommandLine::Present
         ? CommandLinePolicy::LaunchMode::Present

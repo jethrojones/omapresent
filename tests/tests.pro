@@ -6,6 +6,13 @@ TARGET = tst_omapresent
 
 INCLUDEPATH += ../src
 
+# macOS: a plain build-tests/tst_omapresent, as on Linux. See omapresent.pro.
+macx {
+    CONFIG -= app_bundle
+    LIBS += -framework IOKit -framework CoreFoundation -framework CoreGraphics
+    QMAKE_MACOSX_DEPLOYMENT_TARGET = $$system(sw_vers -productVersion | cut -d. -f1).0
+}
+
 SOURCES += \
     main.cpp \
     tst_commandline_recovery.cpp \
@@ -24,6 +31,7 @@ SOURCES += \
     tst_livesync.cpp \
     tst_export.cpp \
     tst_security.cpp \
+    tst_terminal.cpp \
     ../src/backend.cpp \
     ../src/deckmodel.cpp \
     ../src/assetindex.cpp \
@@ -36,7 +44,9 @@ SOURCES += \
     ../src/settings.cpp \
     ../src/webbundle.cpp \
     ../src/markdownhighlighter.cpp \
-    ../src/commandlinepolicy.cpp
+    ../src/commandlinepolicy.cpp \
+    ../src/platform.cpp \
+    ../src/terminalsession.cpp
 
 HEADERS += \
     testrunner.h \
@@ -51,7 +61,9 @@ HEADERS += \
     ../src/renderhost.h \
     ../src/settings.h \
     ../src/webbundle.h \
-    ../src/markdownhighlighter.h
+    ../src/markdownhighlighter.h \
+    ../src/platform.h \
+    ../src/terminalsession.h
 
 # The app's resources, so a test can ask whether `qrc:/...` really resolves.
-RESOURCES += ../src/resources.qrc ../src/renderer/renderer.qrc
+RESOURCES += ../src/resources.qrc ../src/renderer/renderer.qrc ../src/terminal/terminal.qrc

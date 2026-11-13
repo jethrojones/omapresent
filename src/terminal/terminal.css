@@ -1,0 +1,57 @@
+/* The live terminal layer (`--- {terminal}`), loaded with xterm.js the first
+   time a terminal slide is shown in present mode. Colours come from the same
+   --op-* properties as the deck; xterm.js itself is themed from the palette in
+   terminal.js. */
+
+.op-terminal-layer {
+    position: fixed;
+    inset: 0;
+    /* Above a recall overlay (100): a terminal popped by its key is one. */
+    z-index: 150;
+    background: var(--op-background);
+}
+
+.op-terminal-layer[hidden] {
+    display: none;
+}
+
+/* B and W blank the audience screen whatever is on it, a terminal included. */
+.op-blank-overlay {
+    z-index: 200;
+}
+
+.op-terminal-mount {
+    position: absolute;
+    inset: 2.4vh 1.8vw;
+}
+
+/* A page that mirrors another page's grid shows it whole and centred. */
+.op-terminal-layer.is-mirror .op-terminal-mount {
+    display: grid;
+    place-content: center;
+}
+
+/* Where the keyboard is has to be visible from the back of the room: a quiet
+   rule along the top while the shell has it, nothing while the talk does. */
+.op-terminal-layer::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 0.45vh;
+    background: var(--op-accent);
+    opacity: 0;
+    transition: opacity 120ms linear;
+}
+
+.op-terminal-layer.has-keyboard::before {
+    opacity: 1;
+}
+
+.op-terminal-layer .xterm {
+    padding: 0;
+}
+
+.op-terminal-layer .xterm-viewport {
+    scrollbar-color: var(--op-muted) var(--op-background);
+    scrollbar-width: thin;
+}

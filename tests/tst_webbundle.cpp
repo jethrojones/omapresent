@@ -643,6 +643,12 @@ setTimeout(function () {
 
     void copiesOnlyTheTrustedOmarchyWallpaperOutsideAssetRoots()
     {
+#ifdef Q_OS_MACOS
+        // The exception is for $XDG_STATE_HOME/omarchy/current/background. Qt
+        // on macOS does not read XDG_STATE_HOME and there is no Omarchy state
+        // directory to trust; on a Mac the wallpaper is simply never bundled.
+        QSKIP("The Omarchy wallpaper exception applies on Linux only.");
+#endif
         const QString stateRoot = sandbox(QStringLiteral("state"));
         ScopedEnvironment stateHome("XDG_STATE_HOME", stateRoot.toUtf8());
         const QString current = stateRoot + QStringLiteral("/omarchy/current");

@@ -808,7 +808,8 @@ ApplicationWindow {
                 + "Home / End  First, last slide\ndigits then Enter  Jump to a slide\n"
                 + "F / F11  Fullscreen the audience window\n"
                 + "B  Black\nW  White\nO  Overview\nN  Notes overlay\n"
-                + "a bound letter or number  Recall slide\nEsc  Leave"
+                + "a bound letter or number  Recall slide\nEsc  Leave\n"
+                + "Shift+Esc  Leave a terminal slide; Enter types in it again"
             lineHeight: 1.4
         }
     }

@@ -859,6 +859,7 @@ function renderOverview() {
 
 function renderCurrent() {
     const token = ++renderToken;
+    syncTerminal();
     // A recall overlay carries a whole slide, so it can carry a shim frame too.
     // Its listeners go when it does, rather than outliving the element.
     document.querySelectorAll(".op-blank-overlay, .op-recall-overlay").forEach(element => {
@@ -902,6 +903,7 @@ function renderCurrent() {
 }
 
 function renderOverlays() {
+    syncTerminal();
     // A recall overlay carries a whole slide, so it can carry a shim frame too.
     // Its listeners go when it does, rather than outliving the element.
     document.querySelectorAll(".op-blank-overlay, .op-recall-overlay").forEach(element => {
@@ -937,6 +939,10 @@ function currentScroller() {
 }
 
 function currentFragmentCount() {
+    // A terminal covers its slide, and a reveal nobody can see would only make
+    // the arrow keys appear to do nothing.
+    if (isLiveTerminal(slides[currentSlide]))
+        return 0;
     return root.querySelectorAll(`.op-slide[data-slide-index="${currentSlide}"] .op-fragment`).length || parseSlide(slides[currentSlide]?.markdown ?? "").fragmentCount;
 }
 
@@ -991,6 +997,100 @@ function emitState() {
     } else if (globalThis.omapresentHost && typeof globalThis.omapresentHost.state === "function") {
         globalThis.omapresentHost.state(JSON.stringify(state));
     }
+}
+
+// --- The live terminal (`--- {terminal}`) ----------------------------------
+//
+// In present mode a slide tagged `terminal` is covered by a real shell, drawn
+// by src/terminal/terminal.js with xterm.js. Neither is part of this bundle:
+// they are compiled into the app under qrc:/terminal/ and fetched the first
+// time a terminal slide is shown, so the preview, a PDF and a published deck
+// never carry them and simply draw the slide's own Markdown.
+//
+// This file only decides *when* a terminal is on screen. The shell, who may
+// type into it and how big its grid is are the host's business.
+
+const terminalBase = "qrc:/terminal/";
+let terminalAssets = null;
+let terminalFocused = false;
+let terminalZoom = 0;
+let terminalGrid = null;
+
+// The host object exists only in the app, and only once the channel is up.
+function terminalHost() {
+    const host = globalThis.omapresentHost;
+    return host && typeof host.terminalAttach === "function" ? host : null;
+}
+
+// A live terminal needs a shell, so it needs the app: the host object, and one
+// of the two roles Presentation assigns to its own windows. Not `deck.mode`,
+// which a running presentation cannot rely on. The editor rebuilds the deck in
+// preview mode on every edit and hands that same document to the talk.
+function showsLiveTerminals() {
+    return Boolean(terminalHost()) && (role === "audience" || role === "presenter");
+}
+
+function isLiveTerminal(slide) {
+    return Boolean(slide?.terminal) && showsLiveTerminals();
+}
+
+// The recall overlay when one is up, otherwise the current slide: the same
+// rule DeckNavigator::showingTerminal applies on the host side.
+function terminalSlideShowing() {
+    if (!showsLiveTerminals() || overview || !slides.length)
+        return false;
+    if (recall)
+        return Boolean(recallSlides().get(recall)?.terminal);
+    return Boolean(slides[currentSlide]?.terminal);
+}
+
+function loadTerminalAssets() {
+    if (terminalAssets)
+        return terminalAssets;
+    for (const sheet of ["vendor/xterm.css", "terminal.css"]) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = terminalBase + sheet;
+        document.head.append(link);
+    }
+    const script = name => new Promise((resolve, reject) => {
+        const element = document.createElement("script");
+        element.src = terminalBase + name;
+        element.addEventListener("load", resolve);
+        element.addEventListener("error", () => reject(new Error(name)));
+        document.head.append(element);
+    });
+    terminalAssets = script("vendor/xterm.js")
+        .then(() => script("vendor/addon-fit.js"))
+        .then(() => script("terminal.js"))
+        .then(() => globalThis.omapresentTerminal);
+    return terminalAssets;
+}
+
+function syncTerminal() {
+    if (!terminalSlideShowing()) {
+        globalThis.omapresentTerminal?.hide();
+        return;
+    }
+    loadTerminalAssets().then(terminal => {
+        // The talk may have moved on while the scripts were loading.
+        if (!terminal || !terminalSlideShowing()) {
+            terminal?.hide();
+            return;
+        }
+        terminal.show({
+            host: terminalHost(),
+            owner: role === "audience",
+            palette: { ...fallbackPalette, ...(deck.palette ?? {}) },
+            textScale: deck.textScale,
+            zoom: terminalZoom,
+            grid: terminalGrid,
+            focused: terminalFocused,
+        });
+    }).catch(error => {
+        // A terminal that cannot load leaves the slide's own Markdown showing.
+        console.warn("terminal: could not load", String(error?.message ?? error));
+    });
 }
 
 function gotoSlide(index, resetFragments) {
@@ -1172,6 +1272,29 @@ const api = {
         const fromIndex = focusedIndex >= 0 ? focusedIndex : activeMediaIndex;
         activeMediaIndex = fromIndex >= 0 ? (fromIndex + 1) % players.length : 0;
         players[activeMediaIndex].focus();
+        emitState();
+    },
+    // The live terminal. Not part of the frozen contract §2: the host calls
+    // these only on pages it has seen attach a terminal, or to say who has the
+    // keyboard, and a page without a terminal ignores every one of them.
+    terminalWrite(encoded) { globalThis.omapresentTerminal?.write(encoded); },
+    terminalSetSize(cols, rows) {
+        terminalGrid = { cols: Number(cols) || 0, rows: Number(rows) || 0 };
+        globalThis.omapresentTerminal?.setGrid(terminalGrid.cols, terminalGrid.rows);
+    },
+    terminalSetFocus(on) {
+        terminalFocused = Boolean(on);
+        globalThis.omapresentTerminal?.setFocus(terminalFocused);
+    },
+    terminalSetZoom(step) {
+        terminalZoom = Number(step) || 0;
+        globalThis.omapresentTerminal?.setZoom(terminalZoom);
+    },
+    // The bridge calls this once the host object exists, which is after the
+    // first render when a deck opens straight onto a terminal slide.
+    hostReady() {
+        syncTerminal();
+        // A terminal slide has no reveals; say so now that it is known to be one.
         emitState();
     },
     onState: null,

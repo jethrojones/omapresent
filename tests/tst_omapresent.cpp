@@ -1205,6 +1205,11 @@ private slots:
     }
 
     void packagedThemeHookUsesOmarchyConvention() {
+#ifdef Q_OS_MACOS
+        // The hook is installed by GNU `install -D` and Omarchy's own
+        // `omarchy hook install`. A Mac has neither, and no Omarchy to hook.
+        QSKIP("The Omarchy theme hook is packaged and installed on Linux only.");
+#endif
         const QString source = QFINDTESTDATA("../pkgbuild/omapresent-theme-refresh");
         QVERIFY2(!source.isEmpty(), "Could not find the packaged theme hook source.");
 

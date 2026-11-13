@@ -106,6 +106,24 @@ void RenderHost::state(const QString &json) {
     emit stateChanged();
 }
 
+void RenderHost::terminalAttach() { emit terminalAttached(); }
+
+void RenderHost::terminalInput(const QString &data) {
+    if (!data.isEmpty())
+        emit terminalInputReceived(data.toUtf8());
+}
+
+void RenderHost::terminalBinary(const QString &data) {
+    if (!data.isEmpty())
+        emit terminalInputReceived(data.toLatin1());
+}
+
+void RenderHost::terminalResize(int cols, int rows) { emit terminalResized(cols, rows); }
+void RenderHost::terminalLeave() { emit terminalLeaveRequested(); }
+void RenderHost::terminalFocus() { emit terminalFocusRequested(); }
+void RenderHost::terminalFocusIn() { emit terminalFocusedIn(); }
+void RenderHost::terminalZoom(int direction) { emit terminalZoomRequested(direction); }
+
 QJsonObject RenderHost::composeDeck(const QString &mode, const QJsonObject &deck,
                                     const QJsonObject &assets, const QJsonObject &media,
                                     const QJsonObject &palette,
@@ -189,6 +207,10 @@ QString RenderHost::bridgeScript() {
             window.omapresent.onState = function (state) {
                 window.omapresentHost.state(JSON.stringify(state));
             };
+            // The handshake is asynchronous, so a deck that opens on a terminal
+            // slide has drawn before there was a host to give it a shell.
+            if (typeof window.omapresent.hostReady === "function")
+                window.omapresent.hostReady();
         }
     });
 })();

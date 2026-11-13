@@ -1,4 +1,5 @@
 #include "settings.h"
+#include "platform.h"
 #include "publisher.h"
 
 #include <QDir>
@@ -14,8 +15,7 @@
 namespace {
 
 QString defaultSettingsPath() {
-    return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation))
-        .filePath(QStringLiteral("omapresent/settings.toml"));
+    return QDir(Platform::configHome()).filePath(QStringLiteral("omapresent/settings.toml"));
 }
 
 bool isValidDarkMode(const QString &value) {
