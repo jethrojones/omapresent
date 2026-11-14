@@ -1404,10 +1404,27 @@ void Presentation::adoptState(const QString &role, const QJsonObject &state) {
     const int slideIndex = state.value(QStringLiteral("slideIndex")).toInt();
     view.applied.slideIndex = slideIndex;
     view.applied.fragment = state.value(QStringLiteral("fragment")).toInt();
+    const qreal sentScroll = view.applied.scrollFraction;
+    const bool sameSlide = view.applied.slideIndex == d->nav.slideIndex();
     view.applied.scrollFraction = state.value(QStringLiteral("scrollFraction")).toDouble();
 
-    if (role != d->masterRole())
+    if (role != d->masterRole()) {
+        // A follower's page scrolls natively under the pointer too. That is a
+        // scroll like any other, so it becomes the talk's position; otherwise
+        // the next reveal would send this window back to where the master is.
+        // A follower landing a pixel off where it was sent is only an echo.
+        constexpr qreal echo = 0.002;
+        if (role != previewRole && sameSlide
+            && qAbs(view.applied.scrollFraction - sentScroll) > echo) {
+            d->nav.setScrollFraction(view.applied.scrollFraction);
+            for (const QString &other : {audienceRole, presenterRole}) {
+                if (other != role)
+                    applyTo(other);
+            }
+            emit positionChanged();
+        }
         return;
+    }
 
     // The renderer is the only thing that knows how many fragments a slide has
     // and where a scroll landed. Everything else here is chrome for the

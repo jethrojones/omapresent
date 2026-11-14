@@ -1228,6 +1228,57 @@ private slots:
         QVERIFY(!presentation.handleKey(Qt::Key_Tab, Qt::NoModifier, QString()));
     }
 
+    void aScrollInTheAudienceWindowSurvivesTheNextBullet() {
+        // The audience page scrolls natively under the pointer. With the
+        // presenter as master that scroll never became the talk's position, so
+        // the next reveal sent the audience back to the top of the slide.
+        Presentation presentation;
+        presentation.setEnvironmentPreferences(false, false);
+        presentation.setDeck(plainDeck(2));
+        const QString audience = QStringLiteral("audience");
+        const QString presenter = QStringLiteral("presenter");
+        presentation.viewReady(audience);
+        presentation.viewReady(presenter);
+        presentation.presenterHost()->state(QStringLiteral(
+            "{\"slideIndex\":0,\"slideCount\":2,\"fragment\":0,\"fragmentCount\":5,"
+            "\"scrollFraction\":0}"));
+        presentation.audienceHost()->state(QStringLiteral(
+            "{\"slideIndex\":0,\"slideCount\":2,\"fragment\":0,\"fragmentCount\":5,"
+            "\"scrollFraction\":0}"));
+
+        QSignalSpy scripts(&presentation, &Presentation::runInView);
+        presentation.audienceHost()->state(QStringLiteral(
+            "{\"slideIndex\":0,\"slideCount\":2,\"fragment\":0,\"fragmentCount\":5,"
+            "\"scrollFraction\":0.5}"));
+
+        // The presenter follows the audience to the same place.
+        bool presenterFollowed = false;
+        for (const QList<QVariant> &emission : scripts) {
+            presenterFollowed = presenterFollowed
+                || (emission.at(0).toString() == presenter
+                    && emission.at(1).toString().contains(QStringLiteral("setScroll(0.5")));
+        }
+        QVERIFY(presenterFollowed);
+
+        scripts.clear();
+        presentation.next();
+        for (const QList<QVariant> &emission : scripts) {
+            if (emission.at(0).toString() == audience)
+                QVERIFY2(!emission.at(1).toString().contains(QStringLiteral("setScroll")),
+                         qPrintable(emission.at(1).toString()));
+        }
+
+        // A follower settling a pixel away from where it was sent is an echo,
+        // not a scroll, and must not start the two windows chasing each other.
+        scripts.clear();
+        presentation.audienceHost()->state(QStringLiteral(
+            "{\"slideIndex\":0,\"slideCount\":2,\"fragment\":1,\"fragmentCount\":5,"
+            "\"scrollFraction\":0.5004}"));
+        for (const QList<QVariant> &emission : scripts)
+            QVERIFY2(!emission.at(1).toString().contains(QStringLiteral("setScroll")),
+                     qPrintable(emission.at(1).toString()));
+    }
+
     void theStartCommentDescribesWhatStartDoes() {
         // src/presentation.h is what another agent reads before calling start().
         // It said the audience goes fullscreen, which stopped being true.

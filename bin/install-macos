@@ -119,7 +119,16 @@ for size in 16 32 128 256 512; do
   sips -z "$double" "$double" "$ROOT/pkgbuild/omapresent.png" \
     --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
-iconutil -c icns "$ICONSET" -o "$RESOURCES/omapresent.icns"
+# iconutil has been seen to reject a good iconset. A missing icon must not stop
+# an install, so keep the one already installed, or go without.
+iconutil -c icns "$ICONSET" -o "$RESOURCES/omapresent.icns" 2>/dev/null || {
+  if [ -f "$APP/Contents/Resources/omapresent.icns" ]; then
+    cp "$APP/Contents/Resources/omapresent.icns" "$RESOURCES/omapresent.icns"
+    echo "iconutil failed; kept the icon from the installed app." >&2
+  else
+    echo "iconutil failed; installing without an app icon." >&2
+  fi
+}
 
 # Apple Silicon runs nothing unsigned. An ad-hoc signature is enough for an app
 # built on the machine it runs on.
