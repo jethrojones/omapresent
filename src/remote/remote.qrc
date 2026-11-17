@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/remote">
+        <file>remote.html</file>
+    </qresource>
+</RCC>

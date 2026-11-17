@@ -17,6 +17,7 @@
 #include "deckmodel.h"
 #include "omarchytheme.h"
 #include "presentation.h"
+#include "remoteserver.h"
 #include "publisher.h"
 #include "renderhost.h"
 #include "settings.h"
@@ -104,6 +105,7 @@ public:
     VideoCache *media() { return &m_media; }
     Publisher *publisher() { return &m_publisher; }
     Presentation *presentation() { return &m_presentation; }
+    RemoteServer *remote() { return &m_remote; }
     RenderHost *renderHost() { return &m_renderHost; }
     Settings *settings() { return &m_settings; }
 
@@ -341,6 +343,8 @@ private:
     Publisher m_publisher;
     WebBundle m_webBundle;
     Presentation m_presentation;
+    // The phone remote. Listens only while a talk runs and `presentation.remote` is on.
+    RemoteServer m_remote{&m_presentation};
     RenderHost m_renderHost;
     Settings m_settings;
     PdfExport m_pdfExport;

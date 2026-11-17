@@ -32,7 +32,8 @@ HEADERS += \
     src/commandlinepolicy.h \
     src/systemtheme.h \
     src/platform.h \
-    src/terminalsession.h
+    src/terminalsession.h \
+    src/remoteserver.h
 
 SOURCES += \
     src/main.cpp \
@@ -51,6 +52,7 @@ SOURCES += \
     src/commandlinepolicy.cpp \
     src/systemtheme.cpp \
     src/platform.cpp \
-    src/terminalsession.cpp
+    src/terminalsession.cpp \
+    src/remoteserver.cpp
 
-RESOURCES += src/resources.qrc src/renderer/renderer.qrc src/terminal/terminal.qrc
+RESOURCES += src/resources.qrc src/renderer/renderer.qrc src/terminal/terminal.qrc src/remote/remote.qrc

@@ -127,7 +127,9 @@ QJsonObject Settings::defaults() {
             // protect is still there — the gate sits inside the explicit save
             // path, so recovery and autosave never reach the network, and
             // "Prepare for offline" remains the deliberate route.
-            {QStringLiteral("auto_prefetch_video"), true}
+            {QStringLiteral("auto_prefetch_video"), true},
+            // Off by default: it opens a listening socket (src/remoteserver.h).
+            {QStringLiteral("remote"), false}
         }},
         // `export.pdf_paginated` used to live here. Spec §8 says a slide taller
         // than a page paginates and is never scaled, so the only other setting

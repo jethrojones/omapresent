@@ -88,6 +88,33 @@ Not there yet: copying text out of the terminal on Linux.
 
 ---
 
+## Control the talk from your phone
+
+Omapresent can serve a small remote-control page to your phone while you
+present. It needs [Tailscale](https://tailscale.com) on the computer and the
+phone.
+
+Turn it on once in `~/.config/omapresent/settings.toml`:
+
+```toml
+[presentation]
+remote = true
+```
+
+Start presenting. The address is printed to the terminal and looks like
+`http://100.x.y.z:4747/<token>/`. Open it on the phone and add it to the home
+screen. The address stays the same from talk to talk.
+
+The page shows the slide number, the heading, your speaker notes and the
+timer. It has a large **Next** button, a smaller **Previous**, **All slides**
+to jump to any slide, one button for each recall slide, and **Black** and
+**White**.
+
+It listens only while a talk is running, only on the computer's Tailscale
+address, and only for requests that carry the token in
+`~/.config/omapresent/remote-token`. Delete that file to get a new address.
+The remote cannot type into a terminal slide, open a file or end the talk.
+
 ## Installation
 
 ### Install from Omarchy

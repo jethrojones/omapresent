@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Omapresent">
+<meta name="theme-color" content="#111111">
+<title>Omapresent remote</title>
+<style>
+  :root {
+    --bg: #111111; --panel: #1c1c1c; --line: #2e2e2e; --text: #f2f0eb;
+    --dim: #9a968e; --accent: #e8b84a; --warn: #e2664f;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 17px/1.45 ui-monospace, "iA Writer Mono S", Menlo, monospace;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 12px);
+    touch-action: manipulation; -webkit-user-select: none; user-select: none;
+    overscroll-behavior: none;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 12px 0 8px; color: var(--dim); font-size: 15px;
+  }
+  #count { color: var(--text); font-size: 22px; font-variant-numeric: tabular-nums; }
+  #clock { font-variant-numeric: tabular-nums; }
+  #heading { font-size: 22px; line-height: 1.25; font-weight: 700; margin: 4px 0 10px;
+             overflow-wrap: anywhere; }
+  #flag { display: none; margin: 0 0 10px; padding: 6px 10px; border-radius: 8px;
+          background: var(--warn); color: #111; font-size: 15px; font-weight: 700; }
+  #flag.on { display: block; }
+  #notes {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; font-size: 18px; overscroll-behavior: contain;
+  }
+  #notes p { margin: 0 0 0.8em; }
+  #notes p:last-child { margin-bottom: 0; }
+  #notes .none { color: var(--dim); }
+  .row { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  button {
+    flex: 1 1 0; min-width: 56px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); color: var(--text); font: inherit; padding: 12px 6px;
+    touch-action: manipulation;
+  }
+  button:active { background: #333; }
+  button.on { background: var(--accent); color: #111; border-color: var(--accent); }
+  #nav button { padding: 0; height: 22vh; min-height: 110px; font-size: 22px; font-weight: 700; }
+  #prev { flex: 1 1 0; font-size: 17px !important; font-weight: 400 !important; }
+  #next { flex: 3 1 0; font-size: 30px !important; background: var(--accent); color: #111; border-color: var(--accent); }
+  #next:active { background: #c99a30; }
+  #recalls button { flex: 1 1 40%; text-align: left; padding: 10px 12px; font-size: 15px;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #recalls button b { color: var(--accent); margin-right: 8px; }
+  #recalls button.on b { color: #111; }
+  #sheet {
+    display: none; position: fixed; inset: 0; background: var(--bg); z-index: 5;
+    flex-direction: column;
+    padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 12px);
+  }
+  #sheet.open { display: flex; }
+  #sheet header { align-items: center; }
+  #sheet header span { color: var(--text); font-size: 20px; font-weight: 700; }
+  #close { flex: 0 0 auto; padding: 8px 18px; }
+  #list { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain; }
+  #list h2 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+             color: var(--dim); margin: 14px 0 6px; font-weight: 400; }
+  #list button {
+    display: flex; gap: 12px; width: 100%; text-align: left; margin: 0 0 6px;
+    padding: 13px 12px; font-size: 17px; align-items: baseline;
+  }
+  #list button i { font-style: normal; color: var(--dim); min-width: 2.2em;
+                   font-variant-numeric: tabular-nums; }
+  #list button span { flex: 1; overflow-wrap: anywhere; }
+  #list button.here { border-color: var(--accent); }
+  #list button.here i { color: var(--accent); }
+  #list button.key i { color: var(--accent); font-weight: 700; }
+  #off { margin: auto; text-align: center; color: var(--dim); display: none; }
+  body.off #off { display: block; }
+  body.off #live { display: none; }
+  #live { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; width: 100%; }
+  html, body { max-width: 100%; overflow-x: hidden; }
+  #notes, #heading { min-width: 0; overflow-wrap: anywhere; }
+</style>
+</head>
+<body class="off">
+<div id="off">
+  <p id="offText">Looking for the talk…</p>
+</div>
+<div id="live">
+  <header>
+    <span><span id="count">–</span></span>
+    <span id="clock">0:00</span>
+  </header>
+  <div id="heading"></div>
+  <div id="flag"></div>
+  <div id="notes"></div>
+  <div class="row" id="recalls"></div>
+  <div class="row">
+    <button id="all">All slides</button>
+    <button id="black">Black</button>
+    <button id="white">White</button>
+  </div>
+  <div class="row" id="nav">
+    <button id="prev">Previous</button>
+    <button id="next">Next</button>
+  </div>
+</div>
+<div id="sheet">
+  <header>
+    <span>Jump to a slide</span>
+    <button id="close">Close</button>
+  </header>
+  <div id="list"></div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var lastNotes = null, lastKeys = "", failures = 0, busy = false;
+  var current = 0, deck = { slides: [], recalls: [] }, count = -1;
+
+  function clock(seconds) {
+    var h = Math.floor(seconds / 3600), m = Math.floor(seconds / 60) % 60, s = seconds % 60;
+    return (h ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  // Notes arrive as the renderer's HTML. Only their text is used here: each
+  // block becomes a paragraph, so nothing in a deck can run on this page.
+  function showNotes(html) {
+    if (html === lastNotes) return;
+    lastNotes = html;
+    var box = $("notes");
+    box.textContent = "";
+    var doc = new DOMParser().parseFromString(html || "", "text/html");
+    var blocks = doc.body.querySelectorAll("p, li, blockquote, pre, h1, h2, h3, h4");
+    var texts = [];
+    if (blocks.length) {
+      blocks.forEach(function (b) {
+        if (b.querySelector("p, li")) return;
+        var t = b.textContent.trim();
+        if (t) texts.push((b.tagName === "LI" ? "• " : "") + t);
+      });
+    } else {
+      var t = doc.body.textContent.trim();
+      if (t) texts.push(t);
+    }
+    if (!texts.length) {
+      var none = document.createElement("p");
+      none.className = "none";
+      none.textContent = "No notes on this slide.";
+      box.appendChild(none);
+    }
+    texts.forEach(function (t) {
+      var p = document.createElement("p");
+      p.textContent = t;
+      box.appendChild(p);
+    });
+    box.scrollTop = 0;
+  }
+
+  function recallHeading(key) {
+    for (var i = 0; i < deck.recalls.length; i++)
+      if (deck.recalls[i].key === key) return deck.recalls[i].heading || "";
+    return "";
+  }
+
+  function showRecalls(keys, current) {
+    var signature = keys.join(",") + "|" + deck.recalls.map(function (r) { return r.heading; }).join("|");
+    var row = $("recalls");
+    if (signature !== lastKeys) {
+      lastKeys = signature;
+      row.textContent = "";
+      keys.forEach(function (key) {
+        var b = document.createElement("button");
+        var k = document.createElement("b");
+        k.textContent = key.toUpperCase();
+        b.appendChild(k);
+        b.appendChild(document.createTextNode(recallHeading(key)));
+        b.dataset.key = key;
+        b.addEventListener("click", function () { send("recall/" + key); });
+        row.appendChild(b);
+      });
+      row.style.display = keys.length ? "flex" : "none";
+    }
+    Array.prototype.forEach.call(row.children, function (b) {
+      b.classList.toggle("on", b.dataset.key === current);
+    });
+  }
+
+  function show(state) {
+    failures = 0;
+    if (!state.active) {
+      document.body.className = "off";
+      $("offText").textContent = "No talk is running. Start presenting on the computer.";
+      return;
+    }
+    document.body.className = "";
+    current = state.slide;
+    // The deck can be edited while it is being presented, so the list is
+    // fetched again whenever the slide count or the recall keys change.
+    var shape = state.count + ":" + (state.recallKeys || []).join(",");
+    if (shape !== count) { count = shape; loadSlides(); }
+    markHere();
+    $("count").textContent = state.slide + " / " + state.count;
+    $("clock").textContent = clock(state.elapsed || 0);
+    $("heading").textContent = state.heading || state.title || "";
+    showNotes(state.notesHtml || "");
+    showRecalls(state.recallKeys || [], state.recall || "");
+    $("black").classList.toggle("on", state.blank === "black");
+    $("white").classList.toggle("on", state.blank === "white");
+    var flag = "";
+    if (state.blank) flag = "Screen is " + state.blank;
+    else if (state.recall) flag = "Showing recall " + state.recall.toUpperCase();
+    else if (state.terminal) flag = "Terminal slide";
+    $("flag").textContent = flag;
+    $("flag").classList.toggle("on", !!flag);
+  }
+
+  function lost() {
+    failures += 1;
+    if (failures < 3) return;
+    document.body.className = "off";
+    $("offText").textContent = "Cannot reach the computer. Check Tailscale on both.";
+  }
+
+  function send(path) {
+    if (busy) return;
+    busy = true;
+    if (navigator.vibrate) navigator.vibrate(12);
+    fetch(path, { method: "POST", cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(show, lost)
+      .then(function () {
+        busy = false;
+        // The heading and notes come from the slide once it has drawn, a
+        // moment after the move. Ask again so they are not a slide behind.
+        setTimeout(poll, 200);
+      });
+  }
+
+  function loadSlides() {
+    fetch("slides", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) { deck = d; lastKeys = ""; buildList(); }, function () {});
+  }
+
+  function row(label, text, extra, onTap) {
+    var b = document.createElement("button");
+    var i = document.createElement("i");
+    i.textContent = label;
+    var t = document.createElement("span");
+    t.textContent = text || "(no heading)";
+    b.appendChild(i); b.appendChild(t);
+    if (extra) b.className = extra;
+    b.addEventListener("click", onTap);
+    return b;
+  }
+
+  function buildList() {
+    var list = $("list");
+    list.textContent = "";
+    if (deck.recalls.length) {
+      var h = document.createElement("h2");
+      h.textContent = "Recall slides";
+      list.appendChild(h);
+      deck.recalls.forEach(function (r) {
+        list.appendChild(row(r.key.toUpperCase(), r.heading, "key", function () {
+          closeSheet(); send("recall/" + r.key);
+        }));
+      });
+    }
+    var h2 = document.createElement("h2");
+    h2.textContent = "All slides";
+    list.appendChild(h2);
+    deck.slides.forEach(function (s) {
+      var b = row(String(s.number), s.heading, "", function () {
+        closeSheet(); send("goto/" + s.number);
+      });
+      b.dataset.number = s.number;
+      list.appendChild(b);
+    });
+    markHere();
+  }
+
+  function markHere() {
+    var here = null;
+    Array.prototype.forEach.call($("list").children, function (b) {
+      if (!b.dataset || !b.dataset.number) return;
+      var on = Number(b.dataset.number) === current;
+      b.classList.toggle("here", on);
+      if (on) here = b;
+    });
+    return here;
+  }
+
+  function openSheet() {
+    $("sheet").classList.add("open");
+    var here = markHere();
+    if (here) here.scrollIntoView({ block: "center" });
+  }
+  function closeSheet() { $("sheet").classList.remove("open"); }
+
+  function poll() {
+    if (document.hidden) return;
+    fetch("state", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(show, lost);
+  }
+
+  $("next").addEventListener("click", function () { send("next"); });
+  $("prev").addEventListener("click", function () { send("prev"); });
+  $("all").addEventListener("click", openSheet);
+  $("close").addEventListener("click", closeSheet);
+  $("black").addEventListener("click", function () { send("black"); });
+  $("white").addEventListener("click", function () { send("white"); });
+  document.addEventListener("visibilitychange", poll);
+
+  poll();
+  setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>

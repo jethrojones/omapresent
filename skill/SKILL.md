@@ -35,6 +35,12 @@ If presentation is already running, share the audience window. Choose the window
 
 ---
 
+## Phone remote
+
+With `presentation.remote = true` in `settings.toml`, present mode serves a control page on the computer's Tailscale address (`http://100.x.y.z:4747/<token>/`, printed to the terminal when the talk starts). The page has Next, Previous, All slides (jump to any slide), the recall slides, Black and White, and shows the speaker notes. It is off by default and needs Tailscale on both devices.
+
+---
+
 ## Command Line Usage
 
 | Command | Action |

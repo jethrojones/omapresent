@@ -48,6 +48,10 @@ single_monitor_notes = false
 # Pre-fetch and cache online video embeds into .omapresent-cache/ upon file save
 auto_prefetch_video = true
 
+# Phone remote. While presenting, serve a control page on this computer's
+# Tailscale address (port 4747). Off by default. Needs Tailscale on both devices.
+remote = false
+
 # ----------------------------------------------------------------------
 # Export Preferences
 # ----------------------------------------------------------------------

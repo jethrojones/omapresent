@@ -32,6 +32,7 @@ SOURCES += \
     tst_export.cpp \
     tst_security.cpp \
     tst_terminal.cpp \
+    tst_remoteserver.cpp \
     ../src/backend.cpp \
     ../src/deckmodel.cpp \
     ../src/assetindex.cpp \
@@ -46,7 +47,8 @@ SOURCES += \
     ../src/markdownhighlighter.cpp \
     ../src/commandlinepolicy.cpp \
     ../src/platform.cpp \
-    ../src/terminalsession.cpp
+    ../src/terminalsession.cpp \
+    ../src/remoteserver.cpp
 
 HEADERS += \
     testrunner.h \
@@ -63,7 +65,8 @@ HEADERS += \
     ../src/webbundle.h \
     ../src/markdownhighlighter.h \
     ../src/platform.h \
-    ../src/terminalsession.h
+    ../src/terminalsession.h \
+    ../src/remoteserver.h
 
 # The app's resources, so a test can ask whether `qrc:/...` really resolves.
-RESOURCES += ../src/resources.qrc ../src/renderer/renderer.qrc ../src/terminal/terminal.qrc
+RESOURCES += ../src/resources.qrc ../src/renderer/renderer.qrc ../src/terminal/terminal.qrc ../src/remote/remote.qrc

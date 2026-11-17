@@ -495,6 +495,7 @@ void Backend::applySettings() {
     m_presentation.setEnvironmentPreferences(
         m_settings.boolValue(QStringLiteral("presentation.inhibit_idle")),
         m_settings.boolValue(QStringLiteral("presentation.do_not_disturb")));
+    m_remote.setEnabled(m_settings.boolValue(QStringLiteral("presentation.remote")));
     setDarkMode(m_systemDarkMode);
     setTextScale(m_desktopTextScale);
     applyFrontmatter();

@@ -2825,3 +2825,29 @@ press, no real window activation and no `screencapture` were possible. A
 person at the keyboard has to confirm `Shift+Esc`, `Cmd+=` and typing.
 `pkgbuild/PKGBUILD` and its staged copy gained a guarded install of the
 xterm.js licences; carry that to the Omarchy package at the next release.
+
+### 2026-11-17 08:27 PT — Claude Code (Claude Fable 5.2), Jethro-MBP
+**Task:** Phone remote for present mode, asked for by Jethro.
+**Did:** Added `src/remoteserver.{h,cpp}` and `src/remote/remote.html`. With
+`presentation.remote = true`, present mode serves a control page on the
+computer's Tailscale address, port 4747, behind a token kept in
+`~/.config/omapresent/remote-token`. The page has a large Next, a smaller
+Previous, All slides (jump to any slide), one button per recall slide, Black
+and White, and shows the slide number, heading, notes and timer. The server
+listens only while a talk runs, binds only to a 100.64.0.0/10 address, refuses
+non-tailnet peers, and changes the talk only on POST. Off by default.
+`Backend` owns the server and `applySettings()` switches it. README, the
+skill and `settings-toml.md` document it.
+**Tests:** `tests/tst_remoteserver.cpp`, 20 cases. `./bin/test` passed in
+full on three of five runs on this Mac. The other two failed in suites this
+change does not touch: `SettingsTest::fileWatcherEmitsSettingsChangedOnDiskModification`
+(a 500 ms wait, twice) and `ExportTest::controlPUsesTheSystemPrintDialog`
+(timed out at 300 s, once). Load average was above 5. Also run by hand: the
+installed app under the offscreen platform, driven with curl over the Tailscale
+address and with headless Chrome at 390 px wide. Loopback and the LAN address
+refuse the connection.
+**Next:** Open the page on a real phone. Run `./bin/build && ./bin/test` on
+Omarchy. Look at the two flaky tests.
+**NEEDS:** The page is plain HTTP inside the tailnet, so the phone cannot hold
+its screen awake (the Wake Lock API needs HTTPS). The presenter window does not
+show the address; it is only printed to stderr.
