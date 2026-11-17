@@ -810,6 +810,8 @@ struct Presentation::Private {
     bool overview = false;
     bool notesOverlay = false;
     bool shortcuts = false;
+    QString remoteUrl;
+    bool remoteInUse = false;
     bool active = false;
     bool mediaActive = false;
     int mediaCount = 0;
@@ -951,6 +953,23 @@ QStringList Presentation::recallKeys() const { return d->nav.recallKeys(); }
 QString Presentation::recall() const { return d->nav.recall(); }
 QString Presentation::jumpBuffer() const { return d->nav.jumpBuffer(); }
 QString Presentation::blank() const { return d->blank; }
+
+QString Presentation::remoteUrl() const { return d->remoteUrl; }
+bool Presentation::remoteInUse() const { return d->remoteInUse; }
+
+void Presentation::setRemoteUrl(const QString &url) {
+    if (d->remoteUrl == url)
+        return;
+    d->remoteUrl = url;
+    emit remoteChanged();
+}
+
+void Presentation::setRemoteInUse(bool inUse) {
+    if (d->remoteInUse == inUse)
+        return;
+    d->remoteInUse = inUse;
+    emit remoteChanged();
+}
 bool Presentation::overview() const { return d->overview; }
 bool Presentation::notesOverlay() const { return d->notesOverlay; }
 bool Presentation::shortcutsVisible() const { return d->shortcuts; }

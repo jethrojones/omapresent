@@ -2851,3 +2851,20 @@ Omarchy. Look at the two flaky tests.
 **NEEDS:** The page is plain HTTP inside the tailnet, so the phone cannot hold
 its screen awake (the Wake Lock API needs HTTPS). The presenter window does not
 show the address; it is only printed to stderr.
+
+### 2026-11-17 08:35 PT — Claude Code (Claude Fable 5.2), Jethro-MBP
+**Task:** Show the phone remote's QR code in the presenter window.
+**Did:** `Presentation` gained `remoteUrl` and `remoteInUse`, set by
+`RemoteServer`. `PresenterWindow.qml` draws the address as a QR code with
+the vendored `qrcode.mjs`, above the recall keys. The code hides once a
+request with the right token arrives, and "Phone remote connected" brings it
+back on a click. `main.cpp` turns off the `qt.qml.usedbeforedeclared`
+category, which the vendored file triggers 49 times per talk.
+**Tests:** `./bin/test` passed (606 C++ checks, renderer suite clean). Run
+by hand under the offscreen platform with two configured screens: the window
+loads with no QML warnings, the code is generated, and it hides after the first
+request. The same generator output, laid out as the window lays it out, decodes
+to the address with macOS Vision.
+**Next:** Look at it on the real presenter window and scan it with a phone.
+**NEEDS:** No pixels of the real window were captured. With one screen there
+is no presenter window, so the code is not shown there.

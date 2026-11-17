@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtWebChannel
 import QtWebEngine
+import "qrc:/renderer/vendor/qrcode.mjs" as QrCode
 
 // The presenter window (spec §5.1): the current slide scaled down, the next
 // slide, the speaker notes as formatted Markdown, an elapsed timer that resets
@@ -38,6 +39,28 @@ Window {
         var seconds = total % 60;
         return (hours > 0 ? hours + ":" + twoDigits(minutes) : "" + minutes)
             + ":" + twoDigits(seconds);
+    }
+
+    // The phone remote's address as a QR code (src/remoteserver.h). Shown
+    // until a phone has opened it, then put away; a click on the line that
+    // replaces it brings it back, for a second phone or a lost bookmark.
+    property bool remoteCodeWanted: false
+    readonly property bool remoteCodeVisible: presentation.remoteUrl !== ""
+        && (!presentation.remoteInUse || remoteCodeWanted)
+
+    function remoteCodeImage(url) {
+        if (!url)
+            return "";
+        try {
+            var code = QrCode.qrcode(0, "M");
+            code.addData(url, "Byte");
+            code.make();
+            // One pixel per module; the Image scales it without smoothing.
+            return code.createDataURL(1, 0);
+        } catch (error) {
+            console.warn("Could not draw the phone remote code:", error);
+            return "";
+        }
     }
 
     onActiveChanged: if (active) routeKeyboard()
@@ -361,6 +384,64 @@ Window {
                     color: presenter.foreground
                     linkColor: presenter.accent
                     font.pixelSize: presenter.baseFontSize * 1.25
+                }
+            }
+
+            // The phone remote: its QR code until a phone has opened it.
+            RowLayout {
+                objectName: "remoteCode"
+                Layout.fillWidth: true
+                spacing: 14
+                visible: presenter.remoteCodeVisible
+
+                Rectangle {
+                    // White with a quiet zone, whatever the theme: a phone
+                    // camera needs dark modules on a light ground.
+                    Layout.preferredWidth: Math.round(presenter.height * 0.17)
+                    Layout.preferredHeight: Layout.preferredWidth
+                    color: "white"
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: Math.round(parent.width * 0.08)
+                        source: presenter.remoteCodeVisible
+                            ? presenter.remoteCodeImage(presentation.remoteUrl) : ""
+                        smooth: false
+                        mipmap: false
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: presenter.remoteCodeWanted = false
+                        enabled: presentation.remoteInUse
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    color: presenter.muted
+                    font.pixelSize: presenter.baseFontSize
+                    text: presentation.remoteInUse
+                        ? "Phone remote. Scan with the phone camera.\nClick the code to hide it."
+                        : "Phone remote. Scan with the phone camera.\nIt hides once the phone connects."
+                }
+            }
+
+            Text {
+                objectName: "remoteStatus"
+                Layout.fillWidth: true
+                visible: presentation.remoteUrl !== "" && !presenter.remoteCodeVisible
+                color: presenter.muted
+                font.pixelSize: presenter.baseFontSize
+                text: "Phone remote connected · click to show the code"
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: presenter.remoteCodeWanted = true
                 }
             }
 

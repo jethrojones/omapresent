@@ -146,6 +146,10 @@ void RemoteServer::update()
             m_server.close();
             emit urlChanged();
         }
+        if (m_presentation) {
+            m_presentation->setRemoteUrl(QString());
+            m_presentation->setRemoteInUse(false);
+        }
         return;
     }
     if (m_server.isListening())
@@ -168,6 +172,9 @@ void RemoteServer::update()
         return;
     }
     QTextStream(stderr) << "omapresent: phone remote at " << url() << '\n';
+    // The presenter window shows this as a QR code until a phone has used it.
+    m_presentation->setRemoteInUse(false);
+    m_presentation->setRemoteUrl(url());
     emit urlChanged();
 }
 
@@ -428,6 +435,9 @@ void RemoteServer::onReadyRead(QTcpSocket *socket)
         return;   // still arriving
 
     const Request request = parseRequest(buffered.left(headerEnd), m_token);
+    // Any request with the right token means the phone has the address.
+    if (request.kind != Request::Invalid && m_presentation)
+        m_presentation->setRemoteInUse(true);
     switch (request.kind) {
     case Request::Page: {
         QFile file(QString::fromLatin1(kPageResource));

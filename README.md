@@ -101,9 +101,12 @@ Turn it on once in `~/.config/omapresent/settings.toml`:
 remote = true
 ```
 
-Start presenting. The address is printed to the terminal and looks like
-`http://100.x.y.z:4747/<token>/`. Open it on the phone and add it to the home
-screen. The address stays the same from talk to talk.
+Start presenting. The presenter window shows a QR code: scan it with the phone
+camera. The code hides once the phone connects; click "Phone remote connected"
+to show it again. The address is also printed to the terminal and looks like
+`http://100.x.y.z:4747/<token>/`. It stays the same from talk to talk, so you
+can add the page to the phone's home screen. With one screen there is no
+presenter window; use the printed address.
 
 The page shows the slide number, the heading, your speaker notes and the
 timer. It has a large **Next** button, a smaller **Previous**, **All slides**

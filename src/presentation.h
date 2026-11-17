@@ -235,6 +235,11 @@ class Presentation : public QObject {
     // only key that still belongs to the talk is Shift+Esc.
     Q_PROPERTY(bool terminalVisible READ terminalVisible NOTIFY positionChanged)
     Q_PROPERTY(bool terminalFocused READ terminalFocused NOTIFY positionChanged)
+    // The phone remote (src/remoteserver.h). The address the phone opens, empty
+    // when the remote is not listening; and whether a phone has used it during
+    // this talk, so the presenter window can put its QR code away.
+    Q_PROPERTY(QString remoteUrl READ remoteUrl NOTIFY remoteChanged)
+    Q_PROPERTY(bool remoteInUse READ remoteInUse NOTIFY remoteChanged)
 
 public:
     using WindowFactory = std::function<QQuickWindow *(const QString &source)>;
@@ -365,6 +370,13 @@ public:
     void terminalFocusedIn(const QString &role);
     void terminalZoomRequested(int direction);
 
+    // --- The phone remote ---------------------------------------------------
+    // Set by RemoteServer; Presentation only carries them to the windows.
+    QString remoteUrl() const;
+    void setRemoteUrl(const QString &url);
+    bool remoteInUse() const;
+    void setRemoteInUse(bool inUse);
+
 signals:
     void activeChanged();
     void positionChanged();
@@ -378,6 +390,7 @@ signals:
     // The shell holds the keyboard but a key reached the window's own handler,
     // so the web view has lost focus. The windows answer by taking it back.
     void terminalKeyboardWanted();
+    void remoteChanged();
 
 private:
     void assignMonitors();

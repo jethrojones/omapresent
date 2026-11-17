@@ -337,13 +337,25 @@ private slots:
         QVERIFY2(!remote.isListening(), "enabled, but no talk is running");
         QVERIFY(remote.url().isEmpty());
 
+        QVERIFY(presentation.remoteUrl().isEmpty());
         startTalk(presentation, {QString(), QString()});
         QVERIFY(remote.isListening());
         QVERIFY(remote.address().isLoopback());   // the test address, never Any
         QVERIFY(remote.url().endsWith(u'/' + remote.token() + u'/'));
 
+        // The presenter window draws its QR code from these two.
+        QCOMPARE(presentation.remoteUrl(), remote.url());
+        QVERIFY2(!presentation.remoteInUse(), "no phone has asked for anything yet");
+        // A wrong token is not a phone: the code stays up.
+        send(remote.port(), "GET", "/wrong/state");
+        QVERIFY(!presentation.remoteInUse());
+        send(remote.port(), "GET", '/' + remote.token().toLatin1() + "/state");
+        QVERIFY2(presentation.remoteInUse(), "a phone has the address now");
+
         presentation.stop();
         QVERIFY2(!remote.isListening(), "the talk ended, so the socket must close");
+        QVERIFY(presentation.remoteUrl().isEmpty());
+        QVERIFY(!presentation.remoteInUse());
     }
 
     void staysClosedWhenTheSettingIsOff()
@@ -539,6 +551,24 @@ private slots:
         QCOMPARE(presentation.slideIndex(), 0);
 
         presentation.stop();
+    }
+
+    void thePresenterWindowShowsTheCodeUntilAPhoneConnects()
+    {
+        // PresenterWindow.qml pulls in QtWebEngine and cannot be instantiated
+        // here (see tst_presentation.cpp), so this reads its source for the
+        // bindings the QR code depends on.
+        QFile file(QFINDTESTDATA("../src/PresenterWindow.qml"));
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString qml = QString::fromUtf8(file.readAll());
+        QVERIFY(qml.contains(QStringLiteral("import \"qrc:/renderer/vendor/qrcode.mjs\" as QrCode")));
+        QVERIFY(QFile::exists(QStringLiteral(":/renderer/vendor/qrcode.mjs")));
+        QVERIFY(qml.contains(QStringLiteral("presentation.remoteUrl !== \"\"")));
+        QVERIFY(qml.contains(QStringLiteral("!presentation.remoteInUse || remoteCodeWanted")));
+        QVERIFY(qml.contains(QStringLiteral("objectName: \"remoteCode\"")));
+        // Dark on white, unsmoothed, whatever the deck's theme is.
+        QVERIFY(qml.contains(QStringLiteral("color: \"white\"")));
+        QVERIFY(qml.contains(QStringLiteral("smooth: false")));
     }
 
     void actionsDoNothingWhenNoTalkIsRunning()

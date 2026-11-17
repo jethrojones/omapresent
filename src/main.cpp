@@ -1,3 +1,4 @@
+#include <QLoggingCategory>
 #include <QFileOpenEvent>
 #include <QFont>
 #include <QFontDatabase>
@@ -116,6 +117,13 @@ int main(int argc, char *argv[]) {
         applyInterfaceFont(textScale);
         backend.setTextScale(textScale);
     });
+
+    // The presenter window imports the vendored QR generator to draw the phone
+    // remote's code. That file is written for browsers and declares its helpers
+    // after the functions that use them, which is legal and which the QML
+    // compiler reports once per use: 49 lines on every talk. Nothing in them is
+    // actionable, and they bury the remote's address in the terminal.
+    QLoggingCategory::setFilterRules(QStringLiteral("qt.qml.usedbeforedeclared=false"));
 
     QQmlApplicationEngine engine;
     QObject::connect(&engine, &QQmlApplicationEngine::warnings, &app,
