@@ -47,7 +47,7 @@ def frontmatter_keys_in_code() -> set[str]:
 
 # The keys spec §4.4 defines. The skill may only document these.
 SPEC_FRONTMATTER = {
-    "title", "author", "date", "theme", "font", "aspect", "root",
+    "title", "author", "date", "theme", "font", "aspect", "root", "logo",
     "header", "footer", "slide-numbers", "progress", "publish",
     "slug", "provider", "access",
 }
