@@ -10,6 +10,7 @@
 #include <QRegularExpression>
 #include <QRunnable>
 #include <QThreadPool>
+#include <QSet>
 #include <QTimer>
 #include <QUrl>
 
@@ -41,6 +42,8 @@ static bool hasTargetInsideRoot(const QFileInfo &file,
 struct AssetIndex::Private {
     QFileSystemWatcher *watcher = nullptr;
     QTimer *debounceTimer = nullptr;
+    bool scannedOnce = false;
+    quint64 stamp = 0;
     QStringList watchedDirs;
     quint64 generation = 0;
     bool scanInProgress = false;
@@ -62,6 +65,8 @@ public:
     {
         QHash<QString, QStringList> newByName;
         QStringList allDirs;
+        // Sizes and save times of every file, so an image saved over itself still counts as a change.
+        quint64 stamp = 0;
 
         if (!m_rootPath.isEmpty()) {
             QDir rootDir(m_rootPath);
@@ -89,6 +94,8 @@ public:
                         const QString absPath = QDir::cleanPath(fi.absoluteFilePath());
                         const QString lowerName = fi.fileName().toLower();
                         newByName[lowerName].append(absPath);
+                        stamp += qHash(absPath) ^ (quint64(fi.size()) * 1099511628211ULL)
+                                 ^ quint64(fi.lastModified().toMSecsSinceEpoch());
                     }
                 }
 
@@ -124,11 +131,11 @@ public:
 
         if (m_receiver) {
             QMetaObject::invokeMethod(m_receiver, [receiver = m_receiver,
-                                                  gen = m_generation,
+                                                  gen = m_generation, stamp,
                                                   map = std::move(newByName),
                                                   dirs = std::move(allDirs)]() mutable {
                 if (receiver) {
-                    receiver->applyScanResult(gen, std::move(map), std::move(dirs));
+                    receiver->applyScanResult(gen, std::move(map), std::move(dirs), stamp);
                 }
             }, Qt::QueuedConnection);
         }
@@ -417,25 +424,30 @@ void AssetIndex::rebuild()
 
 void AssetIndex::applyScanResult(quint64 generation,
                                  QHash<QString, QStringList> newByName,
-                                 QStringList allDirs)
+                                 QStringList allDirs,
+                                 quint64 stamp)
 {
     if (!d || d->generation != generation) {
         return;
     }
 
-    m_byName = std::move(newByName);
-    d->indexedCanonicalRoot = allDirs.isEmpty()
+    // A scan that found the same files as last time changes nothing. Saying so
+    // matters: indexChanged() rebuilds the deck, and on macOS re-adding watched
+    // folders can itself report a change, which used to loop scan -> rebuild ->
+    // scan for as long as the deck was open.
+    const QString newCanonicalRoot = allDirs.isEmpty()
         ? QString()
         : QFileInfo(allDirs.constFirst()).canonicalFilePath();
+    const bool indexSame = d->scannedOnce && newByName == m_byName
+        && newCanonicalRoot == d->indexedCanonicalRoot && stamp == d->stamp;
+    d->scannedOnce = true;
+    d->stamp = stamp;
+
+    m_byName = std::move(newByName);
+    d->indexedCanonicalRoot = newCanonicalRoot;
     d->scanInProgress = false;
 
     if (d->watcher) {
-        const QStringList currentWatched = d->watcher->directories();
-        if (!currentWatched.isEmpty()) {
-            d->watcher->removePaths(currentWatched);
-        }
-        d->watchedDirs.clear();
-
         if (allDirs.size() > kMaxWatchedDirectories) {
             if (!d->limitWarned) {
                 d->limitWarned = true;
@@ -445,17 +457,32 @@ void AssetIndex::applyScanResult(quint64 generation,
             allDirs = allDirs.mid(0, kMaxWatchedDirectories);
         }
 
-        if (!allDirs.isEmpty()) {
-            const QStringList failed = d->watcher->addPaths(allDirs);
+        // Touch only what differs: folders that went away, folders that are new.
+        const QStringList currentWatched = d->watcher->directories();
+        const QSet<QString> wanted(allDirs.cbegin(), allDirs.cend());
+        const QSet<QString> have(currentWatched.cbegin(), currentWatched.cend());
+        QStringList gone;
+        for (const QString &dir : currentWatched)
+            if (!wanted.contains(dir))
+                gone += dir;
+        QStringList fresh;
+        for (const QString &dir : std::as_const(allDirs))
+            if (!have.contains(dir))
+                fresh += dir;
+        if (!gone.isEmpty())
+            d->watcher->removePaths(gone);
+        if (!fresh.isEmpty()) {
+            const QStringList failed = d->watcher->addPaths(fresh);
             if (!failed.isEmpty()) {
                 qWarning("AssetIndex: could not watch %lld directories (inotify limit reached)",
                          static_cast<long long>(failed.size()));
             }
-            d->watchedDirs = allDirs;
         }
+        d->watchedDirs = allDirs;
     }
 
-    emit indexChanged();
+    if (!indexSame)
+        emit indexChanged();
 }
 
 void AssetIndex::waitForIndex(int timeoutMs) const

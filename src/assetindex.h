@@ -74,7 +74,8 @@ private:
     void rebuild();
     void applyScanResult(quint64 generation,
                          QHash<QString, QStringList> newByName,
-                         QStringList allDirs);
+                         QStringList allDirs,
+                         quint64 stamp = 0);
 
     QString m_deckDir;
     QString m_root;
