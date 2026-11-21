@@ -253,6 +253,8 @@ signals:
     void pdfDialogRequested(const QUrl &suggestedUrl);
     void commandFinished(int exitCode);
     void deckTitleChanged();
+    // A file was just opened: the editor goes back to its first line.
+    void documentOpened();
     void settingsChanged();
     void offlinePrefetchChanged();
     // Spec §4.8: what "Prepare for offline" is doing, and how it ended.

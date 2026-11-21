@@ -942,7 +942,7 @@ private slots:
                                            directories).isEmpty());
     }
 
-    void reopensADeckWhereItWasLeft() {
+    void reopensADeckAtTheTop() {
         QTemporaryDir stateDirectory;
         QTemporaryDir deckDirectory;
         QVERIFY(stateDirectory.isValid() && deckDirectory.isValid());
@@ -977,10 +977,11 @@ private slots:
         reopened.open(QUrl::fromLocalFile(deckPath));
         const QString script = reopened.previewRenderScript();
         QVERIFY(script.contains(QStringLiteral(".render({")));
-        QVERIFY(script.contains(QStringLiteral(".goto(3)")));
-        QVERIFY(script.contains(QStringLiteral(".setScroll(0.5000)")));
+        // Even a deck that was left on a later slide opens at its first one.
+        QVERIFY(!script.contains(QStringLiteral(".goto(")));
+        QVERIFY(!script.contains(QStringLiteral(".setScroll(")));
 
-        // A deck nobody has opened starts at the top, with no restore calls.
+        // A deck nobody has opened starts at the top too.
         QVERIFY(QFile::remove(stateDirectory.filePath(
             QStringLiteral("omapresent/sessions.json"))));
         Backend unseen;

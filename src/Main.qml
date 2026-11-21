@@ -301,6 +301,13 @@ ApplicationWindow {
     Connections {
         target: backend
 
+        // A freshly opened deck starts at its first line, not wherever the
+        // text control left its caret after taking the new text.
+        function onDocumentOpened() {
+            editor.cursorPosition = 0;
+            editorFlick.contentY = 0;
+        }
+
         function onOpenDialogRequested() {
             openFileDialog.open();
         }
@@ -1444,6 +1451,12 @@ ApplicationWindow {
                 ToolTip.text: "Export, offline, publish and help"
                 flat: true
                 padding: 0
+                // The same height as the icons and the status line beside it,
+                // with no button chrome, so the row shares one baseline.
+                height: win.scaledSize(16)
+                topInset: 0
+                bottomInset: 0
+                background: null
                 font.family: "iA Writer Mono S"
                 font.pixelSize: win.scaledSize(11)
                 font.weight: Font.DemiBold
@@ -1472,6 +1485,12 @@ ApplicationWindow {
                 ToolTip.text: toolTipText
                 flat: true
                 padding: 0
+                // The same height as the icons and the status line beside it,
+                // with no button chrome, so the row shares one baseline.
+                height: win.scaledSize(16)
+                topInset: 0
+                bottomInset: 0
+                background: null
                 font.family: "iA Writer Mono S"
                 font.pixelSize: win.scaledSize(11)
                 font.weight: Font.DemiBold

@@ -608,6 +608,7 @@ bool Backend::openLocalFile(const QUrl &url) {
     m_media.setDeckDir(deckDir);
     restoreSessionPosition();
     rebuildDeck();
+    emit documentOpened();
     return true;
 }
 
@@ -1731,8 +1732,10 @@ void Backend::restoreSessionPosition() {
                                   .object()
                                   .value(sessionKey())
                                   .toObject();
-    m_slideIndex = entry.value(QStringLiteral("slide")).toInt();
-    m_scrollFraction = entry.value(QStringLiteral("scroll")).toDouble();
+    // A deck opens at its first slide. Where it was left is still written
+    // to sessions.json, but opening at the end of a talk you gave yesterday
+    // was more confusing than helpful, so it is no longer applied.
+    Q_UNUSED(entry);
 }
 
 void Backend::writeSessionPosition() {
