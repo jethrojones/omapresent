@@ -527,8 +527,8 @@ html[data-mode="present"] .op-missing-tag {
     width: min(58vh, 72vw, 36rem);
     aspect-ratio: 1;
     padding: 0.75rem;
-    background: var(--op-foreground);
-    color: var(--op-background);
+    background: var(--op-qr-light, var(--op-foreground));
+    color: var(--op-qr-dark, var(--op-background));
 }
 
 .op-qr-image svg {
@@ -538,11 +538,11 @@ html[data-mode="present"] .op-missing-tag {
 }
 
 .op-qr-image svg rect:first-child {
-    fill: var(--op-foreground);
+    fill: var(--op-qr-light, var(--op-foreground));
 }
 
 .op-qr-image svg path {
-    fill: var(--op-background);
+    fill: var(--op-qr-dark, var(--op-background));
 }
 
 .op-qr figcaption,
@@ -592,6 +592,20 @@ html[data-role="web"] .op-notes {
     inset-block-end: 1.3rem;
     inset-inline-end: 2rem;
     font-variant-numeric: tabular-nums;
+}
+
+/* `logo:` frontmatter: one small mark in the top corner of every slide. */
+.op-slide-logo {
+    position: absolute;
+    z-index: 2;
+    inset-block-start: 1.1rem;
+    inset-inline-end: 2rem;
+    width: auto;
+    height: clamp(1.8rem, 4.2vw, 3.6rem);
+    max-width: 22%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
 }
 
 .op-progress {
@@ -824,6 +838,7 @@ html[data-op-view="read"] #deck .op-notes.is-flow-note {
 html[data-op-view="read"] #deck .op-slide-header,
 html[data-op-view="read"] #deck .op-slide-footer,
 html[data-op-view="read"] #deck .op-slide-number,
+html[data-op-view="read"] #deck .op-slide-logo,
 html[data-op-view="read"] #deck .op-progress {
     display: none;
 }
@@ -950,7 +965,8 @@ html[data-op-view="read"] #deck td {
         inset-inline: 1rem;
     }
 
-    .op-slide-number {
+    .op-slide-number,
+    .op-slide-logo {
         inset-inline-end: 1rem;
     }
 }

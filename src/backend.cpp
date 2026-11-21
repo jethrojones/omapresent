@@ -1268,6 +1268,11 @@ QJsonObject Backend::deckDocument(const QString &mode) const {
         references += AssetIndex::extractReferences(slide.markdown);
         urls += VideoCache::extractUrls(slide.markdown);
     }
+    // `logo:` in the frontmatter is an image too: the small mark in the corner
+    // of every slide. It resolves like any other image reference.
+    const QString logo = m_deck.frontmatter().value(QStringLiteral("logo")).toString().trimmed();
+    if (!logo.isEmpty())
+        references += logo;
     references.removeDuplicates();
     urls.removeDuplicates();
 

@@ -175,6 +175,7 @@ aspect: "16:9"                      # PDF and export canvas aspect ratio
 root: "~/Documents/assets"          # Root folder for asset index search
 header: "Company Confidential"      # Persistent header text on all slides
 footer: "{title} — {slide}/{count}" # Persistent footer supporting tokens
+logo: "assets/logo.svg"             # Small image in the top corner of every slide (path relative to the deck)
 slide-numbers: true                 # Show slide number badge (default: false)
 progress: true                      # Show thin progress bar (default: false)
 publish:                            # Web publishing settings (see publish-toml.md)

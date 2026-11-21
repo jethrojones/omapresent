@@ -135,6 +135,12 @@ function applyTheme() {
     const named = ["background", "foreground", "accent", "muted", "selection", "dark_background", "dark_foreground", "red", "orange", "yellow", "green", "cyan", "blue", "magenta", "brown", "bright_red", "bright_orange", "bright_yellow", "bright_green", "bright_cyan", "bright_blue", "bright_magenta", "bright_brown"];
     for (const name of named)
         style.setProperty(`--op-${name.replaceAll("_", "-")}`, palette[name] ?? fallbackPalette[name]);
+    // A QR code only scans reliably as dark squares on a light ground. On a
+    // dark theme that is background-on-foreground; on a light theme it is the
+    // other way round, on plain white.
+    const lightTheme = palette.mode === "light";
+    style.setProperty("--op-qr-light", lightTheme ? "#ffffff" : palette.foreground ?? fallbackPalette.foreground);
+    style.setProperty("--op-qr-dark", lightTheme ? palette.foreground ?? fallbackPalette.foreground : palette.background ?? fallbackPalette.background);
     const ansi = Array.isArray(palette.ansi) && palette.ansi.length >= 16 ? palette.ansi : fallbackPalette.ansi;
     ansi.slice(0, 16).forEach((value, index) => style.setProperty(`--op-ansi-${index}`, value));
     const requestedFont = String(deck.frontmatter?.font ?? "").trim().replaceAll('"', "");
@@ -706,6 +712,18 @@ function decorateSlide(section, slide, index) {
         footer.className = "op-slide-footer";
         footer.textContent = tokenValue(frontmatter.footer, slide, index);
         section.append(footer);
+    }
+    // `logo:` puts one small image in the top corner of every slide. An image
+    // that does not resolve shows nothing rather than a broken-image mark.
+    const logoSource = typeof frontmatter.logo === "string" ? resolvedAsset(frontmatter.logo.trim()) : "";
+    if (logoSource) {
+        const logo = document.createElement("img");
+        logo.className = "op-slide-logo";
+        logo.src = logoSource;
+        logo.alt = "";
+        logo.setAttribute("aria-hidden", "true");
+        logo.draggable = false;
+        section.append(logo);
     }
     if (frontmatter["slide-numbers"] === true) {
         const number = document.createElement("span");
