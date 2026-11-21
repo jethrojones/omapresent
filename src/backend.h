@@ -173,6 +173,9 @@ public:
     Q_INVOKABLE QString imageEmbedsForDrop(const QString &uriListText) const;
     // The slide the editing caret sits in, for "present from here" (spec §10).
     Q_INVOKABLE int slideIndexForCursor(int cursorPosition) const;
+    // One entry per slide, for the numbered markers in the editor's margin:
+    // { number: 1-based slide number, position: where its first line starts }.
+    Q_INVOKABLE QVariantList slideMarkers() const;
     // Keep the editor preview on the slide that contains the caret. Document
     // edits still use the normal debounce; caret-only moves can follow at once.
     Q_INVOKABLE void followEditorCaret(int cursorPosition);
@@ -255,6 +258,8 @@ signals:
     void deckTitleChanged();
     // A file was just opened: the editor goes back to its first line.
     void documentOpened();
+    // The deck was reparsed: slide numbers and where they start may have moved.
+    void slideMarkersChanged();
     void settingsChanged();
     void offlinePrefetchChanged();
     // Spec §4.8: what "Prepare for offline" is doing, and how it ended.

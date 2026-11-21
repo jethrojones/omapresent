@@ -16,6 +16,7 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QQuickStyle>
 #include <QScreen>
@@ -407,6 +408,67 @@ private slots:
                  QStringLiteral("alpha **beta** omega"));
         QCOMPARE(editor->property("wrappedSelectionStart").toInt(), 8);
         QCOMPARE(editor->property("wrappedSelectionEnd").toInt(), 12);
+    }
+
+    void numbersEachSlideInTheEditorMargin() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        QTemporaryDir deckDirectory;
+        QVERIFY(deckDirectory.isValid());
+        const QString deckPath = deckDirectory.filePath(QStringLiteral("talk.md"));
+        const QByteArray source =
+            "---\ntitle: \"T\"\n---\n\n# One\n\nNotes.\n\n---\n\n\n# Two\n\n- a\n\n--- {s, skip}\n\n# Three\n";
+        QFile deck(deckPath);
+        QVERIFY(deck.open(QIODevice::WriteOnly | QIODevice::Text));
+        QVERIFY(deck.write(source) > 0);
+        deck.close();
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+        backend.open(QUrl::fromLocalFile(deckPath));
+
+        // Each marker points at the first words of its slide, never at a
+        // separator, the frontmatter or a blank line.
+        const QVariantList markers = backend.slideMarkers();
+        QCOMPARE(markers.size(), 3);
+        const QString text = QString::fromUtf8(source);
+        const QStringList firstWords{QStringLiteral("# One"), QStringLiteral("# Two"),
+                                     QStringLiteral("# Three")};
+        for (int i = 0; i < markers.size(); ++i) {
+            const QVariantMap marker = markers.at(i).toMap();
+            QCOMPARE(marker.value(QStringLiteral("number")).toInt(), i + 1);
+            QCOMPARE(marker.value(QStringLiteral("position")).toInt(),
+                     int(text.indexOf(firstWords.at(i))));
+        }
+
+        // The window draws one circle per slide, in order down the page.
+        QObject *repeater = window->findChild<QObject *>(QStringLiteral("slideMarkers"));
+        QVERIFY(repeater);
+        QTRY_COMPARE(repeater->property("count").toInt(), 3);
+        qreal previousY = -1;
+        for (int i = 0; i < 3; ++i) {
+            QQuickItem *circle = nullptr;
+            QVERIFY(QMetaObject::invokeMethod(repeater, "itemAt", Q_RETURN_ARG(QQuickItem *, circle),
+                                              Q_ARG(int, i)));
+            QVERIFY(circle);
+            QVERIFY(circle->y() > previousY);
+            previousY = circle->y();
+        }
+
+        // For looking at by eye: OMAPRESENT_TEST_GRAB=/path/to.png saves the window.
+        const QString grabPath = qEnvironmentVariable("OMAPRESENT_TEST_GRAB");
+        if (!grabPath.isEmpty()) {
+            if (auto *quickWindow = qobject_cast<QQuickWindow *>(window.data())) {
+                QTest::qWait(300);
+                quickWindow->grabWindow().save(grabPath);
+            }
+        }
     }
 
     void savesAndOpensFromFooterButtons() {

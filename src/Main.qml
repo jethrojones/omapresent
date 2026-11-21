@@ -35,6 +35,8 @@ ApplicationWindow {
     readonly property int editorWidth: Math.min(
         Math.round(writerFontMetrics.averageCharacterWidth * 65),
         Math.max(360, editorFlick.width - Math.round(writerFontMetrics.averageCharacterWidth * 6)))
+    // Slide numbers for the editor's margin; refreshed whenever the deck is reparsed.
+    property var slideMarkerList: []
     property bool closeConfirmed: false
     property bool searchOpen: false
     property bool searchUpdating: false
@@ -303,6 +305,10 @@ ApplicationWindow {
 
         // A freshly opened deck starts at its first line, not wherever the
         // text control left its caret after taking the new text.
+        function onSlideMarkersChanged() {
+            win.slideMarkerList = backend.slideMarkers();
+        }
+
         function onDocumentOpened() {
             editor.cursorPosition = 0;
             editorFlick.contentY = 0;
@@ -1379,6 +1385,45 @@ ApplicationWindow {
                         backend.attachDocument(textDocument);
                         backend.followEditorCaret(cursorPosition);
                         forceActiveFocus();
+                    }
+                }
+
+                // The slide's number, circled in the margin beside its first
+                // line, so it is always clear which slide the text belongs to.
+                Repeater {
+                    id: slideMarkers
+                    objectName: "slideMarkers"
+                    model: win.slideMarkerList
+
+                    delegate: Rectangle {
+                        id: marker
+                        required property var modelData
+                        readonly property int size: win.scaledSize(30)
+                        // The caret's slide is at full strength; the others sit back a little.
+                        readonly property bool current: backend.slideIndexForCursor(editor.cursorPosition) + 1 === modelData.number
+                        width: Math.max(size, markerLabel.implicitWidth + win.scaledSize(10))
+                        height: size
+                        radius: size / 2
+                        color: backend.themeAccent
+                        opacity: current ? 1 : 0.72
+                        visible: editor.x >= width + 6
+                        x: Math.max(2, editor.x - width - win.scaledSize(12))
+                        y: {
+                            // Named so the position is worked out again when the text reflows.
+                            editor.width; editor.contentHeight; editor.font.pixelSize;
+                            var line = editor.positionToRectangle(Math.min(modelData.position, editor.length));
+                            return editor.y + line.y + Math.round((line.height - height) / 2);
+                        }
+
+                        Text {
+                            id: markerLabel
+                            anchors.centerIn: parent
+                            text: marker.modelData.number
+                            color: win.pageColor
+                            font.family: "iA Writer Mono S"
+                            font.pixelSize: win.scaledSize(15)
+                            font.weight: Font.Black
+                        }
                     }
                 }
             }

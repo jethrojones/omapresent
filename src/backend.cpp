@@ -1242,6 +1242,7 @@ void Backend::rebuildDeck() {
     m_presentation.setDeck(document);
     // The window is named after the deck, and the deck was just reparsed.
     emit deckTitleChanged();
+    emit slideMarkersChanged();
 }
 
 void Backend::applyFrontmatter() {
@@ -1338,6 +1339,35 @@ int Backend::slideIndexForCursor(int cursorPosition) const {
     const int position = qBound(0, cursorPosition, int(text.size()));
     const int line = text.left(position).count(QLatin1Char('\n'));
     return qMax(0, m_deck.slideIndexForLine(line));
+}
+
+QVariantList Backend::slideMarkers() const {
+    const QString text = currentDocumentText();
+    // Where every line of the source starts.
+    QVector<int> lineStarts{0};
+    for (int i = 0; i < text.size(); ++i) {
+        if (text.at(i) == QLatin1Char('\n'))
+            lineStarts.append(i + 1);
+    }
+    const auto lineIsBlank = [&](int line) {
+        const int start = lineStarts.at(line);
+        const int end = line + 1 < lineStarts.size() ? lineStarts.at(line + 1) - 1 : text.size();
+        return QStringView(text).mid(start, end - start).trimmed().isEmpty();
+    };
+
+    QVariantList markers;
+    const QVector<Slide> slides = m_deck.slides();
+    for (int index = 0; index < slides.size(); ++index) {
+        const Slide &slide = slides.at(index);
+        int line = qBound(0, slide.sourceStartLine, int(lineStarts.size()) - 1);
+        const int last = qBound(line, slide.sourceEndLine, int(lineStarts.size()) - 1);
+        // Sit beside the slide's first words, not a blank line above them.
+        while (line < last && lineIsBlank(line))
+            ++line;
+        markers.append(QVariantMap{{QStringLiteral("number"), index + 1},
+                                   {QStringLiteral("position"), lineStarts.at(line)}});
+    }
+    return markers;
 }
 
 QString Backend::previewGotoScript(int slideIndex) {
