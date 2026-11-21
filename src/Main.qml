@@ -21,7 +21,11 @@ ApplicationWindow {
     readonly property color pageColor: backend.themeBackground
     readonly property color textColor: backend.themeForeground
     readonly property color strongTextColor: backend.themeForeground
-    readonly property color mutedColor: darkMode ? "#909191" : "#aeb1b5"
+    // Quiet text and icons: the theme's own text colour, pulled most of the way
+    // toward the page. A fixed grey vanished on warm or tinted light themes.
+    readonly property color mutedColor: Qt.rgba(textColor.r * 0.58 + pageColor.r * 0.42,
+                                                textColor.g * 0.58 + pageColor.g * 0.42,
+                                                textColor.b * 0.58 + pageColor.b * 0.42, 1)
     readonly property color selectionFill: backend.themeSelection
     // The desktop's text size knob (GNOME's text-scaling-factor, which
     // `omarchy display text size` drives) anchored so its 12px default leaves
@@ -1413,7 +1417,7 @@ ApplicationWindow {
             anchors.leftMargin: 12
             anchors.bottomMargin: 10
             spacing: 12
-            opacity: 0.55
+            opacity: 0.9
 
             FooterIconButton {
                 objectName: "saveButton"
@@ -1443,6 +1447,16 @@ ApplicationWindow {
                 font.family: "iA Writer Mono S"
                 font.pixelSize: win.scaledSize(11)
                 font.weight: Font.DemiBold
+                // Drawn in the theme's text colour. The control's own default
+                // follows the system palette, which is pale on a light theme
+                // when macOS itself is in dark mode.
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: parent.hovered ? backend.themeAccent : win.textColor
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: Text.AlignHCenter
+                }
                 onClicked: actionsMenu.popup()
             }
 
@@ -1461,6 +1475,16 @@ ApplicationWindow {
                 font.family: "iA Writer Mono S"
                 font.pixelSize: win.scaledSize(11)
                 font.weight: Font.DemiBold
+                // Drawn in the theme's text colour. The control's own default
+                // follows the system palette, which is pale on a light theme
+                // when macOS itself is in dark mode.
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: parent.hovered ? backend.themeAccent : win.textColor
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: Text.AlignHCenter
+                }
                 onClicked: win.presentFromCaret()
             }
 
