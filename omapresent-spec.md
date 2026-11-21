@@ -172,6 +172,7 @@ aspect: "16:9"                    # export/PDF canvas; on-screen present fills t
 root: ~/Documents/aibrain        # image-resolution root (default: the deck's folder)
 header: "Optimization Doc"        # optional persistent header on every slide
 footer: "{title} — {slide}/{count}"   # optional persistent footer; supports tokens
+logo: "assets/logo.svg"               # optional small image in the top corner of every slide
 slide-numbers: true              # show slide numbers (off by default)
 progress: true                   # show a thin progress bar (off by default)
 publish:                         # publish settings (see §9); all optional
